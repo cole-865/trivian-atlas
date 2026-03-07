@@ -735,14 +735,26 @@ function sumCollectionBalances(tradelines: BureauTradelineRow[]): number | null 
     const type = (t.account_type ?? "").toLowerCase();
     const status = (t.account_status ?? "").toLowerCase();
     const raw = String(t.raw_segment?.raw ?? "").toLowerCase();
+    const creditor = (t.creditor_name ?? "").toLowerCase();
 
-    return (
+    const looksCollection =
       t.unpaid_collection === true ||
       type.includes("collection") ||
+      type.includes("debt buyer") ||
       status.includes("collection") ||
       raw.includes("collection account") ||
-      raw.includes("debt buyer account")
-    );
+      raw.includes("debt buyer account") ||
+      raw.includes("unpaid");
+
+    const excludePaidClosed =
+      looksClosed(t) ||
+      status.includes("paid_closed") ||
+      raw.includes("paid and c!") ||
+      raw.includes("paid and closed");
+
+    const hasCollectionBalance = (t.balance ?? t.amount ?? 0) > 0;
+
+    return looksCollection && !excludePaidClosed && hasCollectionBalance;
   });
 
   if (!rows.length) return 0;

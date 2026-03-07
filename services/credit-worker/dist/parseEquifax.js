@@ -1,25 +1,16 @@
 // services/credit-worker/src/parseEquifax.ts
 //
-// Equifax-style bureau parser for Atlas.
-// Goal: deterministic extraction of the high-value fields needed for
-// bureau_summary + bureau detail tables.
+// Deterministic parser for Equifax-style text reports used by Atlas.
+// This parser is intentionally conservative:
+// - extract what is clearly present
+// - avoid inventing values
+// - keep raw blocks for debugging
 //
-// This is intentionally conservative:
-// - parse the stuff we can identify reliably
-// - leave uncertain values as null
-// - preserve raw blocks in bureau_raw / raw_segment for debugging
-//
-// Do NOT use this file to redact. Redaction is a separate concern.
-const SECTION_MARKERS = [
-    "IDENTITY SCAN ALERT:",
-    "IDENTIFICATION INFORMATION",
-    "REPORT SUMMARY",
-    "COLLECTION INFORMATION",
-    "PAYMENT PRACTICE",
-    "PAYMENT SUMMARY",
-    "INQUIRY INFORMATION",
-    "CONSUMER REFERRAL INFORMATION",
-];
+// It is designed to feed:
+// - bureau_summary
+// - bureau_tradelines
+// - bureau_public_records
+// - bureau_messages
 export function parseEquifaxReport(input) {
     const normalized = normalizeReportText(input);
     const sections = splitEquifaxSections(normalized);
@@ -29,29 +20,22 @@ export function parseEquifaxReport(input) {
     const paymentTradelines = parsePaymentPractice(sections.paymentPractice ?? "");
     const paymentSummary = parsePaymentSummary(sections.paymentSummary ?? "");
     const inquiries = parseInquirySection(sections.inquiryInformation ?? "");
-    const publicRecords = parsePublicRecords(sections.reportSummary ?? "", sections.paymentPractice ?? "", normalized);
-    const tradelines = [...collectionTradelines, ...paymentTradelines];
+    const publicRecords = parsePublicRecords(sections.reportSummary ?? "", normalized);
     const messages = parseMessages(normalized, sections.identityAlert ?? "", scoreInfo);
-    const openTradelines = countOpenTradelines(tradelines);
-    const openAutoTrade = tradelines.some((t) => t.is_auto && !looksClosed(t));
-    const monthsSinceRepo = deriveMonthsSinceRepo(tradelines);
-    const monthsSinceBankruptcy = deriveMonthsSinceBankruptcy(publicRecords);
-    const totalCollections = sumCollectionBalances(tradelines);
-    const utilizationPct = deriveUtilizationPct(tradelines);
-    const oldestTradeMonths = deriveOldestTradeMonths(tradelines, summaryInfo.fileSinceDate);
+    const tradelines = [...collectionTradelines, ...paymentTradelines];
     const summary = {
         bureau_source: "equifax",
         score: scoreInfo.score,
         total_tradelines: summaryInfo.totalTradelines ?? (tradelines.length > 0 ? tradelines.length : null),
-        open_tradelines: openTradelines,
-        open_auto_trade: openAutoTrade,
-        months_since_repo: monthsSinceRepo,
-        months_since_bankruptcy: monthsSinceBankruptcy,
-        total_collections: totalCollections,
+        open_tradelines: countOpenTradelines(tradelines),
+        open_auto_trade: tradelines.some((t) => t.is_auto && !looksClosed(t)),
+        months_since_repo: deriveMonthsSinceRepo(tradelines),
+        months_since_bankruptcy: deriveMonthsSinceBankruptcy(publicRecords),
+        total_collections: sumCollectionBalances(tradelines),
         total_chargeoffs: paymentSummary.totalChargeoffs,
         past_due_amount: paymentSummary.totalPastDue,
-        utilization_pct: utilizationPct,
-        oldest_trade_months: oldestTradeMonths,
+        utilization_pct: deriveUtilizationPct(tradelines),
+        oldest_trade_months: deriveOldestTradeMonths(tradelines, summaryInfo.fileSinceDate),
         risk_tier: null,
         max_term_months: null,
         min_cash_down: null,
@@ -76,7 +60,7 @@ export function parseEquifaxReport(input) {
         messages,
     };
 }
-/* ----------------------------- normalization ----------------------------- */
+/* -------------------------------- normalize ------------------------------- */
 export function normalizeReportText(input) {
     let text = String(input ?? "");
     text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -84,7 +68,7 @@ export function normalizeReportText(input) {
     text = text.replace(/[ \t]+\n/g, "\n");
     text = text.replace(/[ \t]{2,}/g, " ");
     text = text.replace(/\n{3,}/g, "\n\n");
-    // Kill duplicated Equifax report if it appears twice in the extracted text.
+    // Remove duplicated extracted report copy if header repeats
     const eqHeader = "Equifax-Style Report Generated from Equifax v6 Data";
     const first = text.indexOf(eqHeader);
     if (first !== -1) {
@@ -138,7 +122,7 @@ function getSection(text, startMarker, endMarkers) {
     const endPos = ends.length > 0 ? Math.min(...ends) : text.length;
     return text.slice(startPos, endPos).trim();
 }
-/* -------------------------------- parsing -------------------------------- */
+/* -------------------------------- parsing --------------------------------- */
 function parseScoreSection(text) {
     const scoreMatch = text.match(/FICO\s+Auto\s+v\d+\s+\S+\s+Score\s+(\d+)/i);
     const modelMatch = text.match(/Model Name:\s*(.+)/i);
@@ -151,7 +135,7 @@ function parseScoreSection(text) {
         ? factorsBlockMatch[1]
             .split("\n")
             .map((s) => s.trim())
-            .filter((s) => Boolean(s) && !/^Model Name:/i.test(s))
+            .filter(Boolean)
         : [];
     return {
         score: scoreMatch ? safeNumber(scoreMatch[1]) : null,
@@ -181,7 +165,7 @@ function parseCollections(section) {
     const blocks = section
         .split(/(?=CL-RPTD:)/g)
         .map((b) => b.trim())
-        .filter(Boolean);
+        .filter((b) => b.startsWith("CL-RPTD:"));
     return blocks.map((block) => {
         const clientMatch = block.match(/CLIENT:(.+?)\s+ECOA:/i);
         const statusMatch = block.match(/STATUS:([^\n]+?)\s+AMT:/i);
@@ -240,7 +224,8 @@ function parsePaymentPractice(section) {
         blocks.push(current.join("\n"));
     return blocks
         .map(parseTradelineBlock)
-        .filter((x) => Boolean(x));
+        .filter((x) => Boolean(x))
+        .filter((row) => !!row.creditor_name);
 }
 function parseTradelineBlock(block) {
     const lines = block
@@ -253,6 +238,8 @@ function parseTradelineBlock(block) {
     const creditorMatch = header.match(/^(.+?)\/[A-Z0-9*]+/);
     const conditionMatch = header.match(/\*\s+([A-Z0-9]{2})\s+/);
     const creditorName = creditorMatch ? creditorMatch[1].trim() : header.trim();
+    if (!creditorName || creditorName === "-")
+        return null;
     const firstDateLine = findDateLine(lines, 1);
     const secondDateLine = findDateLine(lines, 2);
     const moneyOnlyLine = findMoneyOnlyLine(lines);
@@ -266,29 +253,34 @@ function parseTradelineBlock(block) {
     const payments = moneyOnlyLine?.moneys ?? [];
     const monthlyPayment = payments.length >= 1 ? payments[0] : null;
     const scheduledPayment = payments.length >= 2 ? payments[1] : null;
-    const pastDueFromHeader = extractMoneyAfterBangField(header, "PAST DUE");
     const chargeOffFromText = extractChargeOffAmount(block);
+    const creditLimit = extractCreditLimit(block);
     const noEffect = /no effect/i.test(block);
-    const isCollection = /collection account/i.test(block);
+    const isCollection = /collection account/i.test(block) ||
+        /debt buyer account/i.test(block) ||
+        /org cr-/i.test(block) && /collection/i.test(block);
     const isChargeoff = /charged off account/i.test(block) ||
-        /charge off/i.test(block) ||
         (chargeOffFromText ?? 0) > 0;
-    const isRepo = /repo/i.test(block) ||
-        /repossession/i.test(block) ||
-        /voluntary surrender/i.test(block);
+    const isRepo = /repossession/i.test(block) ||
+        /voluntary surrender/i.test(block) ||
+        /repo /i.test(block) ||
+        / auto repo /i.test(block);
     const closed = /Paid and C!/i.test(block) ||
         /paid and closed/i.test(block) ||
-        /closed/i.test(accountStatus ?? "");
+        /paid_closed/i.test(accountStatus ?? "");
     const isAuto = detectIsAuto(creditorName, accountType, block);
-    const isRevolving = /revolving|charge account/i.test(accountType ?? "");
-    const isInstallment = /installment|secured|unsecured/i.test(accountType ?? "") && !isRevolving;
-    const isBad = isCollection ||
+    const isRevolving = /revolving|charge account|secured credit card/i.test(accountType ?? "");
+    const isInstallment = /installment|secured|unsecured|education loan|installment sales contract/i.test(accountType ?? "") && !isRevolving;
+    const paymentHist = extractPaymentHistoryDigits(block);
+    const severeDerog = /[4-9]/.test(paymentHist);
+    const bad = isCollection ||
         isChargeoff ||
         isRepo ||
-        /[4-9]/.test(extractPaymentHistoryDigits(block)) ||
+        severeDerog ||
         /delinq/i.test(block) ||
-        /past due/i.test(block);
-    const good = !isBad && !closed && (balance ?? 0) >= 0;
+        /past due/i.test(block) ||
+        /unpaid/i.test(block);
+    const good = !bad && !closed;
     return {
         creditor_name: creditorName,
         account_type: accountType,
@@ -296,19 +288,19 @@ function parseTradelineBlock(block) {
         condition_code: conditionMatch ? conditionMatch[1] : null,
         amount: highBalance,
         balance,
-        credit_limit: extractCreditLimit(block),
+        credit_limit: creditLimit,
         monthly_payment: monthlyPayment ?? scheduledPayment,
-        past_due_amount: pastDueFromHeader,
+        past_due_amount: null,
         high_balance: highBalance,
         opened_date: openedDate,
         last_activity_date: lastActivityDate,
         last_payment_date: lastPaymentDate,
         no_effect: noEffect,
         good,
-        bad: isBad,
+        bad,
         auto_repo: isRepo && isAuto,
-        unpaid_collection: isCollection && !closed && (balance ?? 0) > 0,
-        unpaid_chargeoff: isChargeoff && !closed && ((chargeOffFromText ?? 0) > 0 || (balance ?? 0) > 0),
+        unpaid_collection: isCollection && !closed,
+        unpaid_chargeoff: isChargeoff && !closed,
         is_auto: isAuto,
         is_revolving: isRevolving,
         is_installment: isInstallment,
@@ -333,18 +325,30 @@ function parsePaymentSummary(section) {
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
-    const grandLineIndex = lines.findIndex((line) => /^GRAND\b/i.test(line));
-    const slice = grandLineIndex >= 0
-        ? lines.slice(grandLineIndex, Math.min(grandLineIndex + 2, lines.length))
-        : lines.slice(-2);
-    const moneyValues = slice.join(" ").match(/\$[\d,]+/g) ?? [];
-    const nums = moneyValues.map((m) => safeMoney(m.replace("$", "")));
+    const grandIdx = lines.findIndex((line) => /^GRAND\b/i.test(line));
+    if (grandIdx === -1) {
+        return {
+            totalBalance: null,
+            totalActualPayment: null,
+            totalScheduledPayment: null,
+            totalPastDue: null,
+            totalChargeoffs: null,
+        };
+    }
+    const grandLine1 = lines[grandIdx] ?? "";
+    const grandLine2 = lines[grandIdx + 1] ?? "";
+    const line1Vals = [...grandLine1.matchAll(/\$([\d,]+)/g)]
+        .map((m) => safeMoney(m[1]))
+        .filter((n) => n !== null);
+    const line2Vals = [...grandLine2.matchAll(/\$([\d,]+)/g)]
+        .map((m) => safeMoney(m[1]))
+        .filter((n) => n !== null);
     return {
-        totalBalance: nums[1] ?? null,
-        totalActualPayment: nums[2] ?? null,
-        totalScheduledPayment: nums[3] ?? null,
-        totalPastDue: nums[5] ?? null,
-        totalChargeoffs: nums[6] ?? null,
+        totalBalance: line1Vals[1] ?? null,
+        totalActualPayment: line2Vals[1] ?? null,
+        totalScheduledPayment: line2Vals[2] ?? null,
+        totalPastDue: line1Vals[2] ?? null,
+        totalChargeoffs: line2Vals[4] ?? null,
     };
 }
 function parseInquirySection(section) {
@@ -366,7 +370,7 @@ function parseInquirySection(section) {
         };
     });
 }
-function parsePublicRecords(reportSummary, paymentPractice, fullText) {
+function parsePublicRecords(reportSummary, fullText) {
     const publicRecordCountMatch = reportSummary.match(/PR-(\d+)/i);
     const publicRecordCount = publicRecordCountMatch
         ? safeNumber(publicRecordCountMatch[1]) ?? 0
@@ -444,7 +448,7 @@ function parseMessages(fullText, identityAlertSection, scoreInfo) {
     }
     return dedupeMessages(out);
 }
-/* ------------------------------ derivations ------------------------------- */
+/* ------------------------------- derivations ------------------------------ */
 function countOpenTradelines(tradelines) {
     if (!tradelines.length)
         return null;
@@ -453,9 +457,9 @@ function countOpenTradelines(tradelines) {
 function looksClosed(t) {
     const status = (t.account_status ?? "").toLowerCase();
     const raw = String(t.raw_segment?.raw ?? "").toLowerCase();
-    return (status.includes("paid and c") ||
+    return (status.includes("paid_closed") ||
+        status.includes("paid and c") ||
         status.includes("paid and closed") ||
-        status.includes("closed") ||
         raw.includes("paid and c!") ||
         raw.includes("paid and closed"));
 }
@@ -486,7 +490,16 @@ function deriveMonthsSinceBankruptcy(records) {
     return mostRecent ? diffMonths(mostRecent, new Date()) : null;
 }
 function sumCollectionBalances(tradelines) {
-    const rows = tradelines.filter((t) => t.unpaid_collection);
+    const rows = tradelines.filter((t) => {
+        const type = (t.account_type ?? "").toLowerCase();
+        const status = (t.account_status ?? "").toLowerCase();
+        const raw = String(t.raw_segment?.raw ?? "").toLowerCase();
+        return (t.unpaid_collection === true ||
+            type.includes("collection") ||
+            status.includes("collection") ||
+            raw.includes("collection account") ||
+            raw.includes("debt buyer account"));
+    });
     if (!rows.length)
         return 0;
     return rows.reduce((sum, row) => sum + (row.balance ?? row.amount ?? 0), 0);
@@ -494,14 +507,19 @@ function sumCollectionBalances(tradelines) {
 function deriveUtilizationPct(tradelines) {
     const revolving = tradelines.filter((t) => t.is_revolving && (t.credit_limit ?? 0) > 0);
     if (!revolving.length)
-        return null;
+        return 0;
     const totalBalance = revolving.reduce((sum, t) => sum + (t.balance ?? 0), 0);
     const totalLimit = revolving.reduce((sum, t) => sum + (t.credit_limit ?? 0), 0);
     if (!totalLimit)
-        return null;
+        return 0;
     return round2((totalBalance / totalLimit) * 100);
 }
 function deriveOldestTradeMonths(tradelines, fileSinceDate) {
+    if (fileSinceDate) {
+        const d = parseIsoDate(fileSinceDate);
+        if (d)
+            return diffMonths(d, new Date());
+    }
     const dates = tradelines
         .map((t) => t.opened_date)
         .filter(Boolean)
@@ -511,14 +529,9 @@ function deriveOldestTradeMonths(tradelines, fileSinceDate) {
         const oldest = dates.sort((a, b) => a.getTime() - b.getTime())[0];
         return diffMonths(oldest, new Date());
     }
-    if (fileSinceDate) {
-        const d = parseIsoDate(fileSinceDate);
-        if (d)
-            return diffMonths(d, new Date());
-    }
     return null;
 }
-/* -------------------------------- helpers -------------------------------- */
+/* -------------------------------- helpers --------------------------------- */
 function isTradelineHeader(line) {
     return /^.{3,}\/[A-Z0-9*]{5,}\s+[A-Z0-9]{2}\s+/.test(line);
 }
@@ -548,8 +561,10 @@ function findMoneyOnlyLine(lines) {
             continue;
         if (/^\d{2}\/\d{2}\/\d{4}!/.test(line))
             continue;
-        const moneyMatches = [...line.matchAll(/\$([\d,]+)/g)].map((m) => safeMoney(m[1]));
-        const nums = moneyMatches.filter((n) => n !== null);
+        const parts = line.split("!").map((s) => s.trim());
+        const nums = parts
+            .map((p) => safeMoney(stripDollar(p)))
+            .filter((n) => n !== null);
         if (nums.length >= 1) {
             return { moneys: nums };
         }
@@ -557,19 +572,23 @@ function findMoneyOnlyLine(lines) {
     return null;
 }
 function detectAccountType(block) {
-    const known = [
-        "Debt Buyer Account",
+    const candidates = [
+        "Installment Sales Contract",
+        "Secured Credit Card",
         "Charge Account",
+        "Debt Buyer Account",
         "Collection account",
+        "Education Loan",
+        "Child Support",
         "Secured",
         "Unsecured",
         "Fixed rate",
     ];
-    for (const k of known) {
-        if (block.includes(k)) {
-            if (k === "Fixed rate")
+    for (const c of candidates) {
+        if (block.includes(c)) {
+            if (c === "Fixed rate")
                 return "installment";
-            return k;
+            return c;
         }
     }
     if (/revolving/i.test(block))
@@ -581,7 +600,7 @@ function detectAccountType(block) {
 function detectAccountStatus(block) {
     if (/Charged off account/i.test(block))
         return "charged_off";
-    if (/Collection account/i.test(block))
+    if (/Collection account/i.test(block) || /Debt Buyer Account/i.test(block))
         return "collection";
     if (/Paid and C!/i.test(block) || /paid and closed/i.test(block))
         return "paid_closed";
@@ -606,6 +625,8 @@ function detectIsAuto(creditorName, accountType, block) {
         "capital one auto",
         "carolina",
         "865 autos",
+        "ford credit",
+        "gm financial",
     ].some((term) => combined.includes(term));
 }
 function extractPaymentHistoryDigits(block) {
@@ -613,33 +634,38 @@ function extractPaymentHistoryDigits(block) {
     return match ? match[1] : "";
 }
 function extractChargeOffAmount(block) {
-    const lines = block.split("\n");
+    const lines = block.split("\n").map((s) => s.trim());
     for (const line of lines) {
-        if (/charge off/i.test(line)) {
-            const money = line.match(/\$([\d,]+)/);
-            if (money)
-                return safeMoney(money[1]);
-        }
-    }
-    // fallback: line patterns like !$3662 ! or trailing charge-off field
-    const allMoney = [...block.matchAll(/\$([\d,]+)/g)].map((m) => safeMoney(m[1]));
-    const nums = allMoney.filter((n) => n !== null);
-    return nums.length ? Math.max(...nums) : null;
-}
-function extractCreditLimit(block) {
-    const lines = block.split("\n");
-    for (const line of lines) {
-        if (/CRDT LIMIT/i.test(line))
+        if (!line.includes("!"))
             continue;
-        const dollarMatches = [...line.matchAll(/\$([\d,]+)/g)].map((m) => safeMoney(m[1]));
-        const nums = dollarMatches.filter((n) => n !== null);
-        if (nums.length >= 2 && /Charge Account/i.test(block)) {
-            return Math.max(...nums);
-        }
+        if (/^\d{2}\/\d{2}\/\d{4}!/.test(line))
+            continue;
+        const parts = line.split("!").map((s) => s.trim());
+        // Typical Equifax money-only line:
+        // [0] blank
+        // [1] credit limit
+        // [2] actual payment
+        // [3] scheduled payment
+        // [4] balloon
+        // [5] charge off
+        const chargeOff = safeMoney(stripDollar(parts[5] ?? ""));
+        if (chargeOff !== null)
+            return chargeOff;
     }
     return null;
 }
-function extractMoneyAfterBangField(_line, _label) {
+function extractCreditLimit(block) {
+    const lines = block.split("\n").map((s) => s.trim());
+    for (const line of lines) {
+        if (!line.includes("!"))
+            continue;
+        if (/^\d{2}\/\d{2}\/\d{4}!/.test(line))
+            continue;
+        const parts = line.split("!").map((s) => s.trim());
+        const maybeLimit = safeMoney(stripDollar(parts[1] ?? ""));
+        if (maybeLimit !== null && maybeLimit > 0)
+            return maybeLimit;
+    }
     return null;
 }
 function dedupeMessages(messages) {
