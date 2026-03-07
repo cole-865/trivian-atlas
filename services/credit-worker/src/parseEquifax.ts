@@ -130,8 +130,10 @@ type PaymentSummaryInfo = {
   totalScheduledPayment: number | null;
   totalPastDue: number | null;
   totalChargeoffs: number | null;
-};
 
+  revolvingBalance: number | null;
+  revolvingCreditLimit: number | null;
+};
 type InquiryRow = {
   inquiry_date: string | null;
   subscriber_code: string | null;
@@ -170,7 +172,12 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
     total_collections: sumCollectionBalances(tradelines),
     total_chargeoffs: paymentSummary.totalChargeoffs,
     past_due_amount: paymentSummary.totalPastDue,
-    utilization_pct: deriveUtilizationPct(tradelines),
+    utilization_pct:
+  paymentSummary.revolvingBalance !== null &&
+  paymentSummary.revolvingCreditLimit !== null &&
+  paymentSummary.revolvingCreditLimit > 0
+    ? round2((paymentSummary.revolvingBalance / paymentSummary.revolvingCreditLimit) * 100)
+    : deriveUtilizationPct(tradelines),
     oldest_trade_months: deriveOldestTradeMonths(tradelines, summaryInfo.fileSinceDate),
 
     autos_on_bureau: autosOnBureau,
@@ -541,6 +548,8 @@ function parsePaymentSummary(section: string): PaymentSummaryInfo {
       totalScheduledPayment: null,
       totalPastDue: null,
       totalChargeoffs: null,
+      revolvingBalance: null,
+      revolvingCreditLimit: null,
     };
   }
 
@@ -550,33 +559,63 @@ function parsePaymentSummary(section: string): PaymentSummaryInfo {
     .filter(Boolean);
 
   const grandIdx = lines.findIndex((line) => /^GRAND\b/i.test(line));
-  if (grandIdx === -1) {
-    return {
-      totalBalance: null,
-      totalActualPayment: null,
-      totalScheduledPayment: null,
-      totalPastDue: null,
-      totalChargeoffs: null,
-    };
+  const revolvingIdx = lines.findIndex((line) => /^REVOLVING\b/i.test(line));
+
+  let totalBalance: number | null = null;
+  let totalActualPayment: number | null = null;
+  let totalScheduledPayment: number | null = null;
+  let totalPastDue: number | null = null;
+  let totalChargeoffs: number | null = null;
+
+  let revolvingBalance: number | null = null;
+  let revolvingCreditLimit: number | null = null;
+
+  if (grandIdx !== -1) {
+    const grandLine1 = lines[grandIdx] ?? "";
+    const grandLine2 = lines[grandIdx + 1] ?? "";
+
+    const line1Vals = [...grandLine1.matchAll(/\$([\d,]+)/g)]
+      .map((m) => safeMoney(m[1]))
+      .filter((n): n is number => n !== null);
+
+    const line2Vals = [...grandLine2.matchAll(/\$([\d,]+)/g)]
+      .map((m) => safeMoney(m[1]))
+      .filter((n): n is number => n !== null);
+
+    totalBalance = line1Vals[1] ?? null;
+    totalPastDue = line1Vals[2] ?? null;
+    totalActualPayment = line2Vals[1] ?? null;
+    totalScheduledPayment = line2Vals[2] ?? null;
+    totalChargeoffs = line2Vals[4] ?? null;
   }
 
-  const grandLine1 = lines[grandIdx] ?? "";
-  const grandLine2 = lines[grandIdx + 1] ?? "";
+  if (revolvingIdx !== -1) {
+    const revolvingLine1 = lines[revolvingIdx] ?? "";
+    const revolvingLine2 = lines[revolvingIdx + 1] ?? "";
 
-  const line1Vals = [...grandLine1.matchAll(/\$([\d,]+)/g)]
-    .map((m) => safeMoney(m[1]))
-    .filter((n): n is number => n !== null);
+    const revLine1Vals = [...revolvingLine1.matchAll(/\$([\d,]+)/g)]
+      .map((m) => safeMoney(m[1]))
+      .filter((n): n is number => n !== null);
 
-  const line2Vals = [...grandLine2.matchAll(/\$([\d,]+)/g)]
-    .map((m) => safeMoney(m[1]))
-    .filter((n): n is number => n !== null);
+    const revLine2Vals = [...revolvingLine2.matchAll(/\$([\d,]+)/g)]
+      .map((m) => safeMoney(m[1]))
+      .filter((n): n is number => n !== null);
+
+    // REVOLVING line layout:
+    // line 1: HIGH CRDT, BALANCE, ..., PAST DUE
+    // line 2: CRDT LIMIT, ACTL PYMT, SCHD PYMT, BALLOON, CHARGE OFF
+    revolvingBalance = revLine1Vals[1] ?? null;
+    revolvingCreditLimit = revLine2Vals[0] ?? null;
+  }
 
   return {
-    totalBalance: line1Vals[1] ?? null,
-    totalActualPayment: line2Vals[1] ?? null,
-    totalScheduledPayment: line2Vals[2] ?? null,
-    totalPastDue: line1Vals[2] ?? null,
-    totalChargeoffs: line2Vals[4] ?? null,
+    totalBalance,
+    totalActualPayment,
+    totalScheduledPayment,
+    totalPastDue,
+    totalChargeoffs,
+    revolvingBalance,
+    revolvingCreditLimit,
   };
 }
 
