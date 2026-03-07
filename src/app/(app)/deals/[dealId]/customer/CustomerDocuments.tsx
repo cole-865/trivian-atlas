@@ -22,6 +22,108 @@ type BureauJobStatus =
   | "failed"
   | null;
 
+type BureauReport = {
+  id: string;
+  deal_id: string;
+  latest_job_id: string | null;
+  bureau: string | null;
+  raw_bucket: string | null;
+  raw_path: string | null;
+  redacted_bucket: string | null;
+  redacted_path: string | null;
+  redacted_text: string | null;
+  created_at: string;
+  updated_at: string;
+} | null;
+
+type BureauSummary = {
+  id: string;
+  deal_id: string;
+  credit_report_id: string | null;
+  job_id: string | null;
+  bureau_source: string | null;
+  score: number | null;
+  total_tradelines: number | null;
+  open_tradelines: number | null;
+  open_auto_trade: boolean | null;
+  months_since_repo: number | null;
+  months_since_bankruptcy: number | null;
+  total_collections: number | null;
+  total_chargeoffs: number | null;
+  past_due_amount: number | null;
+  utilization_pct: number | null;
+  oldest_trade_months: number | null;
+  risk_tier: string | null;
+  max_term_months: number | null;
+  min_cash_down: number | null;
+  max_pti: number | null;
+  hard_stop: boolean | null;
+  hard_stop_reason: string | null;
+  stips: any;
+  bureau_raw: any;
+  created_at: string;
+  updated_at: string;
+} | null;
+
+type BureauTradeline = {
+  id: string;
+  creditor_name: string | null;
+  account_type: string | null;
+  account_status: string | null;
+  condition_code: string | null;
+  amount: number | null;
+  balance: number | null;
+  credit_limit: number | null;
+  monthly_payment: number | null;
+  past_due_amount: number | null;
+  high_balance: number | null;
+  opened_date: string | null;
+  last_activity_date: string | null;
+  last_payment_date: string | null;
+  no_effect: boolean | null;
+  good: boolean | null;
+  bad: boolean | null;
+  auto_repo: boolean | null;
+  unpaid_collection: boolean | null;
+  unpaid_chargeoff: boolean | null;
+  is_auto: boolean | null;
+  is_revolving: boolean | null;
+  is_installment: boolean | null;
+};
+
+type BureauPublicRecord = {
+  id: string;
+  court_name: string | null;
+  record_type: string | null;
+  plaintiff: string | null;
+  amount: number | null;
+  status: string | null;
+  filed_date: string | null;
+  resolved_date: string | null;
+  no_effect: boolean | null;
+  good: boolean | null;
+  bad: boolean | null;
+};
+
+type BureauMessage = {
+  id: string;
+  message_type: string | null;
+  code: string | null;
+  message_text: string;
+  severity: string | null;
+};
+
+type BureauDetailsResponse = {
+  ok: true;
+  report: BureauReport;
+  summary: BureauSummary;
+  tradelines: BureauTradeline[];
+  publicRecords: BureauPublicRecord[];
+  messages: BureauMessage[];
+};
+
+type ModalTab = "report" | "info" | "tradelines" | "public";
+
 export default function CustomerDocuments({
   dealId,
   onStatus,
@@ -41,10 +143,15 @@ export default function CustomerDocuments({
   const [busyType, setBusyType] = useState<DocType | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // New: bureau processing status
   const [bureauStatus, setBureauStatus] = useState<BureauJobStatus>(null);
   const [bureauError, setBureauError] = useState<string | null>(null);
   const [bureauUpdatedAt, setBureauUpdatedAt] = useState<string | null>(null);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<ModalTab>("info");
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [details, setDetails] = useState<BureauDetailsResponse | null>(null);
 
   const refreshTimer = useRef<number | null>(null);
 
@@ -74,6 +181,16 @@ export default function CustomerDocuments({
     return String(s);
   }
 
+  function cleanErrorMessage(value: unknown, fallback = "Something went wrong") {
+    if (!value) return fallback;
+    if (typeof value === "string") return value;
+    if (typeof value === "object") {
+      const v = value as any;
+      return v.details || v.error || v.message || JSON.stringify(v);
+    }
+    return String(value);
+  }
+
   async function fetchBureauStatus() {
     if (!dealId) return;
 
@@ -82,7 +199,6 @@ export default function CustomerDocuments({
       const j = await r.json();
 
       if (!r.ok) {
-        // don’t hard-fail the whole component if status endpoint isn’t ready
         setBureauStatus(null);
         setBureauError(null);
         setBureauUpdatedAt(null);
@@ -117,12 +233,9 @@ export default function CustomerDocuments({
 
       setDocs(nextDocs);
       pushStatus(nextDocs);
-
-      // pull bureau processing status (best-effort)
       await fetchBureauStatus();
     } catch (e: any) {
       setErr(e?.message || "Failed to load documents");
-      // Still push status so parent gating doesn't get stuck true
       pushStatus({ credit_app: null, credit_bureau: null });
       setDocs({ credit_app: null, credit_bureau: null });
       setBureauStatus(null);
@@ -133,9 +246,32 @@ export default function CustomerDocuments({
     }
   }
 
-  // Auto refresh bureau status while processing
+  async function loadBureauDetails(openWithTab: ModalTab = "info") {
+    setDetailsLoading(true);
+    setDetailsError(null);
+    setModalTab(openWithTab);
+    setModalOpen(true);
+
+    try {
+      const r = await fetch(`/api/deals/${dealId}/credit-bureau-details`, {
+        cache: "no-store",
+      });
+      const j = await r.json();
+
+      if (!r.ok) {
+        throw new Error(cleanErrorMessage(j, "Failed to load bureau details"));
+      }
+
+      setDetails(j as BureauDetailsResponse);
+    } catch (e: any) {
+      setDetails(null);
+      setDetailsError(e?.message || "Failed to load bureau details");
+    } finally {
+      setDetailsLoading(false);
+    }
+  }
+
   const shouldPoll = useMemo(() => {
-    // If there is no bureau doc uploaded, don’t poll.
     if (!docs.credit_bureau) return false;
     return isProcessingStatus(bureauStatus);
   }, [docs.credit_bureau, bureauStatus]);
@@ -149,7 +285,6 @@ export default function CustomerDocuments({
         refreshTimer.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
 
   useEffect(() => {
@@ -170,7 +305,7 @@ export default function CustomerDocuments({
         refreshTimer.current = null;
       }
     };
-  }, [shouldPoll]); // intentionally not including fetchBureauStatus (stable enough)
+  }, [shouldPoll]);
 
   function isPdf(file: File) {
     const name = (file.name || "").toLowerCase();
@@ -195,12 +330,12 @@ export default function CustomerDocuments({
       });
 
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.details || j?.error || "Upload failed");
+      if (!r.ok) throw new Error(cleanErrorMessage(j, "Upload failed"));
 
-      // Bureau uploads should immediately show as queued
       if (type === "credit_bureau") {
         setBureauStatus("queued");
         setBureauError(null);
+        setDetails(null);
       }
 
       await refresh();
@@ -224,13 +359,14 @@ export default function CustomerDocuments({
       });
 
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.details || j?.error || "Delete failed");
+      if (!r.ok) throw new Error(cleanErrorMessage(j, "Delete failed"));
 
-      // Reset bureau status on delete
       if (type === "credit_bureau") {
         setBureauStatus(null);
         setBureauError(null);
         setBureauUpdatedAt(null);
+        setDetails(null);
+        setModalOpen(false);
       }
 
       await refresh();
@@ -294,7 +430,7 @@ export default function CustomerDocuments({
 
         {s === "failed" && (bureauError || err) ? (
           <div style={{ color: "crimson", fontSize: 12 }}>
-            {bureauError || err}
+            {cleanErrorMessage(bureauError || err)}
           </div>
         ) : null}
 
@@ -314,6 +450,7 @@ export default function CustomerDocuments({
   function DocCard({ type }: { type: DocType }) {
     const doc = docs[type];
     const busy = busyType === type;
+    const bureauReady = type === "credit_bureau" && bureauStatus === "done";
 
     return (
       <div style={card}>
@@ -344,7 +481,6 @@ export default function CustomerDocuments({
           )}
         </div>
 
-        {/* NEW: show bureau processing status */}
         {type === "credit_bureau" ? <BureauStatusPill /> : null}
 
         <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
@@ -383,7 +519,6 @@ export default function CustomerDocuments({
             Remove
           </button>
 
-          {/* Optional: manual refresh */}
           <button
             type="button"
             style={{
@@ -397,21 +532,419 @@ export default function CustomerDocuments({
           >
             Refresh
           </button>
+
+          {type === "credit_bureau" ? (
+            <button
+              type="button"
+              style={{
+                ...btnSecondary,
+                opacity: bureauReady ? 1 : 0.6,
+                cursor: bureauReady ? "pointer" : "not-allowed",
+              }}
+              disabled={!bureauReady}
+              onClick={() => loadBureauDetails("info")}
+              title={bureauReady ? "View parsed bureau details" : "Available after processing completes"}
+            >
+              More Info
+            </button>
+          ) : null}
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <h3 style={{ margin: 0 }}>Documents</h3>
-        {err ? <span style={{ color: "crimson" }}>{err}</span> : null}
+    <>
+      <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Documents</h3>
+          {err ? <span style={{ color: "crimson" }}>{err}</span> : null}
+        </div>
+
+        <DocCard type="credit_app" />
+        <DocCard type="credit_bureau" />
       </div>
 
-      <DocCard type="credit_app" />
-      <DocCard type="credit_bureau" />
+      {modalOpen ? (
+        <BureauDetailsModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          activeTab={modalTab}
+          onTabChange={setModalTab}
+          loading={detailsLoading}
+          error={detailsError}
+          details={details}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function BureauDetailsModal({
+  open,
+  onClose,
+  activeTab,
+  onTabChange,
+  loading,
+  error,
+  details,
+}: {
+  open: boolean;
+  onClose: () => void;
+  activeTab: ModalTab;
+  onTabChange: (tab: ModalTab) => void;
+  loading: boolean;
+  error: string | null;
+  details: BureauDetailsResponse | null;
+}) {
+  if (!open) return null;
+
+  const summary = details?.summary ?? null;
+  const report = details?.report ?? null;
+  const tradelines = details?.tradelines ?? [];
+  const publicRecords = details?.publicRecords ?? [];
+  const messages = details?.messages ?? [];
+
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={modal} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>Additional Credit Info</div>
+          <div style={{ flex: 1 }} />
+          <button type="button" onClick={onClose} style={closeBtn}>
+            ×
+          </button>
+        </div>
+
+        <div style={tabBar}>
+          <TabButton label="Credit Report" active={activeTab === "report"} onClick={() => onTabChange("report")} />
+          <TabButton label="Credit Info" active={activeTab === "info"} onClick={() => onTabChange("info")} />
+          <TabButton label="Trade Line" active={activeTab === "tradelines"} onClick={() => onTabChange("tradelines")} />
+          <TabButton label="Public Record" active={activeTab === "public"} onClick={() => onTabChange("public")} />
+        </div>
+
+        <div style={modalBody}>
+          {loading ? <div>Loading bureau details…</div> : null}
+          {!loading && error ? <div style={{ color: "crimson" }}>{error}</div> : null}
+
+          {!loading && !error && activeTab === "report" ? (
+            <ReportTab report={report} messages={messages} />
+          ) : null}
+
+          {!loading && !error && activeTab === "info" ? (
+            <InfoTab summary={summary} messages={messages} />
+          ) : null}
+
+          {!loading && !error && activeTab === "tradelines" ? (
+            <TradelinesTab tradelines={tradelines} />
+          ) : null}
+
+          {!loading && !error && activeTab === "public" ? (
+            <PublicRecordsTab publicRecords={publicRecords} />
+          ) : null}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function TabButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "10px 14px",
+        border: "none",
+        borderBottom: active ? "2px solid #2563EB" : "2px solid transparent",
+        background: "transparent",
+        color: active ? "#111" : "#2563EB",
+        fontWeight: active ? 800 : 500,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function ReportTab({
+  report,
+  messages,
+}: {
+  report: BureauReport;
+  messages: BureauMessage[];
+}) {
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+        <div><b>Bureau:</b> {report?.bureau ?? "—"}</div>
+        <div><b>Report ID:</b> {report?.id ?? "—"}</div>
+      </div>
+
+      {messages.length > 0 ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: "1px solid #E5E7EB",
+                background: "#FAFAFA",
+                fontSize: 13,
+              }}
+            >
+              <b>{m.message_type ?? "note"}:</b> {m.message_text}
+              {m.code ? <span style={{ opacity: 0.65 }}> ({m.code})</span> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <pre
+        style={{
+          margin: 0,
+          whiteSpace: "pre-wrap",
+          fontSize: 12,
+          lineHeight: 1.5,
+          background: "#F8FAFC",
+          border: "1px solid #E5E7EB",
+          borderRadius: 12,
+          padding: 14,
+          maxHeight: 420,
+          overflow: "auto",
+        }}
+      >
+        {report?.redacted_text || "No redacted report text available."}
+      </pre>
+    </div>
+  );
+}
+
+function InfoTab({
+  summary,
+  messages,
+}: {
+  summary: BureauSummary;
+  messages: BureauMessage[];
+}) {
+  const scoreFactors = messages.filter((m) => m.message_type === "score_factor");
+  const alerts = messages.filter((m) => m.message_type !== "score_factor");
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={sectionCard}>
+          <div style={sectionTitle}>Auto Scored Information</div>
+          <InfoRow label="Score" value={summary?.score} />
+          <InfoRow label="Total Tradelines" value={summary?.total_tradelines} />
+          <InfoRow label="Open Tradelines" value={summary?.open_tradelines} />
+          <InfoRow label="Open Auto Trade" value={yesNo(summary?.open_auto_trade)} />
+          <InfoRow label="Total Collections" value={money(summary?.total_collections)} />
+          <InfoRow label="Total Chargeoffs" value={money(summary?.total_chargeoffs)} />
+          <InfoRow label="Past Due Amount" value={money(summary?.past_due_amount)} />
+        </div>
+
+        <div style={sectionCard}>
+          <div style={sectionTitle}>Credit Information</div>
+          <InfoRow label="Utilization" value={pct(summary?.utilization_pct)} />
+          <InfoRow label="Oldest Trade" value={months(summary?.oldest_trade_months)} />
+          <InfoRow label="Months Since Repo" value={months(summary?.months_since_repo)} />
+          <InfoRow label="Months Since Bankruptcy" value={months(summary?.months_since_bankruptcy)} />
+          <InfoRow label="Risk Tier" value={summary?.risk_tier ?? "—"} />
+          <InfoRow label="Hard Stop" value={yesNo(summary?.hard_stop)} />
+          <InfoRow label="Hard Stop Reason" value={summary?.hard_stop_reason ?? "—"} />
+        </div>
+      </div>
+
+      {alerts.length > 0 ? (
+        <div style={sectionCard}>
+          <div style={sectionTitle}>Alerts / Notes</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {alerts.map((m) => (
+              <div key={m.id} style={{ fontSize: 13 }}>
+                <b>{m.message_type ?? "note"}:</b> {m.message_text}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {scoreFactors.length > 0 ? (
+        <div style={sectionCard}>
+          <div style={sectionTitle}>Score Factors</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {scoreFactors.map((m) => (
+              <div key={m.id} style={{ fontSize: 13 }}>
+                • {m.message_text}
+                {m.code ? <span style={{ opacity: 0.65 }}> ({m.code})</span> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TradelinesTab({ tradelines }: { tradelines: BureauTradeline[] }) {
+  if (!tradelines.length) {
+    return <div>No tradelines available.</div>;
+  }
+
+  return (
+    <div style={{ overflow: "auto", maxHeight: 480, border: "1px solid #E5E7EB", borderRadius: 12 }}>
+      <table style={table}>
+        <thead>
+          <tr>
+            <Th>Creditor</Th>
+            <Th>Type</Th>
+            <Th>Status</Th>
+            <Th>Amount</Th>
+            <Th>No Effect</Th>
+            <Th>Good</Th>
+            <Th>Bad</Th>
+            <Th>Auto Repo</Th>
+            <Th>Unpaid Coll</Th>
+            <Th>Unpaid Charge Off</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {tradelines.map((t) => (
+            <tr key={t.id}>
+              <Td>{t.creditor_name ?? "—"}</Td>
+              <Td>{t.account_type ?? "—"}</Td>
+              <Td>{t.account_status ?? "—"}</Td>
+              <Td>{money(t.amount ?? t.balance)}</Td>
+              <Td>{check(t.no_effect)}</Td>
+              <Td>{check(t.good)}</Td>
+              <Td>{check(t.bad)}</Td>
+              <Td>{check(t.auto_repo)}</Td>
+              <Td>{check(t.unpaid_collection)}</Td>
+              <Td>{check(t.unpaid_chargeoff)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PublicRecordsTab({
+  publicRecords,
+}: {
+  publicRecords: BureauPublicRecord[];
+}) {
+  if (!publicRecords.length) {
+    return <div>No records available.</div>;
+  }
+
+  return (
+    <div style={{ overflow: "auto", maxHeight: 480, border: "1px solid #E5E7EB", borderRadius: 12 }}>
+      <table style={table}>
+        <thead>
+          <tr>
+            <Th>Court Name</Th>
+            <Th>Type</Th>
+            <Th>Plaintiff</Th>
+            <Th>Amount</Th>
+            <Th>Status</Th>
+            <Th>No Effect</Th>
+            <Th>Good</Th>
+            <Th>Bad</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {publicRecords.map((r) => (
+            <tr key={r.id}>
+              <Td>{r.court_name ?? "—"}</Td>
+              <Td>{r.record_type ?? "—"}</Td>
+              <Td>{r.plaintiff ?? "—"}</Td>
+              <Td>{money(r.amount)}</Td>
+              <Td>{r.status ?? "—"}</Td>
+              <Td>{check(r.no_effect)}</Td>
+              <Td>{check(r.good)}</Td>
+              <Td>{check(r.bad)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}>
+      <div>{label}</div>
+      <div style={{ fontWeight: 700, textAlign: "right" }}>{value ?? "—"}</div>
+    </div>
+  );
+}
+
+function money(v: number | null | undefined) {
+  if (v === null || v === undefined) return "—";
+  return `$${Number(v).toLocaleString()}`;
+}
+
+function pct(v: number | null | undefined) {
+  if (v === null || v === undefined) return "—";
+  return `${v}%`;
+}
+
+function months(v: number | null | undefined) {
+  if (v === null || v === undefined) return "—";
+  return `${v} mo`;
+}
+
+function yesNo(v: boolean | null | undefined) {
+  if (v === null || v === undefined) return "—";
+  return v ? "Yes" : "No";
+}
+
+function check(v: boolean | null | undefined) {
+  if (v === null || v === undefined) return "";
+  return v ? "✓" : "";
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th
+      style={{
+        textAlign: "left",
+        padding: "10px 12px",
+        borderBottom: "1px solid #E5E7EB",
+        fontSize: 12,
+        background: "#F9FAFB",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({ children }: { children: React.ReactNode }) {
+  return (
+    <td
+      style={{
+        padding: "10px 12px",
+        borderBottom: "1px solid #F1F5F9",
+        fontSize: 13,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </td>
   );
 }
 
@@ -449,4 +982,69 @@ const btnDanger: React.CSSProperties = {
   background: "#fff",
   color: "crimson",
   fontWeight: 800,
+};
+
+const overlay: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.35)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 9999,
+  padding: 24,
+};
+
+const modal: React.CSSProperties = {
+  width: "min(1100px, 96vw)",
+  maxHeight: "88vh",
+  overflow: "hidden",
+  background: "#fff",
+  borderRadius: 16,
+  border: "1px solid #E5E7EB",
+  boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+  display: "flex",
+  flexDirection: "column",
+  padding: 18,
+};
+
+const closeBtn: React.CSSProperties = {
+  border: "none",
+  background: "transparent",
+  fontSize: 28,
+  lineHeight: 1,
+  cursor: "pointer",
+  color: "#666",
+};
+
+const tabBar: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
+  borderBottom: "1px solid #E5E7EB",
+  marginTop: 10,
+};
+
+const modalBody: React.CSSProperties = {
+  paddingTop: 16,
+  overflow: "auto",
+};
+
+const sectionCard: React.CSSProperties = {
+  border: "1px solid #E5E7EB",
+  borderRadius: 12,
+  padding: 14,
+  display: "grid",
+  gap: 10,
+};
+
+const sectionTitle: React.CSSProperties = {
+  fontWeight: 900,
+  fontSize: 14,
+  marginBottom: 4,
+};
+
+const table: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
 };
