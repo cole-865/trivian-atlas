@@ -892,24 +892,22 @@ function detectIsAuto(
 ): boolean {
   const combined = `${creditorName ?? ""} ${accountType ?? ""} ${block}`.toLowerCase();
 
-  return [
-    "auto",
-    "motor",
-    "vehicle",
-    "car",
-    "truck",
-    "rv",
-    "westlake",
-    "ally",
-    "road auto",
-    "consumer portfolio",
-    "global lending",
-    "capital one auto",
-    "carolina",
-    "865 autos",
-    "ford credit",
-    "gm financial",
-  ].some((term) => combined.includes(term));
+return [
+  "auto finance",
+  "auto loan",
+  "motor vehicle",
+  "vehicle loan",
+  "car loan",
+  "truck loan",
+  "westlake",
+  "ally financial",
+  "gm financial",
+  "ford credit",
+  "capital one auto",
+  "consumer portfolio",
+  "road auto",
+  "credit acceptance",
+].some((term) => combined.includes(term));
 }
 
 function extractPaymentHistoryDigits(block: string): string {
