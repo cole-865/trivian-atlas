@@ -72,6 +72,11 @@ export type BureauSummaryParsed = {
   utilization_pct: number | null;
   oldest_trade_months: number | null;
 
+  autos_on_bureau: number | null;
+  open_auto_trades: number | null;
+  paid_auto_trades: number | null;
+  repo_count: number | null;
+
   risk_tier: string | null;
   max_term_months: number | null;
   min_cash_down: number | null;
@@ -148,20 +153,18 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
 
   const tradelines = [...collectionTradelines, ...paymentTradelines];
 
+  const autosOnBureau = countAutoTrades(tradelines);
+  const openAutoTrades = countOpenAutoTrades(tradelines);
+  const paidAutoTrades = countPaidAutoTrades(tradelines);
+  const repoCount = countRepos(tradelines);
+
   const summary: BureauSummaryParsed = {
     bureau_source: "equifax",
     score: scoreInfo.score,
     total_tradelines:
       summaryInfo.totalTradelines ?? (tradelines.length > 0 ? tradelines.length : null),
     open_tradelines: countOpenTradelines(tradelines),
-    open_auto_trade: tradelines.some(
-  (t) =>
-    t.is_auto &&
-    !looksClosed(t) &&
-    t.account_status !== "repo" &&
-    t.account_status !== "charged_off" &&
-    t.account_status !== "paid_chargeoff"
-),
+    open_auto_trade: openAutoTrades > 0,
     months_since_repo: deriveMonthsSinceRepo(tradelines),
     months_since_bankruptcy: deriveMonthsSinceBankruptcy(publicRecords),
     total_collections: sumCollectionBalances(tradelines),
@@ -169,6 +172,11 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
     past_due_amount: paymentSummary.totalPastDue,
     utilization_pct: deriveUtilizationPct(tradelines),
     oldest_trade_months: deriveOldestTradeMonths(tradelines, summaryInfo.fileSinceDate),
+
+    autos_on_bureau: autosOnBureau,
+    open_auto_trades: openAutoTrades,
+    paid_auto_trades: paidAutoTrades,
+    repo_count: repoCount,
 
     risk_tier: null,
     max_term_months: null,
@@ -696,6 +704,33 @@ function parseMessages(
 function countOpenTradelines(tradelines: BureauTradelineRow[]): number | null {
   if (!tradelines.length) return null;
   return tradelines.filter((t) => !looksClosed(t)).length;
+}
+
+function countAutoTrades(tradelines: BureauTradelineRow[]): number {
+  return tradelines.filter((t) => t.is_auto).length;
+}
+
+function countOpenAutoTrades(tradelines: BureauTradelineRow[]): number {
+  return tradelines.filter(
+    (t) =>
+      t.is_auto &&
+      !looksClosed(t) &&
+      t.account_status !== "repo" &&
+      t.account_status !== "charged_off" &&
+      t.account_status !== "paid_chargeoff"
+  ).length;
+}
+
+function countPaidAutoTrades(tradelines: BureauTradelineRow[]): number {
+  return tradelines.filter(
+    (t) =>
+      t.is_auto &&
+      (t.account_status === "paid_closed" || looksClosed(t))
+  ).length;
+}
+
+function countRepos(tradelines: BureauTradelineRow[]): number {
+  return tradelines.filter((t) => t.is_auto && t.auto_repo).length;
 }
 
 function looksClosed(t: BureauTradelineRow): boolean {

@@ -53,6 +53,10 @@ type BureauSummary = {
   past_due_amount: number | null;
   utilization_pct: number | null;
   oldest_trade_months: number | null;
+  autos_on_bureau: number | null;
+  open_auto_trades: number | null;
+  paid_auto_trades: number | null;
+  repo_count: number | null;
   risk_tier: string | null;
   max_term_months: number | null;
   min_cash_down: number | null;
@@ -758,6 +762,10 @@ function InfoTab({
           <div style={sectionTitle}>Credit Information</div>
           <InfoRow label="Utilization" value={pct(summary?.utilization_pct)} />
           <InfoRow label="Oldest Trade" value={months(summary?.oldest_trade_months)} />
+          <InfoRow label="Autos on Bureau" value={summary?.autos_on_bureau} />
+          <InfoRow label="Open Autos" value={summary?.open_auto_trades} />
+          <InfoRow label="Paid Autos" value={summary?.paid_auto_trades} />
+          <InfoRow label="Number of Repos" value={summary?.repo_count} />
           <InfoRow label="Months Since Repo" value={months(summary?.months_since_repo)} />
           <InfoRow label="Months Since Bankruptcy" value={months(summary?.months_since_bankruptcy)} />
           <InfoRow label="Risk Tier" value={summary?.risk_tier ?? "—"} />
