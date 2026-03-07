@@ -154,7 +154,14 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
     total_tradelines:
       summaryInfo.totalTradelines ?? (tradelines.length > 0 ? tradelines.length : null),
     open_tradelines: countOpenTradelines(tradelines),
-    open_auto_trade: tradelines.some((t) => t.is_auto && !looksClosed(t)),
+    open_auto_trade: tradelines.some(
+  (t) =>
+    t.is_auto &&
+    !looksClosed(t) &&
+    t.account_status !== "repo" &&
+    t.account_status !== "charged_off" &&
+    t.account_status !== "paid_chargeoff"
+),
     months_since_repo: deriveMonthsSinceRepo(tradelines),
     months_since_bankruptcy: deriveMonthsSinceBankruptcy(publicRecords),
     total_collections: sumCollectionBalances(tradelines),
