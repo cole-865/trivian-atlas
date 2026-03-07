@@ -1,10 +1,6 @@
 // services/credit-worker/src/parseEquifax.ts
 //
 // Deterministic parser for Equifax-style text reports used by Atlas.
-// Conservative by design:
-// - parse what is clearly present
-// - avoid fake precision
-// - preserve raw blocks for debugging / future parser improvements
 
 export type BureauMessageRow = {
   message_type: string | null;
@@ -130,14 +126,25 @@ type PaymentSummaryInfo = {
   totalScheduledPayment: number | null;
   totalPastDue: number | null;
   totalChargeoffs: number | null;
-
   revolvingBalance: number | null;
   revolvingCreditLimit: number | null;
 };
+
 type InquiryRow = {
   inquiry_date: string | null;
   subscriber_code: string | null;
   subscriber_name: string | null;
+};
+
+type ParsedDateLine = {
+  date: string | null;
+  firstMoney: number | null;
+  secondFieldDate: string | null;
+};
+
+type ParsedMoneyOnlyLine = {
+  rawParts: string[];
+  moneysByPosition: Array<number | null>;
 };
 
 export function parseEquifaxReport(input: string): ParsedEquifaxReport {
@@ -160,6 +167,13 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
   const paidAutoTrades = countPaidAutoTrades(tradelines);
   const repoCount = countRepos(tradelines);
 
+  const utilizationPct =
+    paymentSummary.revolvingBalance !== null &&
+    paymentSummary.revolvingCreditLimit !== null &&
+    paymentSummary.revolvingCreditLimit > 0
+      ? round2((paymentSummary.revolvingBalance / paymentSummary.revolvingCreditLimit) * 100)
+      : deriveUtilizationPct(tradelines);
+
   const summary: BureauSummaryParsed = {
     bureau_source: "equifax",
     score: scoreInfo.score,
@@ -172,12 +186,7 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
     total_collections: sumCollectionBalances(tradelines),
     total_chargeoffs: paymentSummary.totalChargeoffs,
     past_due_amount: paymentSummary.totalPastDue,
-    utilization_pct:
-  paymentSummary.revolvingBalance !== null &&
-  paymentSummary.revolvingCreditLimit !== null &&
-  paymentSummary.revolvingCreditLimit > 0
-    ? round2((paymentSummary.revolvingBalance / paymentSummary.revolvingCreditLimit) * 100)
-    : deriveUtilizationPct(tradelines),
+    utilization_pct: utilizationPct,
     oldest_trade_months: deriveOldestTradeMonths(tradelines, summaryInfo.fileSinceDate),
 
     autos_on_bureau: autosOnBureau,
@@ -444,14 +453,17 @@ function parseTradelineBlock(block: string): BureauTradelineRow | null {
 
   const balance = firstDateLine?.firstMoney ?? null;
   const highBalance = secondDateLine?.firstMoney ?? null;
+  const amount = secondDateLine?.firstMoney ?? null;
+
   const lastActivityDate = firstDateLine?.secondFieldDate ?? null;
   const openedDate = secondDateLine?.date ?? null;
   const lastPaymentDate = secondDateLine?.secondFieldDate ?? null;
 
-  const payments = moneyOnlyLine?.moneys ?? [];
-  const monthlyPayment = payments.length >= 2 ? payments[1] : payments.length >= 1 ? payments[0] : null;
-  const creditLimit = extractCreditLimit(block);
-  const chargeOffFromText = extractChargeOffAmount(block);
+  const actualPayment = moneyOnlyLine?.moneysByPosition?.[2] ?? null;
+  const scheduledPayment = moneyOnlyLine?.moneysByPosition?.[3] ?? null;
+
+  const creditLimit = extractCreditLimit(block, moneyOnlyLine);
+  const chargeOffFromText = extractChargeOffAmount(block, moneyOnlyLine);
   const pastDueAmount = extractPastDueAmount(block);
 
   const noEffect = /no effect/i.test(block);
@@ -507,10 +519,10 @@ function parseTradelineBlock(block: string): BureauTradelineRow | null {
     account_status: accountStatus,
     condition_code: conditionMatch ? conditionMatch[1] : null,
 
-    amount: highBalance,
+    amount,
     balance,
     credit_limit: creditLimit,
-    monthly_payment: monthlyPayment,
+    monthly_payment: scheduledPayment ?? actualPayment,
     past_due_amount: pastDueAmount,
     high_balance: highBalance,
 
@@ -536,6 +548,8 @@ function parseTradelineBlock(block: string): BureauTradelineRow | null {
       pastDueAmount,
       paidClosed,
       paidChargeoff,
+      actualPayment,
+      scheduledPayment,
     },
   };
 }
@@ -601,9 +615,6 @@ function parsePaymentSummary(section: string): PaymentSummaryInfo {
       .map((m) => safeMoney(m[1]))
       .filter((n): n is number => n !== null);
 
-    // REVOLVING line layout:
-    // line 1: HIGH CRDT, BALANCE, ..., PAST DUE
-    // line 2: CRDT LIMIT, ACTL PYMT, SCHD PYMT, BALLOON, CHARGE OFF
     revolvingBalance = revLine1Vals[1] ?? null;
     revolvingCreditLimit = revLine2Vals[0] ?? null;
   }
@@ -762,9 +773,7 @@ function countOpenAutoTrades(tradelines: BureauTradelineRow[]): number {
 
 function countPaidAutoTrades(tradelines: BureauTradelineRow[]): number {
   return tradelines.filter(
-    (t) =>
-      t.is_auto &&
-      (t.account_status === "paid_closed" || looksClosed(t))
+    (t) => t.is_auto && (t.account_status === "paid_closed" || looksClosed(t))
   ).length;
 }
 
@@ -779,7 +788,6 @@ function looksClosed(t: BureauTradelineRow): boolean {
   return (
     status === "paid_closed" ||
     status === "paid_chargeoff" ||
-    status.includes("paid_closed") ||
     raw.includes("paid and c!") ||
     raw.includes("paid and closed") ||
     raw.includes("paid charge off")
@@ -893,10 +901,7 @@ function isTradelineHeader(line: string): boolean {
   return /^.{3,}\/[A-Z0-9*]{5,}\s+[A-Z0-9]{2}\s+/.test(line);
 }
 
-function findDateLine(
-  lines: string[],
-  occurrence: number
-): { date: string | null; firstMoney: number | null; secondFieldDate: string | null } | null {
+function findDateLine(lines: string[], occurrence: number): ParsedDateLine | null {
   let count = 0;
 
   for (const line of lines) {
@@ -910,28 +915,22 @@ function findDateLine(
     const firstMoney = safeMoney(stripDollar(parts[1] ?? ""));
     const secondFieldDate = normalizeDate(parts[2] ?? "");
 
-    return {
-      date,
-      firstMoney,
-      secondFieldDate,
-    };
+    return { date, firstMoney, secondFieldDate };
   }
 
   return null;
 }
 
-function findMoneyOnlyLine(lines: string[]): { moneys: number[] } | null {
+function findMoneyOnlyLine(lines: string[]): ParsedMoneyOnlyLine | null {
   for (const line of lines) {
     if (!line.includes("!")) continue;
     if (/^\d{2}\/\d{2}\/\d{4}!/.test(line)) continue;
 
-    const parts = line.split("!").map((s) => s.trim());
-    const nums = parts
-      .map((p) => safeMoney(stripDollar(p)))
-      .filter((n): n is number => n !== null);
+    const rawParts = line.split("!").map((s) => s.trim());
+    const moneysByPosition = rawParts.map((p) => safeMoney(stripDollar(p)));
 
-    if (nums.length >= 1) {
-      return { moneys: nums };
+    if (moneysByPosition.some((v) => v !== null)) {
+      return { rawParts, moneysByPosition };
     }
   }
 
@@ -1041,17 +1040,12 @@ function extractPaymentHistoryDigits(block: string): string {
   return match ? match[1] : "";
 }
 
-function extractChargeOffAmount(block: string): number | null {
-  const lines = block.split("\n").map((s) => s.trim());
-
-  for (const line of lines) {
-    if (!line.includes("!")) continue;
-    if (/^\d{2}\/\d{2}\/\d{4}!/.test(line)) continue;
-
-    const parts = line.split("!").map((s) => s.trim());
-    const chargeOff = safeMoney(stripDollar(parts[5] ?? ""));
-    if (chargeOff !== null) return chargeOff;
-  }
+function extractChargeOffAmount(
+  block: string,
+  moneyOnlyLine: ParsedMoneyOnlyLine | null
+): number | null {
+  const fromMoneyLine = moneyOnlyLine?.moneysByPosition?.[5] ?? null;
+  if (fromMoneyLine !== null) return fromMoneyLine;
 
   if (/paid charge off/i.test(block)) {
     const match = block.match(/\$([\d,]+)/);
@@ -1061,19 +1055,11 @@ function extractChargeOffAmount(block: string): number | null {
   return null;
 }
 
-function extractCreditLimit(block: string): number | null {
-  const lines = block.split("\n").map((s) => s.trim());
-
-  for (const line of lines) {
-    if (!line.includes("!")) continue;
-    if (/^\d{2}\/\d{2}\/\d{4}!/.test(line)) continue;
-
-    const parts = line.split("!").map((s) => s.trim());
-    const maybeLimit = safeMoney(stripDollar(parts[1] ?? ""));
-    if (maybeLimit !== null && maybeLimit > 0) return maybeLimit;
-  }
-
-  return null;
+function extractCreditLimit(
+  _block: string,
+  moneyOnlyLine: ParsedMoneyOnlyLine | null
+): number | null {
+  return moneyOnlyLine?.moneysByPosition?.[1] ?? null;
 }
 
 function extractPastDueAmount(block: string): number | null {
