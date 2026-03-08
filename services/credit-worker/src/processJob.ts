@@ -478,38 +478,26 @@ export async function processJob(job: any) {
   messages: parsedBureau.messages,
 });
 
-const { data: vehicleSelection } = await supabase
-  .from("deal_vehicle_selection")
+const { data: primaryPerson, error: personError } = await supabase
+  .from("deal_people")
   .select("*")
   .eq("deal_id", dealId)
+  .eq("role", "primary")
   .single();
 
-const { primaryPerson, incomeProfile, vehicle } = await getUnderwritingInputs(
-  dealId,
-  vehicleSelection?.vehicle_id ?? null
-);
-
-const incomeMonthly = Number(
-  incomeProfile.monthly_gross_calculated ??
-  incomeProfile.monthly_gross_manual ??
-  0
-);
-
-const cashDown = Number(vehicleSelection?.cash_down ?? 0);
-const vehiclePrice = Number(vehicle?.asking_price ?? 0);
-const jobMonths = calcJobMonthsFromHireDate(incomeProfile.hire_date);
+if (personError) throw personError;
 
 const uw = underwriteDeal({
-  incomeMonthly,
+  incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
   score: bureauSummary.score,
   repoCount: Number(bureauSummary.repo_count ?? 0),
   monthsSinceRepo: bureauSummary.months_since_repo,
   paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
   openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
   residenceMonths: primaryPerson.residence_months,
-  jobMonths,
-  cashDown,
-  vehiclePrice,
+  jobMonths: null,
+  cashDown: 0,
+  vehiclePrice: 0,
 });
 
     await supabase

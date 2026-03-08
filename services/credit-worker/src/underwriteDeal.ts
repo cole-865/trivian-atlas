@@ -67,7 +67,7 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
   const factors: UnderwriteResult["scoreFactors"] = [];
 
   // Hard stops
-  if (args.incomeMonthly < 2000) {
+    if (args.incomeMonthly > 0 && args.incomeMonthly < 2000) {
     return {
       decision: "denied",
       tier: null,

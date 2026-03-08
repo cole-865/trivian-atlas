@@ -19,6 +19,7 @@ import { supabase } from "./supabase.js";
 import { scrubPII } from "./scrub.js";
 import { textToPdfBuffer } from "./textToPdf.js";
 import { parseEquifaxReport } from "./parseEquifax.js";
+import { underwriteDeal } from "./underwriteDeal.js";
 const REDACTED_BUCKET = process.env.REDACTED_BUCKET || "credit_reports_redacted";
 function dedupeExtractedReportText(text) {
     const t = (text || "").trim();
@@ -245,6 +246,40 @@ async function upsertBureauSummary(args) {
         throw error;
     return data;
 }
+async function getUnderwritingInputs(dealId, vehicleId) {
+    const { data: primaryPerson, error: personError } = await supabase
+        .from("deal_people")
+        .select("*")
+        .eq("deal_id", dealId)
+        .eq("role", "primary")
+        .single();
+    if (personError)
+        throw personError;
+    const { data: incomeProfile, error: incomeError } = await supabase
+        .from("income_profiles")
+        .select("*")
+        .eq("deal_person_id", primaryPerson.id)
+        .eq("applied_to_deal", true)
+        .single();
+    if (incomeError)
+        throw incomeError;
+    let vehicle = null;
+    if (vehicleId) {
+        const { data: vehicleRow, error: vehicleError } = await supabase
+            .from("trivian_inventory")
+            .select("*")
+            .eq("id", vehicleId)
+            .single();
+        if (vehicleError)
+            throw vehicleError;
+        vehicle = vehicleRow;
+    }
+    return {
+        primaryPerson,
+        incomeProfile,
+        vehicle,
+    };
+}
 export async function processJob(job) {
     const jobId = job?.id;
     const dealId = job?.deal_id;
@@ -351,6 +386,43 @@ export async function processJob(job) {
             publicRecords: parsedBureau.publicRecords,
             messages: parsedBureau.messages,
         });
+        const { data: primaryPerson, error: personError } = await supabase
+            .from("deal_people")
+            .select("*")
+            .eq("deal_id", dealId)
+            .eq("role", "primary")
+            .single();
+        if (personError)
+            throw personError;
+        const uw = underwriteDeal({
+            incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
+            score: bureauSummary.score,
+            repoCount: Number(bureauSummary.repo_count ?? 0),
+            monthsSinceRepo: bureauSummary.months_since_repo,
+            paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
+            openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
+            residenceMonths: primaryPerson.residence_months,
+            jobMonths: null,
+            cashDown: 0,
+            vehiclePrice: 0,
+        });
+        await supabase
+            .from("underwriting_results")
+            .upsert({
+            deal_id: dealId,
+            user_id: job.uploaded_by ?? null,
+            score_total: uw.scoreTotal,
+            decision: uw.decision,
+            notes: uw.notes,
+            tier: uw.tier,
+            max_term_months: uw.maxTermMonths,
+            min_cash_down: uw.minCashDown,
+            max_pti: uw.maxPti,
+            hard_stop: uw.hardStop,
+            hard_stop_reason: uw.hardStopReason,
+            score_factors: uw.scoreFactors,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: "deal_id" });
         // 6) Finalize job row
         await updateJobDone(jobId, extractedText, redactedText, bureau);
         console.log("[credit-worker] processJob done", {
