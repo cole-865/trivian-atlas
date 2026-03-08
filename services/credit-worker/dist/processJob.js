@@ -222,7 +222,10 @@ async function upsertBureauSummary(args) {
         past_due_amount: s.past_due_amount,
         utilization_pct: s.utilization_pct,
         oldest_trade_months: s.oldest_trade_months,
-        // leave underwriting outputs null for now unless parser/scoring fills them later
+        autos_on_bureau: s.autos_on_bureau,
+        open_auto_trades: s.open_auto_trades,
+        paid_auto_trades: s.paid_auto_trades,
+        repo_count: s.repo_count,
         risk_tier: s.risk_tier,
         max_term_months: s.max_term_months,
         min_cash_down: s.min_cash_down,

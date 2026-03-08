@@ -20,6 +20,7 @@ import { supabase } from "./supabase.js";
 import { scrubPII } from "./scrub.js";
 import { textToPdfBuffer } from "./textToPdf.js";
 import { parseEquifaxReport } from "./parseEquifax.js";
+import { underwriteDeal, calcJobMonthsFromHireDate } from "./underwriteDeal.js";
 
 const REDACTED_BUCKET = process.env.REDACTED_BUCKET || "credit_reports_redacted";
 

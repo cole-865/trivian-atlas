@@ -15,14 +15,14 @@
 // Optional:
 //   WORKER_ID=credit-worker-1
 //   CATCHUP_LIMIT=25
-//   CATCHUP_INTERVAL_MS=60000
+//   CATCHUP_INTERVAL_MS=5000
 import dotenv from "dotenv";
 dotenv.config({ path: ".env" });
 import { supabase } from "./supabase.js";
 import { processJob } from "./processJob.js";
 const WORKER_ID = process.env.WORKER_ID || "credit-worker-1";
 const CATCHUP_LIMIT = Number(process.env.CATCHUP_LIMIT || "25");
-const CATCHUP_INTERVAL_MS = Number(process.env.CATCHUP_INTERVAL_MS || "60000");
+const CATCHUP_INTERVAL_MS = Number(process.env.CATCHUP_INTERVAL_MS || "5000");
 // Prevent duplicate processing bursts (INSERT + UPDATE can both fire)
 const inFlight = new Set();
 console.log("[credit-worker] boot", new Date().toISOString());

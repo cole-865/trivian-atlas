@@ -1,16 +1,6 @@
 // services/credit-worker/src/parseEquifax.ts
 //
 // Deterministic parser for Equifax-style text reports used by Atlas.
-// This parser is intentionally conservative:
-// - extract what is clearly present
-// - avoid inventing values
-// - keep raw blocks for debugging
-//
-// It is designed to feed:
-// - bureau_summary
-// - bureau_tradelines
-// - bureau_public_records
-// - bureau_messages
 export function parseEquifaxReport(input) {
     const normalized = normalizeReportText(input);
     const sections = splitEquifaxSections(normalized);
@@ -23,19 +13,32 @@ export function parseEquifaxReport(input) {
     const publicRecords = parsePublicRecords(sections.reportSummary ?? "", normalized);
     const messages = parseMessages(normalized, sections.identityAlert ?? "", scoreInfo);
     const tradelines = [...collectionTradelines, ...paymentTradelines];
+    const autosOnBureau = countAutoTrades(tradelines);
+    const openAutoTrades = countOpenAutoTrades(tradelines);
+    const paidAutoTrades = countPaidAutoTrades(tradelines);
+    const repoCount = countRepos(tradelines);
+    const utilizationPct = paymentSummary.revolvingBalance !== null &&
+        paymentSummary.revolvingCreditLimit !== null &&
+        paymentSummary.revolvingCreditLimit > 0
+        ? round2((paymentSummary.revolvingBalance / paymentSummary.revolvingCreditLimit) * 100)
+        : deriveUtilizationPct(tradelines);
     const summary = {
         bureau_source: "equifax",
         score: scoreInfo.score,
         total_tradelines: summaryInfo.totalTradelines ?? (tradelines.length > 0 ? tradelines.length : null),
         open_tradelines: countOpenTradelines(tradelines),
-        open_auto_trade: tradelines.some((t) => t.is_auto && !looksClosed(t)),
+        open_auto_trade: openAutoTrades > 0,
         months_since_repo: deriveMonthsSinceRepo(tradelines),
         months_since_bankruptcy: deriveMonthsSinceBankruptcy(publicRecords),
         total_collections: sumCollectionBalances(tradelines),
         total_chargeoffs: paymentSummary.totalChargeoffs,
         past_due_amount: paymentSummary.totalPastDue,
-        utilization_pct: deriveUtilizationPct(tradelines),
+        utilization_pct: utilizationPct,
         oldest_trade_months: deriveOldestTradeMonths(tradelines, summaryInfo.fileSinceDate),
+        autos_on_bureau: autosOnBureau,
+        open_auto_trades: openAutoTrades,
+        paid_auto_trades: paidAutoTrades,
+        repo_count: repoCount,
         risk_tier: null,
         max_term_months: null,
         min_cash_down: null,
@@ -68,7 +71,6 @@ export function normalizeReportText(input) {
     text = text.replace(/[ \t]+\n/g, "\n");
     text = text.replace(/[ \t]{2,}/g, " ");
     text = text.replace(/\n{3,}/g, "\n\n");
-    // Remove duplicated extracted report copy if header repeats
     const eqHeader = "Equifax-Style Report Generated from Equifax v6 Data";
     const first = text.indexOf(eqHeader);
     if (first !== -1) {
@@ -100,12 +102,19 @@ function splitEquifaxSections(text) {
         paymentPractice: getSection(text, "PAYMENT PRACTICE", [
             "PAYMENT SUMMARY",
             "INQUIRY INFORMATION",
+            "EMPLOYMENT INFORMATION",
+            "CONSUMER REFERRAL INFORMATION",
         ]),
         paymentSummary: getSection(text, "PAYMENT SUMMARY", [
             "INQUIRY INFORMATION",
+            "EMPLOYMENT INFORMATION",
             "CONSUMER REFERRAL INFORMATION",
         ]),
         inquiryInformation: getSection(text, "INQUIRY INFORMATION", [
+            "EMPLOYMENT INFORMATION",
+            "CONSUMER REFERRAL INFORMATION",
+        ]),
+        employmentInformation: getSection(text, "EMPLOYMENT INFORMATION", [
             "CONSUMER REFERRAL INFORMATION",
         ]),
         consumerReferralInformation: getSection(text, "CONSUMER REFERRAL INFORMATION", []),
@@ -176,7 +185,7 @@ function parseCollections(section) {
         const assgnMatch = block.match(/ASSGN:\s*([0-9/.*]+)/i);
         return {
             creditor_name: clientMatch ? clientMatch[1].trim() : null,
-            account_type: classMatch ? classMatch[1].trim() : "collection",
+            account_type: classMatch ? normalizeCollectionClass(classMatch[1].trim()) : "Collection",
             account_status: statusMatch ? statusMatch[1].trim() : "collection",
             condition_code: null,
             amount: amountMatch ? safeMoney(amountMatch[1]) : null,
@@ -237,9 +246,12 @@ function parseTradelineBlock(block) {
     const header = lines[0];
     const creditorMatch = header.match(/^(.+?)\/[A-Z0-9*]+/);
     const conditionMatch = header.match(/\*\s+([A-Z0-9]{2})\s+/);
-    const creditorName = creditorMatch ? creditorMatch[1].trim() : header.trim();
-    if (!creditorName || creditorName === "-")
+    let creditorName = creditorMatch ? creditorMatch[1].trim() : header.trim();
+    if (!creditorName)
         return null;
+    if (/^-+\s*$/.test(creditorName) || creditorName.replace(/-/g, "").trim() === "") {
+        creditorName = detectSyntheticCreditorName(block) ?? creditorName;
+    }
     const firstDateLine = findDateLine(lines, 1);
     const secondDateLine = findDateLine(lines, 2);
     const moneyOnlyLine = findMoneyOnlyLine(lines);
@@ -247,50 +259,55 @@ function parseTradelineBlock(block) {
     const accountStatus = detectAccountStatus(block);
     const balance = firstDateLine?.firstMoney ?? null;
     const highBalance = secondDateLine?.firstMoney ?? null;
+    const amount = secondDateLine?.firstMoney ?? null;
     const lastActivityDate = firstDateLine?.secondFieldDate ?? null;
     const openedDate = secondDateLine?.date ?? null;
     const lastPaymentDate = secondDateLine?.secondFieldDate ?? null;
-    const payments = moneyOnlyLine?.moneys ?? [];
-    const monthlyPayment = payments.length >= 1 ? payments[0] : null;
-    const scheduledPayment = payments.length >= 2 ? payments[1] : null;
-    const chargeOffFromText = extractChargeOffAmount(block);
-    const creditLimit = extractCreditLimit(block);
+    const actualPayment = moneyOnlyLine?.moneysByPosition?.[2] ?? null;
+    const scheduledPayment = moneyOnlyLine?.moneysByPosition?.[3] ?? null;
+    const creditLimit = extractCreditLimit(block, moneyOnlyLine);
+    const chargeOffFromText = extractChargeOffAmount(block, moneyOnlyLine);
+    const pastDueAmount = extractPastDueAmount(block);
     const noEffect = /no effect/i.test(block);
     const isCollection = /collection account/i.test(block) ||
         /debt buyer account/i.test(block) ||
-        /org cr-/i.test(block) && /collection/i.test(block);
+        (accountType?.toLowerCase().includes("collection") ?? false) ||
+        accountStatus === "collection" ||
+        accountStatus === "unpaid";
     const isChargeoff = /charged off account/i.test(block) ||
+        /paid charge off/i.test(block) ||
         (chargeOffFromText ?? 0) > 0;
-    const isRepo = /repossession/i.test(block) ||
-        /voluntary surrender/i.test(block) ||
-        /repo /i.test(block) ||
-        / auto repo /i.test(block);
-    const closed = /Paid and C!/i.test(block) ||
-        /paid and closed/i.test(block) ||
-        /paid_closed/i.test(accountStatus ?? "");
+    const isRepo = /involuntary repossession/i.test(block) ||
+        /voluntary repossession/i.test(block) ||
+        /repossession/i.test(block);
+    const paidClosed = accountStatus === "paid_closed";
+    const paidChargeoff = accountStatus === "paid_chargeoff";
     const isAuto = detectIsAuto(creditorName, accountType, block);
-    const isRevolving = /revolving|charge account|secured credit card/i.test(accountType ?? "");
-    const isInstallment = /installment|secured|unsecured|education loan|installment sales contract/i.test(accountType ?? "") && !isRevolving;
+    const isRevolving = /secured credit card|charge account|revolving/i.test(accountType ?? "");
+    const isInstallment = /installment|education loan|child support|secured|unsecured|deposit related|auto/i.test(accountType ?? "") && !isRevolving;
     const paymentHist = extractPaymentHistoryDigits(block);
     const severeDerog = /[4-9]/.test(paymentHist);
     const bad = isCollection ||
         isChargeoff ||
         isRepo ||
         severeDerog ||
-        /delinq/i.test(block) ||
-        /past due/i.test(block) ||
-        /unpaid/i.test(block);
-    const good = !bad && !closed;
+        /unpaid/i.test(block) ||
+        (pastDueAmount ?? 0) > 0;
+    const good = !bad &&
+        !isCollection &&
+        !isChargeoff &&
+        !isRepo &&
+        !/unpaid/i.test(block);
     return {
-        creditor_name: creditorName,
+        creditor_name: normalizeCreditorName(creditorName),
         account_type: accountType,
         account_status: accountStatus,
         condition_code: conditionMatch ? conditionMatch[1] : null,
-        amount: highBalance,
+        amount,
         balance,
         credit_limit: creditLimit,
-        monthly_payment: monthlyPayment ?? scheduledPayment,
-        past_due_amount: null,
+        monthly_payment: scheduledPayment ?? actualPayment,
+        past_due_amount: pastDueAmount,
         high_balance: highBalance,
         opened_date: openedDate,
         last_activity_date: lastActivityDate,
@@ -299,8 +316,8 @@ function parseTradelineBlock(block) {
         good,
         bad,
         auto_repo: isRepo && isAuto,
-        unpaid_collection: isCollection && !closed,
-        unpaid_chargeoff: isChargeoff && !closed,
+        unpaid_collection: isCollection && !paidClosed,
+        unpaid_chargeoff: isChargeoff && !paidChargeoff && !paidClosed,
         is_auto: isAuto,
         is_revolving: isRevolving,
         is_installment: isInstallment,
@@ -308,6 +325,11 @@ function parseTradelineBlock(block) {
             raw: block,
             source: "payment_practice",
             chargeOffFromText,
+            pastDueAmount,
+            paidClosed,
+            paidChargeoff,
+            actualPayment,
+            scheduledPayment,
         },
     };
 }
@@ -319,6 +341,8 @@ function parsePaymentSummary(section) {
             totalScheduledPayment: null,
             totalPastDue: null,
             totalChargeoffs: null,
+            revolvingBalance: null,
+            revolvingCreditLimit: null,
         };
     }
     const lines = section
@@ -326,29 +350,49 @@ function parsePaymentSummary(section) {
         .map((s) => s.trim())
         .filter(Boolean);
     const grandIdx = lines.findIndex((line) => /^GRAND\b/i.test(line));
-    if (grandIdx === -1) {
-        return {
-            totalBalance: null,
-            totalActualPayment: null,
-            totalScheduledPayment: null,
-            totalPastDue: null,
-            totalChargeoffs: null,
-        };
+    const revolvingIdx = lines.findIndex((line) => /^REVOLVING\b/i.test(line));
+    let totalBalance = null;
+    let totalActualPayment = null;
+    let totalScheduledPayment = null;
+    let totalPastDue = null;
+    let totalChargeoffs = null;
+    let revolvingBalance = null;
+    let revolvingCreditLimit = null;
+    if (grandIdx !== -1) {
+        const grandLine1 = lines[grandIdx] ?? "";
+        const grandLine2 = lines[grandIdx + 1] ?? "";
+        const line1Vals = [...grandLine1.matchAll(/\$([\d,]+)/g)]
+            .map((m) => safeMoney(m[1]))
+            .filter((n) => n !== null);
+        const line2Vals = [...grandLine2.matchAll(/\$([\d,]+)/g)]
+            .map((m) => safeMoney(m[1]))
+            .filter((n) => n !== null);
+        totalBalance = line1Vals[1] ?? null;
+        totalPastDue = line1Vals[2] ?? null;
+        totalActualPayment = line2Vals[1] ?? null;
+        totalScheduledPayment = line2Vals[2] ?? null;
+        totalChargeoffs = line2Vals[4] ?? null;
     }
-    const grandLine1 = lines[grandIdx] ?? "";
-    const grandLine2 = lines[grandIdx + 1] ?? "";
-    const line1Vals = [...grandLine1.matchAll(/\$([\d,]+)/g)]
-        .map((m) => safeMoney(m[1]))
-        .filter((n) => n !== null);
-    const line2Vals = [...grandLine2.matchAll(/\$([\d,]+)/g)]
-        .map((m) => safeMoney(m[1]))
-        .filter((n) => n !== null);
+    if (revolvingIdx !== -1) {
+        const revolvingLine1 = lines[revolvingIdx] ?? "";
+        const revolvingLine2 = lines[revolvingIdx + 1] ?? "";
+        const revLine1Vals = [...revolvingLine1.matchAll(/\$([\d,]+)/g)]
+            .map((m) => safeMoney(m[1]))
+            .filter((n) => n !== null);
+        const revLine2Vals = [...revolvingLine2.matchAll(/\$([\d,]+)/g)]
+            .map((m) => safeMoney(m[1]))
+            .filter((n) => n !== null);
+        revolvingBalance = revLine1Vals[1] ?? null;
+        revolvingCreditLimit = revLine2Vals[0] ?? null;
+    }
     return {
-        totalBalance: line1Vals[1] ?? null,
-        totalActualPayment: line2Vals[1] ?? null,
-        totalScheduledPayment: line2Vals[2] ?? null,
-        totalPastDue: line1Vals[2] ?? null,
-        totalChargeoffs: line2Vals[4] ?? null,
+        totalBalance,
+        totalActualPayment,
+        totalScheduledPayment,
+        totalPastDue,
+        totalChargeoffs,
+        revolvingBalance,
+        revolvingCreditLimit,
     };
 }
 function parseInquirySection(section) {
@@ -438,7 +482,7 @@ function parseMessages(fullText, identityAlertSection, scoreInfo) {
             severity: "info",
         });
     });
-    if (/Consumer Disputes This Account Information/i.test(fullText)) {
+    if (/Consumer Disputes/i.test(fullText)) {
         out.push({
             message_type: "note",
             code: null,
@@ -454,14 +498,30 @@ function countOpenTradelines(tradelines) {
         return null;
     return tradelines.filter((t) => !looksClosed(t)).length;
 }
+function countAutoTrades(tradelines) {
+    return tradelines.filter((t) => t.is_auto).length;
+}
+function countOpenAutoTrades(tradelines) {
+    return tradelines.filter((t) => t.is_auto &&
+        !looksClosed(t) &&
+        t.account_status !== "repo" &&
+        t.account_status !== "charged_off" &&
+        t.account_status !== "paid_chargeoff").length;
+}
+function countPaidAutoTrades(tradelines) {
+    return tradelines.filter((t) => t.is_auto && (t.account_status === "paid_closed" || looksClosed(t))).length;
+}
+function countRepos(tradelines) {
+    return tradelines.filter((t) => t.is_auto && t.auto_repo).length;
+}
 function looksClosed(t) {
     const status = (t.account_status ?? "").toLowerCase();
     const raw = String(t.raw_segment?.raw ?? "").toLowerCase();
-    return (status.includes("paid_closed") ||
-        status.includes("paid and c") ||
-        status.includes("paid and closed") ||
+    return (status === "paid_closed" ||
+        status === "paid_chargeoff" ||
         raw.includes("paid and c!") ||
-        raw.includes("paid and closed"));
+        raw.includes("paid and closed") ||
+        raw.includes("paid charge off"));
 }
 function deriveMonthsSinceRepo(tradelines) {
     const repoDates = tradelines
@@ -494,11 +554,20 @@ function sumCollectionBalances(tradelines) {
         const type = (t.account_type ?? "").toLowerCase();
         const status = (t.account_status ?? "").toLowerCase();
         const raw = String(t.raw_segment?.raw ?? "").toLowerCase();
-        return (t.unpaid_collection === true ||
+        const looksCollection = t.unpaid_collection === true ||
             type.includes("collection") ||
+            type.includes("debt buyer") ||
             status.includes("collection") ||
+            status.includes("unpaid") ||
             raw.includes("collection account") ||
-            raw.includes("debt buyer account"));
+            raw.includes("debt buyer account") ||
+            raw.includes("unpaid");
+        const excludePaidClosed = looksClosed(t) ||
+            status.includes("paid_closed") ||
+            raw.includes("paid and c!") ||
+            raw.includes("paid and closed");
+        const hasCollectionBalance = (t.balance ?? t.amount ?? 0) > 0;
+        return looksCollection && !excludePaidClosed && hasCollectionBalance;
     });
     if (!rows.length)
         return 0;
@@ -537,7 +606,8 @@ function isTradelineHeader(line) {
 }
 function findDateLine(lines, occurrence) {
     let count = 0;
-    for (const line of lines) {
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
         if (!/^\d{2}\/\d{2}\/\d{4}!/.test(line))
             continue;
         count += 1;
@@ -547,124 +617,147 @@ function findDateLine(lines, occurrence) {
         const date = normalizeDate(parts[0] ?? "");
         const firstMoney = safeMoney(stripDollar(parts[1] ?? ""));
         const secondFieldDate = normalizeDate(parts[2] ?? "");
-        return {
-            date,
-            firstMoney,
-            secondFieldDate,
-        };
+        return { date, firstMoney, secondFieldDate };
     }
     return null;
 }
 function findMoneyOnlyLine(lines) {
-    for (const line of lines) {
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
         if (!line.includes("!"))
             continue;
         if (/^\d{2}\/\d{2}\/\d{4}!/.test(line))
             continue;
-        const parts = line.split("!").map((s) => s.trim());
-        const nums = parts
-            .map((p) => safeMoney(stripDollar(p)))
-            .filter((n) => n !== null);
-        if (nums.length >= 1) {
-            return { moneys: nums };
+        const rawParts = line.split("!").map((s) => s.trim());
+        const moneysByPosition = rawParts.map((p) => safeMoney(stripDollar(p)));
+        if (moneysByPosition.some((v) => v !== null)) {
+            return { rawParts, moneysByPosition };
         }
     }
     return null;
 }
+function detectSyntheticCreditorName(block) {
+    if (/medical/i.test(block))
+        return "Medical";
+    if (/child support/i.test(block))
+        return "Child Support";
+    if (/education loan/i.test(block))
+        return "Education Loan";
+    if (/deposit related/i.test(block))
+        return "Deposit Related";
+    return null;
+}
+function normalizeCollectionClass(v) {
+    const raw = v.toLowerCase();
+    if (raw.includes("insurance"))
+        return "Insurance";
+    if (raw.includes("utilities"))
+        return "Utilities";
+    if (raw.includes("medical"))
+        return "Medical";
+    return v;
+}
+function normalizeCreditorName(v) {
+    return v.replace(/\s{2,}/g, " ").trim();
+}
 function detectAccountType(block) {
-    const candidates = [
-        "Installment Sales Contract",
-        "Secured Credit Card",
-        "Charge Account",
-        "Debt Buyer Account",
-        "Collection account",
-        "Education Loan",
-        "Child Support",
-        "Secured",
-        "Unsecured",
-        "Fixed rate",
+    const ordered = [
+        [/secured credit card/i, "Secured Credit Card"],
+        [/charge account/i, "Charge Account"],
+        [/debt buyer account/i, "Debt Buyer Account"],
+        [/collection account/i, "Collection account"],
+        [/installment sales contract/i, "Installment Sales Contract"],
+        [/education loan/i, "Education Loan"],
+        [/child support/i, "Child Support"],
+        [/telecommunication\/cellular/i, "Telecommunication/Cellular"],
+        [/insurance/i, "Insurance"],
+        [/deposit related/i, "Deposit Related"],
+        [/medical/i, "Medical"],
+        [/\bauto\b/i, "Auto"],
+        [/\bsecured\b/i, "Secured"],
+        [/\bunsecured\b/i, "Unsecured"],
+        [/fixed rate/i, "Installment"],
     ];
-    for (const c of candidates) {
-        if (block.includes(c)) {
-            if (c === "Fixed rate")
-                return "installment";
-            return c;
-        }
+    for (const [rx, label] of ordered) {
+        if (rx.test(block))
+            return label;
     }
     if (/revolving/i.test(block))
-        return "revolving";
+        return "Revolving";
     if (/installment/i.test(block))
-        return "installment";
+        return "Installment";
     return null;
 }
 function detectAccountStatus(block) {
-    if (/Charged off account/i.test(block))
+    if (/involuntary repossession/i.test(block) || /voluntary repossession/i.test(block)) {
+        return "repo";
+    }
+    if (/charged off account/i.test(block)) {
         return "charged_off";
-    if (/Collection account/i.test(block) || /Debt Buyer Account/i.test(block))
+    }
+    if (/paid charge off/i.test(block)) {
+        return "paid_chargeoff";
+    }
+    if (/collection account/i.test(block) || /debt buyer account/i.test(block)) {
         return "collection";
-    if (/Paid and C!/i.test(block) || /paid and closed/i.test(block))
+    }
+    if (/paid and c!/i.test(block) || /paid and closed/i.test(block)) {
         return "paid_closed";
-    if (/Consumer Disputes This Account Information/i.test(block))
+    }
+    if (/consumer disputes/i.test(block)) {
         return "consumer_dispute";
+    }
+    if (/unpaid/i.test(block)) {
+        return "unpaid";
+    }
     return "open";
 }
 function detectIsAuto(creditorName, accountType, block) {
-    const combined = `${creditorName ?? ""} ${accountType ?? ""} ${block}`.toLowerCase();
+    const combined = ` ${creditorName ?? ""} ${accountType ?? ""} ${block} `.toLowerCase();
     return [
-        "auto",
-        "motor",
-        "vehicle",
-        "car",
-        "truck",
-        "rv",
-        "westlake",
-        "ally",
-        "road auto",
-        "consumer portfolio",
-        "global lending",
-        "capital one auto",
-        "carolina",
-        "865 autos",
-        "ford credit",
-        "gm financial",
+        " road auto finance",
+        " westlake",
+        " ally financial",
+        " gm financial",
+        " ford credit",
+        " global lending",
+        " consumer portfolio",
+        " credit acceptance",
+        " capital one auto",
+        " auto ",
+        " motor vehicle",
+        " vehicle loan",
+        "installment sales contract",
     ].some((term) => combined.includes(term));
 }
 function extractPaymentHistoryDigits(block) {
-    const match = block.match(/PYMT HIST-([A-Z0-9]+)/i);
+    const match = block.match(/PYMT HIST-([A-Z0-9*]+)/i);
     return match ? match[1] : "";
 }
-function extractChargeOffAmount(block) {
-    const lines = block.split("\n").map((s) => s.trim());
-    for (const line of lines) {
-        if (!line.includes("!"))
-            continue;
-        if (/^\d{2}\/\d{2}\/\d{4}!/.test(line))
-            continue;
-        const parts = line.split("!").map((s) => s.trim());
-        // Typical Equifax money-only line:
-        // [0] blank
-        // [1] credit limit
-        // [2] actual payment
-        // [3] scheduled payment
-        // [4] balloon
-        // [5] charge off
-        const chargeOff = safeMoney(stripDollar(parts[5] ?? ""));
-        if (chargeOff !== null)
-            return chargeOff;
+function extractChargeOffAmount(block, moneyOnlyLine) {
+    const fromMoneyLine = moneyOnlyLine?.moneysByPosition?.[5] ?? null;
+    if (fromMoneyLine !== null)
+        return fromMoneyLine;
+    if (/paid charge off/i.test(block)) {
+        const match = block.match(/\$([\d,]+)/);
+        if (match)
+            return safeMoney(match[1]);
     }
     return null;
 }
-function extractCreditLimit(block) {
-    const lines = block.split("\n").map((s) => s.trim());
-    for (const line of lines) {
-        if (!line.includes("!"))
-            continue;
-        if (/^\d{2}\/\d{2}\/\d{4}!/.test(line))
-            continue;
+function extractCreditLimit(_block, moneyOnlyLine) {
+    return moneyOnlyLine?.moneysByPosition?.[1] ?? null;
+}
+function extractPastDueAmount(block) {
+    const dateLines = block
+        .split("\n")
+        .map((s) => s.trim())
+        .filter((line) => /^\d{2}\/\d{2}\/\d{4}!/.test(line));
+    for (const line of dateLines) {
         const parts = line.split("!").map((s) => s.trim());
-        const maybeLimit = safeMoney(stripDollar(parts[1] ?? ""));
-        if (maybeLimit !== null && maybeLimit > 0)
-            return maybeLimit;
+        const pastDue = safeMoney(stripDollar(parts[5] ?? ""));
+        if (pastDue !== null)
+            return pastDue;
     }
     return null;
 }
