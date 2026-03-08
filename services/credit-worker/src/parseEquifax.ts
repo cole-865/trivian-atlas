@@ -904,7 +904,8 @@ function isTradelineHeader(line: string): boolean {
 function findDateLine(lines: string[], occurrence: number): ParsedDateLine | null {
   let count = 0;
 
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
     if (!/^\d{2}\/\d{2}\/\d{4}!/.test(line)) continue;
 
     count += 1;
@@ -922,7 +923,8 @@ function findDateLine(lines: string[], occurrence: number): ParsedDateLine | nul
 }
 
 function findMoneyOnlyLine(lines: string[]): ParsedMoneyOnlyLine | null {
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
     if (!line.includes("!")) continue;
     if (/^\d{2}\/\d{2}\/\d{4}!/.test(line)) continue;
 
@@ -936,7 +938,6 @@ function findMoneyOnlyLine(lines: string[]): ParsedMoneyOnlyLine | null {
 
   return null;
 }
-
 function detectSyntheticCreditorName(block: string): string | null {
   if (/medical/i.test(block)) return "Medical";
   if (/child support/i.test(block)) return "Child Support";
