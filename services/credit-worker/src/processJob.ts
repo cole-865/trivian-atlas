@@ -315,6 +315,45 @@ async function upsertBureauSummary(args: {
   return data;
 }
 
+async function getUnderwritingInputs(dealId: string, vehicleId: string | null) {
+  const { data: primaryPerson, error: personError } = await supabase
+    .from("deal_people")
+    .select("*")
+    .eq("deal_id", dealId)
+    .eq("role", "primary")
+    .single();
+
+  if (personError) throw personError;
+
+  const { data: incomeProfile, error: incomeError } = await supabase
+    .from("income_profiles")
+    .select("*")
+    .eq("deal_person_id", primaryPerson.id)
+    .eq("applied_to_deal", true)
+    .single();
+
+  if (incomeError) throw incomeError;
+
+  let vehicle: any = null;
+
+  if (vehicleId) {
+    const { data: vehicleRow, error: vehicleError } = await supabase
+      .from("trivian_inventory")
+      .select("*")
+      .eq("id", vehicleId)
+      .single();
+
+    if (vehicleError) throw vehicleError;
+    vehicle = vehicleRow;
+  }
+
+  return {
+    primaryPerson,
+    incomeProfile,
+    vehicle,
+  };
+}
+
 export async function processJob(job: any) {
   const jobId: string = job?.id;
   const dealId: string = job?.deal_id;
@@ -432,12 +471,67 @@ export async function processJob(job: any) {
     });
 
     await replaceBureauDetails({
-      bureauSummaryId: bureauSummary.id,
-      dealId,
-      tradelines: parsedBureau.tradelines,
-      publicRecords: parsedBureau.publicRecords,
-      messages: parsedBureau.messages,
-    });
+  bureauSummaryId: bureauSummary.id,
+  dealId,
+  tradelines: parsedBureau.tradelines,
+  publicRecords: parsedBureau.publicRecords,
+  messages: parsedBureau.messages,
+});
+
+const { data: vehicleSelection } = await supabase
+  .from("deal_vehicle_selection")
+  .select("*")
+  .eq("deal_id", dealId)
+  .single();
+
+const { primaryPerson, incomeProfile, vehicle } = await getUnderwritingInputs(
+  dealId,
+  vehicleSelection?.vehicle_id ?? null
+);
+
+const incomeMonthly = Number(
+  incomeProfile.monthly_gross_calculated ??
+  incomeProfile.monthly_gross_manual ??
+  0
+);
+
+const cashDown = Number(vehicleSelection?.cash_down ?? 0);
+const vehiclePrice = Number(vehicle?.asking_price ?? 0);
+const jobMonths = calcJobMonthsFromHireDate(incomeProfile.hire_date);
+
+const uw = underwriteDeal({
+  incomeMonthly,
+  score: bureauSummary.score,
+  repoCount: Number(bureauSummary.repo_count ?? 0),
+  monthsSinceRepo: bureauSummary.months_since_repo,
+  paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
+  openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
+  residenceMonths: primaryPerson.residence_months,
+  jobMonths,
+  cashDown,
+  vehiclePrice,
+});
+
+    await supabase
+      .from("underwriting_results")
+      .upsert(
+        {
+          deal_id: dealId,
+          user_id: job.uploaded_by ?? null,
+          score_total: uw.scoreTotal,
+          decision: uw.decision,
+          notes: uw.notes,
+          tier: uw.tier,
+          max_term_months: uw.maxTermMonths,
+          min_cash_down: uw.minCashDown,
+          max_pti: uw.maxPti,
+          hard_stop: uw.hardStop,
+          hard_stop_reason: uw.hardStopReason,
+          score_factors: uw.scoreFactors,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "deal_id" }
+      );
 
     // 6) Finalize job row
     await updateJobDone(jobId, extractedText, redactedText, bureau);
