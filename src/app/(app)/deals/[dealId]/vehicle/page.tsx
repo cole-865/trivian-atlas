@@ -23,6 +23,7 @@ type ApiRow = {
     odometer: number | null;
     date_in_stock: string | null;
     asking_price: number | null;
+    additional_down_required: number | null;
   };
   payment_options: PayOption[];
   assumptions: {
@@ -437,6 +438,7 @@ export default function DealVehiclePage() {
                 <th style={th}>Make</th>
                 <th style={th}>Model</th>
                 <th style={th}>Odo</th>
+                <th style={th}>Addl Down</th>
 
                 <th style={thPay}>VSC+GAP</th>
                 <th style={thPay}>VSC</th>
@@ -461,6 +463,12 @@ export default function DealVehiclePage() {
                     <td style={td}>{v.vehicle.make ?? "—"}</td>
                     <td style={td}>{v.vehicle.model ?? "—"}</td>
                     <td style={td}>{v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}</td>
+
+                    <td style={td}>
+                     {v.vehicle.additional_down_required && v.vehicle.additional_down_required > 0
+                    ? money(v.vehicle.additional_down_required)
+                    : "—"}
+                  </td>
 
                     <PayCell vRow={v} opt={optVG} highlight={v.bestLabel === "VSC+GAP"} />
                     <PayCell vRow={v} opt={optV} highlight={v.bestLabel === "VSC"} />

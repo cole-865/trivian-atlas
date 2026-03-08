@@ -133,8 +133,6 @@ async function handleJobAttempt(jobId: string) {
  * Catch up on queued jobs (boot + periodic safety net).
  */
 async function catchUpQueuedJobs() {
-  console.log("[credit-worker] catch-up: looking for queued jobs...");
-
   const { data, error } = await supabase
     .from("credit_report_jobs")
     .select("id,status,created_at")
@@ -148,7 +146,6 @@ async function catchUpQueuedJobs() {
   }
 
   if (!data || data.length === 0) {
-    console.log("[credit-worker] catch-up: none");
     return;
   }
 
@@ -159,7 +156,7 @@ async function catchUpQueuedJobs() {
 }
 
 async function startRealtimeListener() {
-  console.log("[credit-worker] listening: INSERT/UPDATE (attempt claim)");
+  console.log("[credit-worker] listening for jobs...");
 
   supabase
     .channel("credit-job-listener")

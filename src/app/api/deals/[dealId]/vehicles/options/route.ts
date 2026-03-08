@@ -75,17 +75,27 @@ export async function GET(
     .eq("id", dealId)
     .single();
 
+  const { data: uwResult } = await supabase
+  .from("underwriting_results")
+  .select("max_pti, max_term_months, min_cash_down, min_down_pct")
+  .eq("deal_id", dealId)
+  .eq("stage", "bureau_precheck")
+  .maybeSingle();
+
   if (dealErr) {
     return NextResponse.json({ error: "Failed to load deal", details: dealErr.message }, { status: 500 });
   }
 
-  const maxPayment = Number(deal?.max_payment ?? 0);
+  const maxPayment =
+  uwResult?.max_pti != null
+    ? round2((Number(deal?.max_payment ?? 0) / 0.22) * Number(uwResult.max_pti))
+    : Number(deal?.max_payment ?? 0);
   const cashDown = cashDownOverride != null ? Number(cashDownOverride) : Number(deal?.cash_down ?? 0);
   const tradePayoff = Number(deal?.trade_payoff ?? 0);
 
   // (for now) assume trade equity = 0; payoff increases required cash to close in real life.
   // we’ll add trade ACV later when you want it.
-  const effectiveDown = round2(cashDown); // keep simple
+
 
   // 2) Underwriting inputs (APR + term)
   const { data: uw } = await supabase
@@ -103,7 +113,7 @@ export async function GET(
     .maybeSingle();
 
   const apr = Number(uw?.interest_rate_apr ?? cfg?.apr ?? 26.99);
-  const termMonths = Number(uw?.term_months ?? 48);
+  const termMonths = Number(uwResult?.max_term_months ?? uw?.term_months ?? 48);
 
   const taxRateMain = Number(cfg?.tax_rate_main ?? 0.07);
   const taxAddBase = Number(cfg?.tax_add_base ?? 320);
@@ -135,6 +145,13 @@ export async function GET(
 
   const rows = (vehicles ?? []).map((v) => {
     const price = Number(v.asking_price ?? 0);
+    const pctDown = round2(price * Number(uwResult?.min_down_pct ?? 0));
+const requiredDown = Math.max(
+  Number(uwResult?.min_cash_down ?? 0),
+  pctDown
+    );
+    const effectiveDown = round2(Math.max(cashDown, requiredDown));
+    const additionalDownRequired = round2(Math.max(0, requiredDown - cashDown));
     const tax = estimateTax(price, taxRateMain, taxAddBase, taxAddRate);
     const baseFees = round2(docFee + titleLicense + tax);
 
@@ -177,6 +194,7 @@ export async function GET(
         status: v.status,
         asking_price: price,
         date_in_stock: v.date_in_stock,
+        additional_down_required: additionalDownRequired,
       },
       assumptions: {
         apr,

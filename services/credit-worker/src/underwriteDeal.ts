@@ -23,6 +23,7 @@ type UnderwriteResult = {
   hardStopReason: string | null;
   maxTermMonths: number | null;
   minCashDown: number | null;
+  minDownPct: number | null;
   maxPti: number | null;
   scoreFactors: Array<{
     code: string;
@@ -76,6 +77,7 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
       hardStopReason: "Income under $2,000/month",
       maxTermMonths: null,
       minCashDown: null,
+      minDownPct: null,
       maxPti: null,
       scoreFactors: [],
       notes: "Hard stop: income under minimum threshold.",
@@ -91,6 +93,7 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
       hardStopReason: "Score below 420",
       maxTermMonths: null,
       minCashDown: null,
+      minDownPct: null,
       maxPti: null,
       scoreFactors: [],
       notes: "Hard stop: bureau score below minimum threshold.",
@@ -106,6 +109,7 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
       hardStopReason: "More than 1 repo within last 12 months",
       maxTermMonths: null,
       minCashDown: null,
+      minDownPct: null,
       maxPti: null,
       scoreFactors: [],
       notes: "Hard stop: excessive recent repos.",
@@ -145,6 +149,7 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
     factors.push({ code: "RES_UNDER_6", points: -1, note: "Residence under 6 months" });
   }
 
+  /*
   // Stability - job
   if ((args.jobMonths ?? 0) > 24) {
     movement += 1;
@@ -170,7 +175,9 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
       factors.push({ code: "REPO_24_48", points: -0.5, note: "Repo 24-48 months" });
     }
   }
+*/
 
+/*
   // Cash down adjustment
   const downPct =
     args.vehiclePrice > 0 ? (args.cashDown / args.vehiclePrice) * 100 : 0;
@@ -186,20 +193,29 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
     factors.push({ code: "DOWN_LT_10", points: -1, note: "Cash down under 10%" });
   }
 
+*/
+
   // Cap total movement at +/- 2
   const cappedMovement = Math.max(-2, Math.min(2, roundHalfStep(movement)));
 
-  let tier = moveTier("C", cappedMovement);
+  let tier = moveTier("C", Math.trunc(cappedMovement));
 
-  const tierMatrix: Record<Tier, { maxTermMonths: number; minCashDown: number; maxPti: number }> = {
-    A: { maxTermMonths: 60, minCashDown: 500, maxPti: 0.22 },
-    B: { maxTermMonths: 54, minCashDown: 750, maxPti: 0.20 },
-    C: { maxTermMonths: 48, minCashDown: 1000, maxPti: 0.18 },
-    D: { maxTermMonths: 42, minCashDown: 1500, maxPti: 0.16 },
-    BHPH: { maxTermMonths: 36, minCashDown: 1500, maxPti: 0.15 },
-  };
+  const tierMatrix: Record<
+  Tier,
+  { maxTermMonths: number; minCashDown: number; maxPti: number; minDownPct: number }
+> = {
+  A: { maxTermMonths: 60, minCashDown: 500, maxPti: 0.22, minDownPct: 0.05 },
+  B: { maxTermMonths: 54, minCashDown: 750, maxPti: 0.20, minDownPct: 0.07 },
+  C: { maxTermMonths: 48, minCashDown: 1000, maxPti: 0.18, minDownPct: 0.10 },
+  D: { maxTermMonths: 42, minCashDown: 1500, maxPti: 0.16, minDownPct: 0.12 },
+  BHPH: { maxTermMonths: 36, minCashDown: 1500, maxPti: 0.15, minDownPct: 0.15 },
+};
 
-  const tierRule = tierMatrix[tier];
+  const tierRule = tierMatrix[tier as Tier];
+
+if (!tierRule) {
+  throw new Error(`Invalid tier produced by underwriting engine: ${tier}`);
+}
 
   return {
     decision: "approved",
@@ -209,6 +225,7 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
     hardStopReason: null,
     maxTermMonths: tierRule.maxTermMonths,
     minCashDown: tierRule.minCashDown,
+    minDownPct: tierRule.minDownPct,
     maxPti: tierRule.maxPti,
     scoreFactors: factors,
     notes: `Started at Tier C. Raw movement: ${movement}. Capped movement: ${cappedMovement}. Final tier: ${tier}.`,

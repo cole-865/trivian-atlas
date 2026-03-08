@@ -506,19 +506,21 @@ const uw = underwriteDeal({
         {
           deal_id: dealId,
           user_id: job.uploaded_by ?? null,
+          stage: "bureau_precheck",
           score_total: uw.scoreTotal,
           decision: uw.decision,
           notes: uw.notes,
           tier: uw.tier,
           max_term_months: uw.maxTermMonths,
           min_cash_down: uw.minCashDown,
+          min_down_pct: uw.minDownPct,
           max_pti: uw.maxPti,
           hard_stop: uw.hardStop,
           hard_stop_reason: uw.hardStopReason,
           score_factors: uw.scoreFactors,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "deal_id" }
+        { onConflict: "deal_id,stage" }
       );
 
     // 6) Finalize job row

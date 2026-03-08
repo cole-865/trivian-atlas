@@ -29,7 +29,7 @@ export function calcJobMonthsFromHireDate(hireDate) {
 export function underwriteDeal(args) {
     const factors = [];
     // Hard stops
-    if (args.incomeMonthly < 2000) {
+    if (args.incomeMonthly > 0 && args.incomeMonthly < 2000) {
         return {
             decision: "denied",
             tier: null,
@@ -38,6 +38,7 @@ export function underwriteDeal(args) {
             hardStopReason: "Income under $2,000/month",
             maxTermMonths: null,
             minCashDown: null,
+            minDownPct: null,
             maxPti: null,
             scoreFactors: [],
             notes: "Hard stop: income under minimum threshold.",
@@ -52,6 +53,7 @@ export function underwriteDeal(args) {
             hardStopReason: "Score below 420",
             maxTermMonths: null,
             minCashDown: null,
+            minDownPct: null,
             maxPti: null,
             scoreFactors: [],
             notes: "Hard stop: bureau score below minimum threshold.",
@@ -66,6 +68,7 @@ export function underwriteDeal(args) {
             hardStopReason: "More than 1 repo within last 12 months",
             maxTermMonths: null,
             minCashDown: null,
+            minDownPct: null,
             maxPti: null,
             scoreFactors: [],
             notes: "Hard stop: excessive recent repos.",
@@ -104,59 +107,64 @@ export function underwriteDeal(args) {
         movement -= 1;
         factors.push({ code: "RES_UNDER_6", points: -1, note: "Residence under 6 months" });
     }
+    /*
     // Stability - job
     if ((args.jobMonths ?? 0) > 24) {
-        movement += 1;
-        factors.push({ code: "JOB_OVER_24", points: 1, note: "Job over 24 months" });
+      movement += 1;
+      factors.push({ code: "JOB_OVER_24", points: 1, note: "Job over 24 months" });
+    } else if ((args.jobMonths ?? 0) >= 12) {
+      movement += 0.5;
+      factors.push({ code: "JOB_12_24", points: 0.5, note: "Job 12-24 months" });
+    } else if ((args.jobMonths ?? 0) < 6) {
+      movement -= 1;
+      factors.push({ code: "JOB_UNDER_6", points: -1, note: "Job under 6 months" });
     }
-    else if ((args.jobMonths ?? 0) >= 12) {
-        movement += 0.5;
-        factors.push({ code: "JOB_12_24", points: 0.5, note: "Job 12-24 months" });
-    }
-    else if ((args.jobMonths ?? 0) < 6) {
-        movement -= 1;
-        factors.push({ code: "JOB_UNDER_6", points: -1, note: "Job under 6 months" });
-    }
+  
     // Repo impact
     if (args.repoCount > 0 && args.monthsSinceRepo !== null) {
-        if (args.monthsSinceRepo < 12) {
-            movement -= 1.5;
-            factors.push({ code: "REPO_LT_12", points: -1.5, note: "Repo under 12 months" });
-        }
-        else if (args.monthsSinceRepo < 24) {
-            movement -= 1;
-            factors.push({ code: "REPO_12_24", points: -1, note: "Repo 12-24 months" });
-        }
-        else if (args.monthsSinceRepo < 48) {
-            movement -= 0.5;
-            factors.push({ code: "REPO_24_48", points: -0.5, note: "Repo 24-48 months" });
-        }
+      if (args.monthsSinceRepo < 12) {
+        movement -= 1.5;
+        factors.push({ code: "REPO_LT_12", points: -1.5, note: "Repo under 12 months" });
+      } else if (args.monthsSinceRepo < 24) {
+        movement -= 1;
+        factors.push({ code: "REPO_12_24", points: -1, note: "Repo 12-24 months" });
+      } else if (args.monthsSinceRepo < 48) {
+        movement -= 0.5;
+        factors.push({ code: "REPO_24_48", points: -0.5, note: "Repo 24-48 months" });
+      }
     }
-    // Cash down adjustment
-    const downPct = args.vehiclePrice > 0 ? (args.cashDown / args.vehiclePrice) * 100 : 0;
-    if (downPct > 20) {
+  */
+    /*
+      // Cash down adjustment
+      const downPct =
+        args.vehiclePrice > 0 ? (args.cashDown / args.vehiclePrice) * 100 : 0;
+    
+      if (downPct > 20) {
         movement += 2;
         factors.push({ code: "DOWN_GT_20", points: 2, note: "Cash down over 20%" });
-    }
-    else if (downPct >= 15) {
+      } else if (downPct >= 15) {
         movement += 1;
         factors.push({ code: "DOWN_15_20", points: 1, note: "Cash down 15-20%" });
-    }
-    else if (downPct < 10) {
+      } else if (downPct < 10) {
         movement -= 1;
         factors.push({ code: "DOWN_LT_10", points: -1, note: "Cash down under 10%" });
-    }
+      }
+    
+    */
     // Cap total movement at +/- 2
     const cappedMovement = Math.max(-2, Math.min(2, roundHalfStep(movement)));
-    let tier = moveTier("C", cappedMovement);
+    let tier = moveTier("C", Math.trunc(cappedMovement));
     const tierMatrix = {
-        A: { maxTermMonths: 60, minCashDown: 500, maxPti: 0.22 },
-        B: { maxTermMonths: 54, minCashDown: 750, maxPti: 0.20 },
-        C: { maxTermMonths: 48, minCashDown: 1000, maxPti: 0.18 },
-        D: { maxTermMonths: 42, minCashDown: 1500, maxPti: 0.16 },
-        BHPH: { maxTermMonths: 36, minCashDown: 1500, maxPti: 0.15 },
+        A: { maxTermMonths: 60, minCashDown: 500, maxPti: 0.22, minDownPct: 0.05 },
+        B: { maxTermMonths: 54, minCashDown: 750, maxPti: 0.20, minDownPct: 0.07 },
+        C: { maxTermMonths: 48, minCashDown: 1000, maxPti: 0.18, minDownPct: 0.10 },
+        D: { maxTermMonths: 42, minCashDown: 1500, maxPti: 0.16, minDownPct: 0.12 },
+        BHPH: { maxTermMonths: 36, minCashDown: 1500, maxPti: 0.15, minDownPct: 0.15 },
     };
     const tierRule = tierMatrix[tier];
+    if (!tierRule) {
+        throw new Error(`Invalid tier produced by underwriting engine: ${tier}`);
+    }
     return {
         decision: "approved",
         tier,
@@ -165,6 +173,7 @@ export function underwriteDeal(args) {
         hardStopReason: null,
         maxTermMonths: tierRule.maxTermMonths,
         minCashDown: tierRule.minCashDown,
+        minDownPct: tierRule.minDownPct,
         maxPti: tierRule.maxPti,
         scoreFactors: factors,
         notes: `Started at Tier C. Raw movement: ${movement}. Capped movement: ${cappedMovement}. Final tier: ${tier}.`,
