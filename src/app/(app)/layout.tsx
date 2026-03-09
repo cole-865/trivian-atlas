@@ -82,7 +82,7 @@ export default async function AppLayout({
         <div className="flex-1">
           {/* Top bar */}
           <div className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-            <div className="mx-auto max-w-6xl px-6 py-4">
+            <div className="w-full px-6 py-4">
               <div className="flex items-center justify-between gap-3">
                 <DealSearch />
                 <UserPill />
@@ -90,7 +90,7 @@ export default async function AppLayout({
             </div>
           </div>
 
-          <main className="mx-auto max-w-6xl px-6 py-6">{children}</main>
+          <main className="w-full px-6 py-6">{children}</main>
         </div>
       </div>
     </div>

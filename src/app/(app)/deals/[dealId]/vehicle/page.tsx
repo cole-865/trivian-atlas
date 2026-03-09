@@ -288,8 +288,8 @@ export default function DealVehiclePage() {
             disabled
               ? "Income not applied"
               : ok
-              ? "Select this option"
-              : `Needs +${money(opt.additional_down_needed)} down to fit`
+                ? "Select this option"
+                : `Needs +${money(opt.additional_down_needed)} down to fit`
           }
         >
           {txt}
@@ -428,7 +428,7 @@ export default function DealVehiclePage() {
       {err ? <div style={{ color: "crimson" }}>{err}</div> : null}
 
       {!loading && !err ? (
-        <div style={{ overflowX: "auto", border: "1px solid #eee", borderRadius: 12 }}>
+        <div style={{ border: "1px solid #eee", borderRadius: 12 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ background: "#fafafa" }}>
@@ -465,10 +465,10 @@ export default function DealVehiclePage() {
                     <td style={td}>{v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}</td>
 
                     <td style={td}>
-                     {v.vehicle.additional_down_required && v.vehicle.additional_down_required > 0
-                    ? money(v.vehicle.additional_down_required)
-                    : "—"}
-                  </td>
+                      {v.vehicle.additional_down_required && v.vehicle.additional_down_required > 0
+                        ? money(v.vehicle.additional_down_required)
+                        : "—"}
+                    </td>
 
                     <PayCell vRow={v} opt={optVG} highlight={v.bestLabel === "VSC+GAP"} />
                     <PayCell vRow={v} opt={optV} highlight={v.bestLabel === "VSC"} />
