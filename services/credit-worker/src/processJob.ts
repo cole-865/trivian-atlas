@@ -446,11 +446,11 @@ export async function processJob(job: any) {
     // 5) Upsert report + bureau data
     await updateJobStatus(jobId, "scoring", { bureau });
 
-      console.log("[credit-worker] about to upsert credit_reports + bureau_summary", {
-  jobId,
-  dealId,
-  bureau,
-});
+    console.log("[credit-worker] about to upsert credit_reports + bureau_summary", {
+      jobId,
+      dealId,
+      bureau,
+    });
 
     const creditReport = await upsertCreditReport({
       dealId,
@@ -471,34 +471,34 @@ export async function processJob(job: any) {
     });
 
     await replaceBureauDetails({
-  bureauSummaryId: bureauSummary.id,
-  dealId,
-  tradelines: parsedBureau.tradelines,
-  publicRecords: parsedBureau.publicRecords,
-  messages: parsedBureau.messages,
-});
+      bureauSummaryId: bureauSummary.id,
+      dealId,
+      tradelines: parsedBureau.tradelines,
+      publicRecords: parsedBureau.publicRecords,
+      messages: parsedBureau.messages,
+    });
 
-const { data: primaryPerson, error: personError } = await supabase
-  .from("deal_people")
-  .select("*")
-  .eq("deal_id", dealId)
-  .eq("role", "primary")
-  .single();
+    const { data: primaryPerson, error: personError } = await supabase
+      .from("deal_people")
+      .select("*")
+      .eq("deal_id", dealId)
+      .eq("role", "primary")
+      .single();
 
-if (personError) throw personError;
+    if (personError) throw personError;
 
-const uw = underwriteDeal({
-  incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
-  score: bureauSummary.score,
-  repoCount: Number(bureauSummary.repo_count ?? 0),
-  monthsSinceRepo: bureauSummary.months_since_repo,
-  paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
-  openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
-  residenceMonths: primaryPerson.residence_months,
-  jobMonths: null,
-  cashDown: 0,
-  vehiclePrice: 0,
-});
+    const uw = underwriteDeal({
+      incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
+      score: bureauSummary.score,
+      repoCount: Number(bureauSummary.repo_count ?? 0),
+      monthsSinceRepo: bureauSummary.months_since_repo,
+      paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
+      openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
+      residenceMonths: primaryPerson.residence_months,
+      jobMonths: null,
+      cashDown: 0,
+      vehiclePrice: 0,
+    });
 
     await supabase
       .from("underwriting_results")
@@ -515,6 +515,10 @@ const uw = underwriteDeal({
           min_cash_down: uw.minCashDown,
           min_down_pct: uw.minDownPct,
           max_pti: uw.maxPti,
+          max_amount_financed: uw.maxAmountFinanced,
+          max_vehicle_price: uw.maxVehiclePrice,
+          max_ltv: uw.maxLtv,
+          apr: uw.apr,
           hard_stop: uw.hardStop,
           hard_stop_reason: uw.hardStopReason,
           score_factors: uw.scoreFactors,

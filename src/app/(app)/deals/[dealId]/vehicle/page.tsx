@@ -7,9 +7,25 @@ type PayOption = {
   label: "NONE" | "VSC" | "GAP" | "VSC+GAP";
   include_vsc: boolean;
   include_gap: boolean;
+  product_total?: number;
+  amount_financed_est?: number;
   monthly_payment: number;
   fits_cap: boolean;
   additional_down_needed: number;
+  ltv_est?: number;
+  checks?: {
+    vehicle_price_ok: boolean;
+    amount_financed_ok: boolean;
+    ltv_ok: boolean;
+    payment_ok: boolean;
+  };
+  fail_reasons?: string[];
+  additional_down_breakdown?: {
+    min_down: number;
+    amount_financed: number;
+    ltv: number;
+    pti: number;
+  };
 };
 
 type ApiRow = {
@@ -21,16 +37,22 @@ type ApiRow = {
     make: string | null;
     model: string | null;
     odometer: number | null;
+    status?: string | null;
     date_in_stock: string | null;
     asking_price: number | null;
+    jd_power_retail_book?: number | null;
     additional_down_required: number | null;
   };
   payment_options: PayOption[];
   assumptions: {
     apr: number;
     term_months: number;
-    max_payment_cap: number; // from income apply
+    max_payment_cap: number;
     cash_down_used: number;
+    max_amount_financed?: number;
+    max_vehicle_price?: number;
+    max_ltv?: number;
+    tier?: string | null;
   };
 };
 
@@ -39,6 +61,9 @@ type VehicleRow = {
   assumptions: ApiRow["assumptions"];
   byLabel: Partial<Record<PayOption["label"], PayOption>>;
   bestLabel?: PayOption["label"];
+  pathDown: number;
+  primaryBlock: string | null;
+  fitsNow: boolean;
 };
 
 type Selected = {
@@ -74,6 +99,21 @@ function daysSince(dateIso: string | null | undefined) {
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
 }
 
+function normalizeReason(reason: string | null | undefined) {
+  switch (reason) {
+    case "PTI":
+      return "PTI";
+    case "LTV":
+      return "LTV";
+    case "AMOUNT_FINANCED":
+      return "Amt Fin";
+    case "VEHICLE_PRICE":
+      return "Price";
+    default:
+      return reason ?? "—";
+  }
+}
+
 export default function DealVehiclePage() {
   const params = useParams();
   const dealId = asString(params?.dealId);
@@ -83,7 +123,6 @@ export default function DealVehiclePage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // Down payment controls
   const [cashDownInput, setCashDownInput] = useState<string>("");
   const [cashDownApplied, setCashDownApplied] = useState<number | null>(null);
 
@@ -121,13 +160,11 @@ export default function DealVehiclePage() {
       const incoming: ApiRow[] = json.rows || [];
       setRows(incoming);
 
-      // Initialize input from server on first load
       const serverDown = incoming?.[0]?.assumptions?.cash_down_used;
       if (cashDownApplied == null && serverDown != null && cashDownInput === "") {
         setCashDownInput(String(serverDown));
       }
 
-      // If cash down changed, selection is potentially invalid -> clear selection
       setSelected(null);
     } catch (e: any) {
       setErr(e?.message || "Failed to load");
@@ -154,22 +191,72 @@ export default function DealVehiclePage() {
       const byLabel: VehicleRow["byLabel"] = {};
       for (const o of r.payment_options) byLabel[o.label] = o;
 
-      const fits = Object.values(byLabel).filter((x): x is PayOption => Boolean(x) && x.fits_cap);
+      const allOptions = Object.values(byLabel).filter((x): x is PayOption => Boolean(x));
+      const fits = allOptions.filter((x) => x.fits_cap);
       fits.sort((a, b) => a.monthly_payment - b.monthly_payment);
       const best = fits[0]?.label;
 
-      return { vehicle: r.vehicle, assumptions: r.assumptions, byLabel, bestLabel: best };
+      const pathDown = allOptions.length
+        ? Math.min(...allOptions.map((o) => o.additional_down_needed ?? Infinity))
+        : Infinity;
+
+      const bestPathOption = allOptions.length
+        ? [...allOptions].sort((a, b) => {
+          const aDown = a.additional_down_needed ?? Infinity;
+          const bDown = b.additional_down_needed ?? Infinity;
+          if (aDown !== bDown) return aDown - bDown;
+          return a.monthly_payment - b.monthly_payment;
+        })[0]
+        : undefined;
+
+      const primaryBlock = bestPathOption?.fail_reasons?.length
+        ? bestPathOption.fail_reasons[0]
+        : null;
+
+      return {
+        vehicle: r.vehicle,
+        assumptions: r.assumptions,
+        byLabel,
+        bestLabel: best,
+        pathDown,
+        primaryBlock,
+        fitsNow: fits.length > 0,
+      };
     });
 
     out.sort((a, b) => {
-      const aBest = a.bestLabel ? a.byLabel[a.bestLabel]?.monthly_payment ?? Infinity : Infinity;
-      const bBest = b.bestLabel ? b.byLabel[b.bestLabel]?.monthly_payment ?? Infinity : Infinity;
+      const blockRank = (block: string | null) => {
+        switch (block) {
+          case null:
+            return 0; // OK
+          case "LTV":
+            return 1;
+          case "AMOUNT_FINANCED":
+            return 2;
+          case "VEHICLE_PRICE":
+            return 3;
+          case "PTI":
+            return 4;
+          default:
+            return 5;
+        }
+      };
 
-      const aHasFit = Number.isFinite(aBest);
-      const bHasFit = Number.isFinite(bBest);
+      if (a.fitsNow !== b.fitsNow) return a.fitsNow ? -1 : 1;
 
-      if (aHasFit !== bHasFit) return aHasFit ? -1 : 1;
-      return aBest - bBest;
+      const aBlock = blockRank(a.primaryBlock);
+      const bBlock = blockRank(b.primaryBlock);
+      if (aBlock !== bBlock) return aBlock - bBlock;
+
+      if (a.pathDown !== b.pathDown) return a.pathDown - b.pathDown;
+
+      const aNone = a.byLabel["NONE"]?.monthly_payment ?? Infinity;
+      const bNone = b.byLabel["NONE"]?.monthly_payment ?? Infinity;
+      if (aNone !== bNone) return aNone - bNone;
+
+      const aAge = daysSince(a.vehicle.date_in_stock) ?? 0;
+      const bAge = daysSince(b.vehicle.date_in_stock) ?? 0;
+      return bAge - aAge;
     });
 
     return out;
@@ -282,14 +369,16 @@ export default function DealVehiclePage() {
             cursor: disabled ? "not-allowed" : "pointer",
             fontWeight: 900,
             textDecoration: "underline",
-            opacity: disabled ? 0.35 : ok ? 1 : 0.55,
+            opacity: disabled ? 0.35 : ok ? 1 : 0.65,
           }}
           title={
             disabled
               ? "Income not applied"
               : ok
                 ? "Select this option"
-                : `Needs +${money(opt.additional_down_needed)} down to fit`
+                : opt.additional_down_needed > 0
+                  ? `Needs +${money(opt.additional_down_needed)} down to fit`
+                  : "Does not fit"
           }
         >
           {txt}
@@ -306,9 +395,15 @@ export default function DealVehiclePage() {
           {ok ? "✓" : "✕"}
         </span>
 
-        {!disabled && !ok && opt.additional_down_needed > 0 ? (
-          <div style={{ fontSize: 12, color: "crimson", fontWeight: 800 }}>
-            +{money(opt.additional_down_needed)}
+        {!disabled && !ok ? (
+          <div style={{ fontSize: 12, marginTop: 2 }}>
+            {opt.additional_down_needed > 0 ? (
+              <div style={{ color: "crimson", fontWeight: 800 }}>
+                +{money(opt.additional_down_needed)}
+              </div>
+            ) : (
+              <div style={{ color: "crimson", fontWeight: 800 }}>—</div>
+            )}
           </div>
         ) : (
           <div style={{ fontSize: 12, opacity: disabled ? 0.35 : 0.65, fontWeight: 700 }}>
@@ -331,14 +426,14 @@ export default function DealVehiclePage() {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      {/* Header + Prev/Next */}
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <h2 style={{ margin: 0 }}>Step 3: Vehicle</h2>
 
         {header ? (
           <div style={{ marginLeft: 6, fontSize: 14, opacity: 0.85 }}>
-            APR: <b>{header.apr}%</b> • Term: <b>{header.term_months}</b> • Max Payment:{" "}
-            <b>{money(header.max_payment_cap)}</b>
+            APR: <b>{Number(header.apr ?? 0).toFixed(2)}%</b> • Base Term:{" "}
+            <b>{Math.max(1, header.term_months - 6)}</b> • Max Term: <b>{header.term_months}</b> with{" "}
+            <b>VSC+GAP</b> • Max Payment: <b>{money(header.max_payment_cap)}</b>
           </div>
         ) : null}
 
@@ -363,19 +458,15 @@ export default function DealVehiclePage() {
         </button>
       </div>
 
-      {/* Gating message */}
       {!loading && !incomeAppliedOk ? (
         <div style={{ ...card, borderColor: "#f2c9c9", background: "#fff7f7" }}>
-          <div style={{ fontWeight: 900, color: "crimson" }}>
-            Income isn’t applied yet.
-          </div>
+          <div style={{ fontWeight: 900, color: "crimson" }}>Income isn’t applied yet.</div>
           <div style={{ marginTop: 6, opacity: 0.85 }}>
             Go back to <b>Step 2</b> and click <b>Apply Income</b>. Until then, vehicle options are locked.
           </div>
         </div>
       ) : null}
 
-      {/* Selected banner */}
       {selected ? (
         <div style={{ ...card, background: "#fafafa" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -398,7 +489,6 @@ export default function DealVehiclePage() {
         </div>
       ) : null}
 
-      {/* Top controls */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <div style={{ fontSize: 14, fontWeight: 800 }}>Cash Down</div>
@@ -428,7 +518,7 @@ export default function DealVehiclePage() {
       {err ? <div style={{ color: "crimson" }}>{err}</div> : null}
 
       {!loading && !err ? (
-        <div style={{ border: "1px solid #eee", borderRadius: 12 }}>
+        <div style={{ border: "1px solid #eee", borderRadius: 12, overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ background: "#fafafa" }}>
@@ -438,8 +528,8 @@ export default function DealVehiclePage() {
                 <th style={th}>Make</th>
                 <th style={th}>Model</th>
                 <th style={th}>Odo</th>
-                <th style={th}>Addl Down</th>
-
+                <th style={th}>Path Down</th>
+                <th style={th}>Primary Block</th>
                 <th style={thPay}>VSC+GAP</th>
                 <th style={thPay}>VSC</th>
                 <th style={thPay}>GAP</th>
@@ -456,7 +546,12 @@ export default function DealVehiclePage() {
                 const optN = v.byLabel["NONE"];
 
                 return (
-                  <tr key={v.vehicle.id} style={{ background: "#fff" }}>
+                  <tr
+                    key={v.vehicle.id}
+                    style={{
+                      background: v.fitsNow ? "#f8fff9" : "#fff",
+                    }}
+                  >
                     <td style={td}>{age == null ? "—" : age}</td>
                     <td style={td}>{v.vehicle.stock_number ?? "—"}</td>
                     <td style={td}>{v.vehicle.year ?? "—"}</td>
@@ -465,9 +560,27 @@ export default function DealVehiclePage() {
                     <td style={td}>{v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}</td>
 
                     <td style={td}>
-                      {v.vehicle.additional_down_required && v.vehicle.additional_down_required > 0
-                        ? money(v.vehicle.additional_down_required)
-                        : "—"}
+                      {Number.isFinite(v.pathDown) && v.pathDown > 0 ? (
+                        <span style={{ fontWeight: 800 }}>{money(v.pathDown)}</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+
+                    <td style={td}>
+                      {v.primaryBlock ? (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: "crimson",
+                          }}
+                        >
+                          {normalizeReason(v.primaryBlock)}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, fontWeight: 800, color: "green" }}>OK</span>
+                      )}
                     </td>
 
                     <PayCell vRow={v} opt={optVG} highlight={v.bestLabel === "VSC+GAP"} />

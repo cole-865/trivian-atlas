@@ -8,12 +8,14 @@ function round2(n: number) {
 function monthlyPayment(principal: number, apr: number, termMonths: number): number {
   const P = Number(principal);
   const n = Number(termMonths);
-  const r = Number(apr) / 100 / 12;
 
   if (!P || P <= 0) return 0;
   if (!n || n <= 0) return 0;
 
-  // Edge case: 0% APR
+  // Accept either 26.99 or 0.2699
+  const aprNormalized = Number(apr) > 1 ? Number(apr) : Number(apr) * 100;
+  const r = aprNormalized / 100 / 12;
+
   if (r === 0) return round2(P / n);
 
   const pow = Math.pow(1 + r, n);
@@ -24,19 +26,21 @@ function monthlyPayment(principal: number, apr: number, termMonths: number): num
 function principalFromPayment(payment: number, apr: number, termMonths: number): number {
   const PMT = Number(payment);
   const n = Number(termMonths);
-  const r = Number(apr) / 100 / 12;
 
   if (!PMT || PMT <= 0) return 0;
   if (!n || n <= 0) return 0;
 
+  // Accept either 26.99 or 0.2699
+  const aprNormalized = Number(apr) > 1 ? Number(apr) : Number(apr) * 100;
+  const r = aprNormalized / 100 / 12;
+
   if (r === 0) return round2(PMT * n);
 
-  // P = PMT * (1 - (1+r)^-n) / r
   const P = PMT * (1 - Math.pow(1 + r, -n)) / r;
   return round2(P);
 }
 
-// Tax formula (matches your config fields):
+// TN-style tax formula you were already using:
 // tax = price * tax_rate_main + min(price, tax_add_base) * tax_add_rate
 function estimateTax(price: number, taxRateMain: number, taxAddBase: number, taxAddRate: number) {
   const p = Number(price) || 0;
@@ -53,7 +57,23 @@ type PayOption = {
   amount_financed_est: number;
   monthly_payment: number;
   fits_cap: boolean;
-  additional_down_needed: number; // extra down needed to get to cap
+  additional_down_needed: number;
+
+  // Added underwriting visibility
+  ltv_est: number;
+  checks: {
+    vehicle_price_ok: boolean;
+    amount_financed_ok: boolean;
+    ltv_ok: boolean;
+    payment_ok: boolean;
+  };
+  fail_reasons: string[];
+  additional_down_breakdown: {
+    min_down: number;
+    amount_financed: number;
+    ltv: number;
+    pti: number;
+  };
 };
 
 export async function GET(
@@ -68,52 +88,89 @@ export async function GET(
   const offset = Math.max(Number(url.searchParams.get("offset") ?? 0), 0);
   const cashDownOverride = url.searchParams.get("cashDown");
 
-  // 1) Deal basics (max_payment + down/trade)
+  // 1) Deal basics
   const { data: deal, error: dealErr } = await supabase
     .from("deals")
     .select("id, max_payment, cash_down, trade_payoff, has_trade")
     .eq("id", dealId)
     .single();
 
-  const { data: uwResult } = await supabase
-  .from("underwriting_results")
-  .select("max_pti, max_term_months, min_cash_down, min_down_pct")
-  .eq("deal_id", dealId)
-  .eq("stage", "bureau_precheck")
-  .maybeSingle();
-
   if (dealErr) {
-    return NextResponse.json({ error: "Failed to load deal", details: dealErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to load deal", details: dealErr.message },
+      { status: 500 }
+    );
   }
 
+  // 2) Underwriting results from bureau precheck
+  const { data: uwResult, error: uwErr } = await supabase
+    .from("underwriting_results")
+    .select(
+      "tier, max_pti, max_term_months, min_cash_down, min_down_pct, max_amount_financed, max_vehicle_price, max_ltv, apr"
+    )
+    .eq("deal_id", dealId)
+    .eq("stage", "bureau_precheck")
+    .maybeSingle();
+
+  if (uwErr) {
+    return NextResponse.json(
+      { error: "Failed to load underwriting results", details: uwErr.message },
+      { status: 500 }
+    );
+  }
+
+  const maxAmountFinanced = Number(uwResult?.max_amount_financed ?? 0);
+  const maxVehiclePrice = Number(uwResult?.max_vehicle_price ?? 0);
+  const maxLtv = Number(uwResult?.max_ltv ?? 0);
+
+  // The original max_payment on the deal is based on 22% of income.
+  // Scale it by the customer's actual allowed PTI.
   const maxPayment =
-  uwResult?.max_pti != null
-    ? round2((Number(deal?.max_payment ?? 0) / 0.22) * Number(uwResult.max_pti))
-    : Number(deal?.max_payment ?? 0);
-  const cashDown = cashDownOverride != null ? Number(cashDownOverride) : Number(deal?.cash_down ?? 0);
+    uwResult?.max_pti != null
+      ? round2((Number(deal?.max_payment ?? 0) / 0.22) * Number(uwResult.max_pti))
+      : Number(deal?.max_payment ?? 0);
+
+  const cashDown =
+    cashDownOverride != null
+      ? Number(cashDownOverride)
+      : Number(deal?.cash_down ?? 0);
+
   const tradePayoff = Number(deal?.trade_payoff ?? 0);
 
-  // (for now) assume trade equity = 0; payoff increases required cash to close in real life.
-  // we’ll add trade ACV later when you want it.
-
-
-  // 2) Underwriting inputs (APR + term)
-  const { data: uw } = await supabase
+  // 3) Underwriting inputs
+  const { data: uwInputs, error: uwInputsErr } = await supabase
     .from("underwriting_inputs")
     .select("interest_rate_apr, term_months, max_payment_pct, vsc_price, gap_price")
     .eq("deal_id", dealId)
     .maybeSingle();
 
-  // 3) Config (fees/taxes + product pricing fallbacks)
-  const { data: cfg } = await supabase
+  if (uwInputsErr) {
+    return NextResponse.json(
+      { error: "Failed to load underwriting inputs", details: uwInputsErr.message },
+      { status: 500 }
+    );
+  }
+
+  // 4) Config
+  const { data: cfg, error: cfgErr } = await supabase
     .from("trivian_config")
-    .select("apr, payment_cap_pct, tax_rate_main, tax_add_base, tax_add_rate, doc_fee, title_license, vsc_price, gap_price")
+    .select(
+      "apr, payment_cap_pct, tax_rate_main, tax_add_base, tax_add_rate, doc_fee, title_license, vsc_price, gap_price"
+    )
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const apr = Number(uw?.interest_rate_apr ?? cfg?.apr ?? 26.99);
-  const termMonths = Number(uwResult?.max_term_months ?? uw?.term_months ?? 48);
+  if (cfgErr) {
+    return NextResponse.json(
+      { error: "Failed to load trivian config", details: cfgErr.message },
+      { status: 500 }
+    );
+  }
+
+  const apr = Number(uwResult?.apr ?? 28.99);
+  const maxTermMonths = Number(uwResult?.max_term_months ?? uwInputs?.term_months ?? 48);
+  const baseTermMonths = Math.max(1, maxTermMonths - 6);
 
   const taxRateMain = Number(cfg?.tax_rate_main ?? 0.07);
   const taxAddBase = Number(cfg?.tax_add_base ?? 320);
@@ -122,53 +179,99 @@ export async function GET(
   const docFee = Number(cfg?.doc_fee ?? 895.5);
   const titleLicense = Number(cfg?.title_license ?? 0);
 
-  const vscPrice = Number(uw?.vsc_price ?? cfg?.vsc_price ?? 1799);
-  const gapPrice = Number(uw?.gap_price ?? cfg?.gap_price ?? 599);
+  const vscPrice = Number(uwInputs?.vsc_price ?? cfg?.vsc_price ?? 1799);
+  const gapPrice = Number(uwInputs?.gap_price ?? cfg?.gap_price ?? 599);
 
-  // 4) Inventory list
+  // 5) Inventory
   const { data: vehicles, error: invErr } = await supabase
     .from("trivian_inventory")
-    .select("id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock")
+    .select(
+      "id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock, jd_power_retail_book"
+    )
     .order("date_in_stock", { ascending: true })
     .range(offset, offset + limit - 1);
 
   if (invErr) {
-    return NextResponse.json({ error: "Failed to load inventory", details: invErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to load inventory", details: invErr.message },
+      { status: 500 }
+    );
   }
 
-  const optionsTemplate: Array<{ label: PayOption["label"]; vsc: boolean; gap: boolean; productTotal: number }> = [
-    { label: "VSC+GAP", vsc: true, gap: true, productTotal: round2(vscPrice + gapPrice) },
-    { label: "VSC", vsc: true, gap: false, productTotal: round2(vscPrice) },
-    { label: "GAP", vsc: false, gap: true, productTotal: round2(gapPrice) },
-    { label: "NONE", vsc: false, gap: false, productTotal: 0 },
-  ];
+  const optionsTemplate: Array<{
+    label: PayOption["label"];
+    vsc: boolean;
+    gap: boolean;
+    productTotal: number;
+  }> = [
+      { label: "VSC+GAP", vsc: true, gap: true, productTotal: round2(vscPrice + gapPrice) },
+      { label: "VSC", vsc: true, gap: false, productTotal: round2(vscPrice) },
+      { label: "GAP", vsc: false, gap: true, productTotal: round2(gapPrice) },
+      { label: "NONE", vsc: false, gap: false, productTotal: 0 },
+    ];
 
   const rows = (vehicles ?? []).map((v) => {
     const price = Number(v.asking_price ?? 0);
+    const retailBook = Number(v.jd_power_retail_book ?? 0);
+
     const pctDown = round2(price * Number(uwResult?.min_down_pct ?? 0));
-const requiredDown = Math.max(
-  Number(uwResult?.min_cash_down ?? 0),
-  pctDown
-    );
+    const requiredDown = Math.max(Number(uwResult?.min_cash_down ?? 0), pctDown);
     const effectiveDown = round2(Math.max(cashDown, requiredDown));
-    const additionalDownRequired = round2(Math.max(0, requiredDown - cashDown));
+    const minimumDownShortfall = round2(Math.max(0, requiredDown - cashDown));
+
     const tax = estimateTax(price, taxRateMain, taxAddBase, taxAddRate);
     const baseFees = round2(docFee + titleLicense + tax);
 
+    const vehiclePriceOk = maxVehiclePrice > 0 ? price <= maxVehiclePrice : true;
+
     const payOptions: PayOption[] = optionsTemplate.map((ot) => {
-      // Total amount financed estimate
-      // amount financed = price + fees + products - down
+      const optionTermMonths = ot.vsc && ot.gap ? maxTermMonths : baseTermMonths;
       const amountFinanced = round2(price + baseFees + ot.productTotal - effectiveDown);
 
-      const pmt = monthlyPayment(amountFinanced, apr, termMonths);
+      const fitsAmountFinanced =
+        maxAmountFinanced > 0 ? amountFinanced <= maxAmountFinanced : true;
 
-      const fits = maxPayment > 0 ? pmt <= maxPayment : true;
+      const ltv = retailBook > 0 ? round2(amountFinanced / retailBook) : 0;
+      const fitsLtv = retailBook > 0 && maxLtv > 0 ? ltv <= maxLtv : true;
 
-      let additionalDown = 0;
-      if (maxPayment > 0 && !fits) {
-        const principalAllowed = principalFromPayment(maxPayment, apr, termMonths);
-        additionalDown = round2(Math.max(0, amountFinanced - principalAllowed));
+      const pmt = monthlyPayment(amountFinanced, apr, optionTermMonths);
+      const fitsPayment = maxPayment > 0 ? pmt <= maxPayment : true;
+
+      const fits = vehiclePriceOk && fitsAmountFinanced && fitsLtv && fitsPayment;
+
+      let downNeededForAmountFinanced = 0;
+      if (maxAmountFinanced > 0 && amountFinanced > maxAmountFinanced) {
+        downNeededForAmountFinanced = round2(amountFinanced - maxAmountFinanced);
       }
+
+      let downNeededForLtv = 0;
+      if (retailBook > 0 && maxLtv > 0) {
+        const allowedFinancedByLtv = round2(retailBook * maxLtv);
+        if (amountFinanced > allowedFinancedByLtv) {
+          downNeededForLtv = round2(amountFinanced - allowedFinancedByLtv);
+        }
+      }
+
+      let downNeededForPayment = 0;
+      if (maxPayment > 0 && !fitsPayment) {
+        const principalAllowed = principalFromPayment(maxPayment, apr, optionTermMonths);
+        downNeededForPayment = round2(Math.max(0, amountFinanced - principalAllowed));
+      }
+
+      const additionalDownNeeded = round2(
+        Math.max(
+          minimumDownShortfall,
+          downNeededForAmountFinanced,
+          downNeededForLtv,
+          downNeededForPayment
+        )
+      );
+
+      const failReasons: string[] = [];
+      if (!vehiclePriceOk) failReasons.push("VEHICLE_PRICE");
+      if (!fitsAmountFinanced) failReasons.push("AMOUNT_FINANCED");
+      if (!fitsLtv) failReasons.push("LTV");
+      if (!fitsPayment) failReasons.push("PTI");
 
       return {
         label: ot.label,
@@ -177,8 +280,23 @@ const requiredDown = Math.max(
         product_total: ot.productTotal,
         amount_financed_est: amountFinanced,
         monthly_payment: pmt,
+        term_months: optionTermMonths,
         fits_cap: fits,
-        additional_down_needed: additionalDown,
+        additional_down_needed: additionalDownNeeded,
+        ltv_est: ltv,
+        checks: {
+          vehicle_price_ok: vehiclePriceOk,
+          amount_financed_ok: fitsAmountFinanced,
+          ltv_ok: fitsLtv,
+          payment_ok: fitsPayment,
+        },
+        fail_reasons: failReasons,
+        additional_down_breakdown: {
+          min_down: minimumDownShortfall,
+          amount_financed: downNeededForAmountFinanced,
+          ltv: downNeededForLtv,
+          pti: downNeededForPayment,
+        },
       };
     });
 
@@ -194,11 +312,12 @@ const requiredDown = Math.max(
         status: v.status,
         asking_price: price,
         date_in_stock: v.date_in_stock,
-        additional_down_required: additionalDownRequired,
+        jd_power_retail_book: retailBook,
+        additional_down_required: minimumDownShortfall,
       },
       assumptions: {
         apr,
-        term_months: termMonths,
+        term_months: maxTermMonths,
         cash_down_used: effectiveDown,
         trade_payoff: tradePayoff,
         fees_est: baseFees,
@@ -208,6 +327,10 @@ const requiredDown = Math.max(
         vsc_price: vscPrice,
         gap_price: gapPrice,
         max_payment_cap: maxPayment,
+        max_amount_financed: maxAmountFinanced,
+        max_vehicle_price: maxVehiclePrice,
+        max_ltv: maxLtv,
+        tier: uwResult?.tier ?? null,
       },
       payment_options: payOptions,
     };
