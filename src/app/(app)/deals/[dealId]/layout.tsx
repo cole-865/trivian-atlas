@@ -19,9 +19,9 @@ export default async function DealLayout({
     .maybeSingle();
 
   return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
+    <div style={{ padding: 16, width: "100%", maxWidth: 1800, margin: "0 auto" }}>
       <DealStepNav dealId={dealId} tier={uwResult?.tier ?? null} />
-      <div style={{ marginTop: 12 }}>{children}</div>
+      <div style={{ marginTop: 12, width: "100%" }}>{children}</div>
     </div>
   );
 }

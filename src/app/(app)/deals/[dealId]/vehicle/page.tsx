@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 type PayOption = {
@@ -10,6 +10,7 @@ type PayOption = {
   product_total?: number;
   amount_financed_est?: number;
   monthly_payment: number;
+  term_months?: number;
   fits_cap: boolean;
   additional_down_needed: number;
   ltv_est?: number;
@@ -42,11 +43,15 @@ type ApiRow = {
     asking_price: number | null;
     jd_power_retail_book?: number | null;
     additional_down_required: number | null;
+    vehicle_age_years?: number | null;
+    vehicle_policy_max_term_months?: number | null;
+    vehicle_term_policy_note?: string | null;
   };
   payment_options: PayOption[];
   assumptions: {
     apr: number;
     term_months: number;
+    base_term_months?: number;
     max_payment_cap: number;
     cash_down_used: number;
     max_amount_financed?: number;
@@ -59,9 +64,7 @@ type ApiRow = {
 type VehicleRow = {
   vehicle: ApiRow["vehicle"];
   assumptions: ApiRow["assumptions"];
-  byLabel: Partial<Record<PayOption["label"], PayOption>>;
-  bestLabel?: PayOption["label"];
-  pathDown: number;
+  options: PayOption[];
   primaryBlock: string | null;
   fitsNow: boolean;
 };
@@ -102,16 +105,59 @@ function daysSince(dateIso: string | null | undefined) {
 function normalizeReason(reason: string | null | undefined) {
   switch (reason) {
     case "PTI":
-      return "PTI";
+      return "Max Payment";
     case "LTV":
       return "LTV";
     case "AMOUNT_FINANCED":
-      return "Amt Fin";
+      return "Max Amt Fin";
     case "VEHICLE_PRICE":
-      return "Price";
+      return "Max Price";
     default:
       return reason ?? "—";
   }
+}
+
+function optionSortValue(label: PayOption["label"]) {
+  switch (label) {
+    case "VSC+GAP":
+      return 0;
+    case "VSC":
+      return 1;
+    case "GAP":
+      return 2;
+    case "NONE":
+      return 3;
+    default:
+      return 99;
+  }
+}
+
+function getOptionHoverText(opt: PayOption) {
+  if (opt.fits_cap) return "Select this option";
+
+  const reasons = (opt.fail_reasons ?? []).map(normalizeReason);
+  if (!reasons.length) return "Does not fit";
+
+  const detailParts: string[] = [];
+
+  if (opt.additional_down_breakdown) {
+    if (opt.additional_down_breakdown.pti > 0) {
+      detailParts.push(`Max Payment: +${money(opt.additional_down_breakdown.pti)}`);
+    }
+    if (opt.additional_down_breakdown.ltv > 0) {
+      detailParts.push(`LTV: +${money(opt.additional_down_breakdown.ltv)}`);
+    }
+    if (opt.additional_down_breakdown.amount_financed > 0) {
+      detailParts.push(`Max Amt Fin: +${money(opt.additional_down_breakdown.amount_financed)}`);
+    }
+    if (opt.additional_down_breakdown.min_down > 0) {
+      detailParts.push(`Min Down: +${money(opt.additional_down_breakdown.min_down)}`);
+    }
+  }
+
+  return detailParts.length
+    ? `${reasons.join(" • ")}\n${detailParts.join("\n")}`
+    : reasons.join(" • ");
 }
 
 export default function DealVehiclePage() {
@@ -138,6 +184,7 @@ export default function DealVehiclePage() {
     try {
       const qs = new URLSearchParams();
       qs.set("limit", "500");
+
       if (cashDown != null && !Number.isNaN(cashDown)) {
         qs.set("cashDown", String(cashDown));
       }
@@ -149,13 +196,16 @@ export default function DealVehiclePage() {
 
       const text = await res.text();
       let json: any = {};
+
       try {
         json = text ? JSON.parse(text) : {};
       } catch {
-        // non-json response
+        // ignore non-json
       }
 
-      if (!res.ok) throw new Error(json?.error || json?.details || text || "Failed to load vehicles");
+      if (!res.ok) {
+        throw new Error(json?.error || json?.details || text || "Failed to load vehicles");
+      }
 
       const incoming: ApiRow[] = json.rows || [];
       setRows(incoming);
@@ -188,20 +238,16 @@ export default function DealVehiclePage() {
 
   const vehicles: VehicleRow[] = useMemo(() => {
     const out: VehicleRow[] = rows.map((r) => {
-      const byLabel: VehicleRow["byLabel"] = {};
-      for (const o of r.payment_options) byLabel[o.label] = o;
+      const options = [...r.payment_options].sort(
+        (a, b) => optionSortValue(a.label) - optionSortValue(b.label)
+      );
 
-      const allOptions = Object.values(byLabel).filter((x): x is PayOption => Boolean(x));
-      const fits = allOptions.filter((x) => x.fits_cap);
-      fits.sort((a, b) => a.monthly_payment - b.monthly_payment);
-      const best = fits[0]?.label;
+      const fits = options
+        .filter((x) => x.fits_cap)
+        .sort((a, b) => a.monthly_payment - b.monthly_payment);
 
-      const pathDown = allOptions.length
-        ? Math.min(...allOptions.map((o) => o.additional_down_needed ?? Infinity))
-        : Infinity;
-
-      const bestPathOption = allOptions.length
-        ? [...allOptions].sort((a, b) => {
+      const bestPathOption = options.length
+        ? [...options].sort((a, b) => {
           const aDown = a.additional_down_needed ?? Infinity;
           const bDown = b.additional_down_needed ?? Infinity;
           if (aDown !== bDown) return aDown - bDown;
@@ -216,9 +262,7 @@ export default function DealVehiclePage() {
       return {
         vehicle: r.vehicle,
         assumptions: r.assumptions,
-        byLabel,
-        bestLabel: best,
-        pathDown,
+        options,
         primaryBlock,
         fitsNow: fits.length > 0,
       };
@@ -228,7 +272,7 @@ export default function DealVehiclePage() {
       const blockRank = (block: string | null) => {
         switch (block) {
           case null:
-            return 0; // OK
+            return 0;
           case "LTV":
             return 1;
           case "AMOUNT_FINANCED":
@@ -248,11 +292,13 @@ export default function DealVehiclePage() {
       const bBlock = blockRank(b.primaryBlock);
       if (aBlock !== bBlock) return aBlock - bBlock;
 
-      if (a.pathDown !== b.pathDown) return a.pathDown - b.pathDown;
+      const aBestDown = Math.min(...a.options.map((o) => o.additional_down_needed ?? Infinity));
+      const bBestDown = Math.min(...b.options.map((o) => o.additional_down_needed ?? Infinity));
+      if (aBestDown !== bBestDown) return aBestDown - bBestDown;
 
-      const aNone = a.byLabel["NONE"]?.monthly_payment ?? Infinity;
-      const bNone = b.byLabel["NONE"]?.monthly_payment ?? Infinity;
-      if (aNone !== bNone) return aNone - bNone;
+      const aBestPmt = Math.min(...a.options.map((o) => o.monthly_payment ?? Infinity));
+      const bBestPmt = Math.min(...b.options.map((o) => o.monthly_payment ?? Infinity));
+      if (aBestPmt !== bBestPmt) return aBestPmt - bBestPmt;
 
       const aAge = daysSince(a.vehicle.date_in_stock) ?? 0;
       const bAge = daysSince(b.vehicle.date_in_stock) ?? 0;
@@ -288,6 +334,7 @@ export default function DealVehiclePage() {
       setErr("Cash down must be a valid non-negative number.");
       return;
     }
+
     setCashDownApplied(n);
     await load(n);
   }
@@ -298,9 +345,13 @@ export default function DealVehiclePage() {
     qs.set("option", sel.option.label);
     qs.set("vsc", String(sel.option.include_vsc));
     qs.set("gap", String(sel.option.include_gap));
-    qs.set("term", String(header?.term_months ?? ""));
+    qs.set("term", String(sel.option.term_months ?? header?.term_months ?? ""));
     qs.set("pmt", String(sel.option.monthly_payment));
-    if (cashDownApplied != null) qs.set("cashDown", String(cashDownApplied));
+
+    if (cashDownApplied != null) {
+      qs.set("cashDown", String(cashDownApplied));
+    }
+
     return `/deals/${dealId}/deal?${qs.toString()}`;
   }
 
@@ -313,10 +364,12 @@ export default function DealVehiclePage() {
       setErr("Income has not been applied. Go back to Step 2 and click 'Apply Income'.");
       return;
     }
+
     if (!selected) {
-      setErr("Select a vehicle payment option to continue.");
+      setErr("Select a vehicle option to continue.");
       return;
     }
+
     router.push(buildDealUrl(selected));
   }
 
@@ -338,82 +391,6 @@ export default function DealVehiclePage() {
     });
   }
 
-  function PayCell({
-    vRow,
-    opt,
-    highlight,
-  }: {
-    vRow: VehicleRow;
-    opt?: PayOption;
-    highlight?: boolean;
-  }) {
-    if (!opt) return <td style={tdPayMuted}>—</td>;
-
-    const ok = opt.fits_cap;
-    const txt = money(opt.monthly_payment);
-    const isSelected =
-      selected?.vehicleId === vRow.vehicle.id && selected?.option?.label === opt.label;
-
-    const disabled = !incomeAppliedOk;
-
-    return (
-      <td style={tdPay}>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => onPick(vRow, opt)}
-          style={{
-            border: "none",
-            background: "transparent",
-            padding: 0,
-            cursor: disabled ? "not-allowed" : "pointer",
-            fontWeight: 900,
-            textDecoration: "underline",
-            opacity: disabled ? 0.35 : ok ? 1 : 0.65,
-          }}
-          title={
-            disabled
-              ? "Income not applied"
-              : ok
-                ? "Select this option"
-                : opt.additional_down_needed > 0
-                  ? `Needs +${money(opt.additional_down_needed)} down to fit`
-                  : "Does not fit"
-          }
-        >
-          {txt}
-        </button>
-
-        <span
-          style={{
-            marginLeft: 6,
-            fontWeight: 900,
-            color: ok ? "green" : "crimson",
-            opacity: disabled ? 0.35 : 1,
-          }}
-        >
-          {ok ? "✓" : "✕"}
-        </span>
-
-        {!disabled && !ok ? (
-          <div style={{ fontSize: 12, marginTop: 2 }}>
-            {opt.additional_down_needed > 0 ? (
-              <div style={{ color: "crimson", fontWeight: 800 }}>
-                +{money(opt.additional_down_needed)}
-              </div>
-            ) : (
-              <div style={{ color: "crimson", fontWeight: 800 }}>—</div>
-            )}
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, opacity: disabled ? 0.35 : 0.65, fontWeight: 700 }}>
-            {isSelected ? "selected" : highlight ? "best" : "\u00A0"}
-          </div>
-        )}
-      </td>
-    );
-  }
-
   if (!dealId) {
     return (
       <div style={{ padding: 16, color: "crimson" }}>
@@ -426,14 +403,13 @@ export default function DealVehiclePage() {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Step 3: Vehicle</h2>
 
         {header ? (
           <div style={{ marginLeft: 6, fontSize: 14, opacity: 0.85 }}>
-            APR: <b>{Number(header.apr ?? 0).toFixed(2)}%</b> • Base Term:{" "}
-            <b>{Math.max(1, header.term_months - 6)}</b> • Max Term: <b>{header.term_months}</b> with{" "}
-            <b>VSC+GAP</b> • Max Payment: <b>{money(header.max_payment_cap)}</b>
+            APR: <b>{Number(header.apr ?? 0).toFixed(2)}%</b> • Vehicle terms are capped by
+            mileage/age policy • Max Payment: <b>{money(header.max_payment_cap)}</b>
           </div>
         ) : null}
 
@@ -462,7 +438,8 @@ export default function DealVehiclePage() {
         <div style={{ ...card, borderColor: "#f2c9c9", background: "#fff7f7" }}>
           <div style={{ fontWeight: 900, color: "crimson" }}>Income isn’t applied yet.</div>
           <div style={{ marginTop: 6, opacity: 0.85 }}>
-            Go back to <b>Step 2</b> and click <b>Apply Income</b>. Until then, vehicle options are locked.
+            Go back to <b>Step 2</b> and click <b>Apply Income</b>. Until then, vehicle options are
+            locked.
           </div>
         </div>
       ) : null}
@@ -477,7 +454,8 @@ export default function DealVehiclePage() {
               </b>
             </div>
             <div style={{ opacity: 0.75 }}>
-              ({selected.option.label}) {money(selected.option.monthly_payment)}/mo
+              ({selected.option.label}) {money(selected.option.monthly_payment)}/mo •{" "}
+              {selected.option.term_months ?? "—"} mo
             </div>
 
             <div style={{ flex: 1 }} />
@@ -518,76 +496,188 @@ export default function DealVehiclePage() {
       {err ? <div style={{ color: "crimson" }}>{err}</div> : null}
 
       {!loading && !err ? (
-        <div style={{ border: "1px solid #eee", borderRadius: 12, overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+        <div
+          style={{
+            border: "1px solid #eee",
+            borderRadius: 12,
+            width: "100%",
+            overflowX: "auto",
+            background: "#fff",
+          }}
+        >
+          <table
+            style={{
+              width: "100%",
+              minWidth: 1320,
+              borderCollapse: "collapse",
+              fontSize: 14,
+            }}
+          >
             <thead>
+              <tr style={{ background: "#f3f4f6" }}>
+                <th colSpan={7} style={{ ...th, textAlign: "center" }}>
+                  Vehicle Information
+                </th>
+                <th colSpan={5} style={{ ...th, textAlign: "center" }}>
+                  Payment Information
+                </th>
+              </tr>
               <tr style={{ background: "#fafafa" }}>
-                <th style={th}>Age</th>
-                <th style={th}>Stock #</th>
-                <th style={th}>Year</th>
-                <th style={th}>Make</th>
-                <th style={th}>Model</th>
-                <th style={th}>Odo</th>
-                <th style={th}>Path Down</th>
-                <th style={th}>Primary Block</th>
-                <th style={thPay}>VSC+GAP</th>
-                <th style={thPay}>VSC</th>
-                <th style={thPay}>GAP</th>
-                <th style={thPay}>NONE</th>
+                <th style={{ ...th, width: 42 }}>Age</th>
+                <th style={{ ...th, width: 88 }}>Stock #</th>
+                <th style={{ ...th, width: 62 }}>Year</th>
+                <th style={{ ...th, width: 95 }}>Make</th>
+                <th style={{ ...th, width: 145 }}>Model</th>
+                <th style={{ ...th, width: 105 }}>Mileage</th>
+                <th style={{ ...th, width: 82 }}>Block</th>
+
+                <th style={{ ...thCenter, width: 42, paddingLeft: 4, paddingRight: 4 }}>VSC</th>
+                <th style={{ ...thCenter, width: 42, paddingLeft: 4, paddingRight: 4 }}>GAP</th>
+                <th style={{ ...thCenter, width: 60 }}>Term</th>
+                <th style={{ ...thRight, width: 170 }}>Monthly Payment</th>
+                <th style={{ ...thRight, width: 170 }}>Additional Down</th>
               </tr>
             </thead>
+
             <tbody>
               {filtered.map((v) => {
                 const age = daysSince(v.vehicle.date_in_stock);
-
-                const optVG = v.byLabel["VSC+GAP"];
-                const optV = v.byLabel["VSC"];
-                const optG = v.byLabel["GAP"];
-                const optN = v.byLabel["NONE"];
+                const rowSpan = v.options.length;
 
                 return (
-                  <tr
-                    key={v.vehicle.id}
-                    style={{
-                      background: v.fitsNow ? "#f8fff9" : "#fff",
-                    }}
-                  >
-                    <td style={td}>{age == null ? "—" : age}</td>
-                    <td style={td}>{v.vehicle.stock_number ?? "—"}</td>
-                    <td style={td}>{v.vehicle.year ?? "—"}</td>
-                    <td style={td}>{v.vehicle.make ?? "—"}</td>
-                    <td style={td}>{v.vehicle.model ?? "—"}</td>
-                    <td style={td}>{v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}</td>
+                  <Fragment key={v.vehicle.id}>
+                    {v.options.map((opt, idx) => {
+                      const ok = opt.fits_cap;
+                      const needsMoreDown = !ok && (opt.additional_down_needed ?? 0) > 0;
+                      const isSelected =
+                        selected?.vehicleId === v.vehicle.id &&
+                        selected?.option?.label === opt.label;
 
-                    <td style={td}>
-                      {Number.isFinite(v.pathDown) && v.pathDown > 0 ? (
-                        <span style={{ fontWeight: 800 }}>{money(v.pathDown)}</span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-
-                    <td style={td}>
-                      {v.primaryBlock ? (
-                        <span
+                      return (
+                        <tr
+                          key={`${v.vehicle.id}-${opt.label}`}
                           style={{
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: "crimson",
+                            background: v.fitsNow ? "#f8fff9" : "#fff",
                           }}
                         >
-                          {normalizeReason(v.primaryBlock)}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 12, fontWeight: 800, color: "green" }}>OK</span>
-                      )}
-                    </td>
+                          {idx === 0 ? (
+                            <>
+                              <td rowSpan={rowSpan} style={{ ...tdTop, width: 42, paddingLeft: 6, paddingRight: 6 }}>
+                                {age == null ? "—" : age}
+                              </td>
+                              <td rowSpan={rowSpan} style={tdTop}>
+                                {v.vehicle.stock_number ?? "—"}
+                              </td>
+                              <td rowSpan={rowSpan} style={tdTop}>
+                                {v.vehicle.year ?? "—"}
+                              </td>
+                              <td rowSpan={rowSpan} style={tdTop}>
+                                {v.vehicle.make ?? "—"}
+                              </td>
+                              <td rowSpan={rowSpan} style={tdTop}>
+                                {v.vehicle.model ?? "—"}
+                              </td>
+                              <td rowSpan={rowSpan} style={tdTop}>
+                                {v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}
+                              </td>
+                              <td rowSpan={rowSpan} style={tdTop}>
+                                {v.primaryBlock ? (
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                      color: "crimson",
+                                    }}
+                                  >
+                                    {normalizeReason(v.primaryBlock)}
+                                  </span>
+                                ) : (
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                      color: "green",
+                                    }}
+                                  >
+                                    OK
+                                  </span>
+                                )}
+                              </td>
+                            </>
+                          ) : null}
 
-                    <PayCell vRow={v} opt={optVG} highlight={v.bestLabel === "VSC+GAP"} />
-                    <PayCell vRow={v} opt={optV} highlight={v.bestLabel === "VSC"} />
-                    <PayCell vRow={v} opt={optG} highlight={v.bestLabel === "GAP"} />
-                    <PayCell vRow={v} opt={optN} highlight={v.bestLabel === "NONE"} />
-                  </tr>
+                          <td style={{ ...tdCenter, paddingLeft: 4, paddingRight: 4 }}>
+                            {opt.include_vsc ? "✓" : ""}
+                          </td>
+                          <td style={{ ...tdCenter, paddingLeft: 4, paddingRight: 4 }}>
+                            {opt.include_gap ? "✓" : ""}
+                          </td>
+                          <td style={tdCenter}>{opt.term_months ?? "—"}</td>
+
+                          <td style={tdRight}>
+                            <button
+                              type="button"
+                              disabled={!incomeAppliedOk}
+                              onClick={() => onPick(v, opt)}
+                              style={{
+                                border: "none",
+                                background: "transparent",
+                                padding: 0,
+                                cursor: !incomeAppliedOk ? "not-allowed" : "pointer",
+                                fontWeight: 900,
+                                fontSize: 15,
+                                textDecoration: "underline",
+                                opacity: !incomeAppliedOk ? 0.35 : ok ? 1 : 0.7,
+                                color: ok ? "#111" : "#666",
+                              }}
+                              title={
+                                !incomeAppliedOk
+                                  ? "Income not applied"
+                                  : getOptionHoverText(opt)
+                              }
+                            >
+                              {money(opt.monthly_payment)}
+                            </button>
+
+                            <span
+                              style={{
+                                marginLeft: 6,
+                                fontWeight: 900,
+                                color: ok ? "green" : needsMoreDown ? "#d97706" : "crimson",
+                              }}
+                            >
+                              {ok ? "✓" : needsMoreDown ? "!" : "✕"}
+                            </span>
+
+                            {isSelected ? (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  color: "#111",
+                                  marginTop: 2,
+                                }}
+                              >
+                                selected
+                              </div>
+                            ) : null}
+                          </td>
+
+                          <td style={tdRight}>
+                            {needsMoreDown ? (
+                              <span style={{ color: "#d97706", fontWeight: 800 }}>
+                                +{money(opt.additional_down_needed)}
+                              </span>
+                            ) : ok ? (
+                              <span style={{ color: "#666" }}>—</span>
+                            ) : (
+                              <span style={{ color: "crimson", fontWeight: 800 }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -606,33 +696,43 @@ const card: React.CSSProperties = {
 
 const th: React.CSSProperties = {
   textAlign: "left",
-  padding: "10px 10px",
+  padding: "10px 8px",
   borderBottom: "1px solid #eee",
   fontWeight: 800,
   whiteSpace: "nowrap",
 };
 
-const td: React.CSSProperties = {
-  padding: "10px 10px",
-  borderBottom: "1px solid #f2f2f2",
-  whiteSpace: "nowrap",
-};
-
-const thPay: React.CSSProperties = {
+const thCenter: React.CSSProperties = {
   ...th,
   textAlign: "center",
-  minWidth: 140,
 };
 
-const tdPay: React.CSSProperties = {
-  ...td,
-  textAlign: "center",
+const thRight: React.CSSProperties = {
+  ...th,
+  textAlign: "right",
+};
+
+const tdBase: React.CSSProperties = {
+  padding: "6px 8px",
+  borderBottom: "1px solid #f2f2f2",
+  whiteSpace: "nowrap",
+  verticalAlign: "middle",
+};
+
+const tdTop: React.CSSProperties = {
+  ...tdBase,
   verticalAlign: "top",
+  paddingTop: 8,
 };
 
-const tdPayMuted: React.CSSProperties = {
-  ...tdPay,
-  opacity: 0.5,
+const tdCenter: React.CSSProperties = {
+  ...tdBase,
+  textAlign: "center",
+};
+
+const tdRight: React.CSSProperties = {
+  ...tdBase,
+  textAlign: "right",
 };
 
 const input: React.CSSProperties = {
