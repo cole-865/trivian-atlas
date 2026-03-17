@@ -8,33 +8,21 @@ async function createDeal(formData: FormData) {
   const customer_name = String(formData.get("customer_name") ?? "").trim();
 
   if (!customer_name) {
-    // Redirect back with an error (simple + reliable)
     redirect("/deals/new?error=Customer%20name%20is%20required");
   }
 
   const supabase = await createClient();
-  const { data: userData } = await supabase.auth.getUser();
 
-  const payload: any = {
-    status: "draft",
-    customer_name,
-  };
+  const { data, error } = await supabase.rpc("create_deal_with_seed_data", {
+    p_customer_name: customer_name,
+  });
 
-  // If your deals table has user_id, set it. (If not, this is harmless if column doesn't exist? If it DOES exist and is NOT NULL, it’s required.)
-  if (userData.user?.id) payload.user_id = userData.user.id;
-
-  const { data, error } = await supabase
-    .from("deals")
-    .insert(payload)
-    .select("id")
-    .single();
-
-  if (error || !data?.id) {
+  if (error || !data?.length) {
     const msg = encodeURIComponent(error?.message ?? "Failed to create deal");
     redirect(`/deals/new?error=${msg}`);
   }
 
-  redirect(`/deals/${encodeURIComponent(data.id)}/customer`);
+  redirect(`/deals/${encodeURIComponent(data[0].deal_id)}/customer`);
 }
 
 export default async function NewDealPage({

@@ -6,15 +6,24 @@ const ALLOWED_ROLES = new Set(["primary", "co"] as const);
 function bool(v: unknown) {
   return v === true;
 }
+
 function numOrNull(v: unknown) {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
 function strOrNull(v: unknown) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s.length ? s : null;
+}
+
+function buildCustomerName(firstName: unknown, lastName: unknown) {
+  const first = strOrNull(firstName) ?? "";
+  const last = strOrNull(lastName) ?? "";
+  const full = `${first} ${last}`.trim();
+  return full.length ? full : null;
 }
 
 export async function PATCH(
@@ -38,14 +47,13 @@ export async function PATCH(
     error: userErr,
   } = await supabase.auth.getUser();
 
-  if (userErr) {
+  if (userErr || !user) {
     return NextResponse.json(
-      { ok: false, error: "Auth error", details: userErr.message },
+      { ok: false, error: "Auth error", details: userErr?.message ?? "Not authenticated" },
       { status: 401 }
     );
   }
 
-  // Keep it flexible: RLS may require user_id, but you also said "everyone can see everything for now".
   const payload = {
     deal_id: dealId,
     role,
@@ -67,7 +75,6 @@ export async function PATCH(
     banking_prepaid: bool(body.banking_prepaid),
   };
 
-  // Upsert by (deal_id, role). This requires a unique constraint on (deal_id, role).
   const { data, error } = await supabase
     .from("deal_people")
     .upsert(payload, { onConflict: "deal_id,role" })
@@ -76,9 +83,34 @@ export async function PATCH(
 
   if (error) {
     return NextResponse.json(
-      { ok: false, error: "Failed to save person", details: error.message, hint: error.hint },
+      {
+        ok: false,
+        error: "Failed to save person",
+        details: error.message,
+        hint: error.hint,
+      },
       { status: 500 }
     );
+  }
+
+  if (role === "primary") {
+    const customer_name = buildCustomerName(data.first_name, data.last_name);
+
+    const { error: dealErr } = await supabase
+      .from("deals")
+      .update({ customer_name })
+      .eq("id", dealId);
+
+    if (dealErr) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Saved person but failed to sync deal name",
+          details: dealErr.message,
+        },
+        { status: 500 }
+      );
+    }
   }
 
   return NextResponse.json({ ok: true, person: data });
