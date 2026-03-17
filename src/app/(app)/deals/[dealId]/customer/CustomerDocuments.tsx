@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-type DocType = "credit_app" | "credit_bureau";
+type DocType = "credit_bureau";
 
 type DealDoc = {
   id: string;
@@ -136,10 +136,8 @@ export default function CustomerDocuments({
   onStatus?: (s: { credit_app: boolean; credit_bureau: boolean }) => void;
 }) {
   const [docs, setDocs] = useState<{
-    credit_app: DealDoc | null;
     credit_bureau: DealDoc | null;
   }>({
-    credit_app: null,
     credit_bureau: null,
   });
 
@@ -160,11 +158,10 @@ export default function CustomerDocuments({
   const refreshTimer = useRef<number | null>(null);
 
   function pushStatus(nextDocs: {
-    credit_app: DealDoc | null;
     credit_bureau: DealDoc | null;
   }) {
     onStatus?.({
-      credit_app: !!nextDocs.credit_app,
+      credit_app: false,
       credit_bureau: !!nextDocs.credit_bureau,
     });
   }
@@ -231,7 +228,6 @@ export default function CustomerDocuments({
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to load documents");
 
       const nextDocs = {
-        credit_app: (j.documents?.credit_app ?? null) as DealDoc | null,
         credit_bureau: (j.documents?.credit_bureau ?? null) as DealDoc | null,
       };
 
@@ -240,8 +236,8 @@ export default function CustomerDocuments({
       await fetchBureauStatus();
     } catch (e: any) {
       setErr(e?.message || "Failed to load documents");
-      pushStatus({ credit_app: null, credit_bureau: null });
-      setDocs({ credit_app: null, credit_bureau: null });
+      pushStatus({ credit_bureau: null });
+      setDocs({ credit_bureau: null });
       setBureauStatus(null);
       setBureauError(null);
       setBureauUpdatedAt(null);
@@ -394,8 +390,8 @@ export default function CustomerDocuments({
     return `${x.toFixed(1)} ${units[i]}`;
   }
 
-  function label(t: DocType) {
-    return t === "credit_app" ? "Credit Application (PDF)" : "Credit Bureau (PDF)";
+  function label(_t: DocType) {
+    return "Credit Bureau (PDF)";
   }
 
   function BureauStatusPill() {
@@ -565,7 +561,6 @@ export default function CustomerDocuments({
           {err ? <span style={{ color: "crimson" }}>{err}</span> : null}
         </div>
 
-        <DocCard type="credit_app" />
         <DocCard type="credit_bureau" />
       </div>
 

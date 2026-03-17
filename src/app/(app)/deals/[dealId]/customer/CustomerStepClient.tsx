@@ -50,17 +50,17 @@ function clampDigitsOnly(s: string) {
 function hasAnyData(p: PersonForm) {
   return Boolean(
     p.first_name.trim() ||
-      p.last_name.trim() ||
-      p.phone.trim() ||
-      p.email.trim() ||
-      p.address_line1.trim() ||
-      p.city.trim() ||
-      p.state.trim() ||
-      p.zip.trim() ||
-      p.residence_months.trim() ||
-      p.banking_checking ||
-      p.banking_savings ||
-      p.banking_prepaid
+    p.last_name.trim() ||
+    p.phone.trim() ||
+    p.email.trim() ||
+    p.address_line1.trim() ||
+    p.city.trim() ||
+    p.state.trim() ||
+    p.zip.trim() ||
+    p.residence_months.trim() ||
+    p.banking_checking ||
+    p.banking_savings ||
+    p.banking_prepaid
   );
 }
 
@@ -95,14 +95,13 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
   });
 
   const [docStatus, setDocStatus] = useState({
-    credit_app: false,
     credit_bureau: false,
   });
 
   const activeForm = useMemo(() => people[activeRole], [people, activeRole]);
 
   const primaryOk = useMemo(() => primaryNameOk(people.primary), [people.primary]);
-  const docsOk = docStatus.credit_app && docStatus.credit_bureau;
+  const docsOk = docStatus.credit_bureau;
   const canNext = primaryOk && docsOk && !loading && !navBusy && !savingRole;
 
   useEffect(() => {
@@ -212,7 +211,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
 
   function nextBlockerMessage() {
     if (!primaryOk) return "Enter Driver first + last name to continue.";
-    if (!docsOk) return "Upload Credit Application + Credit Bureau PDFs before continuing.";
+    if (!docsOk) return "Upload Credit Bureau PDFs before continuing.";
     return null;
   }
 
@@ -259,7 +258,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
         <div className="min-w-[220px]">
           <h2 className="m-0 text-lg font-semibold">Step 1: Customer</h2>
           <div className="text-xs text-muted-foreground">
-            Required: Driver name + both PDFs.
+            Required: Driver name + Credit Bureau PDF.
           </div>
         </div>
 
@@ -331,8 +330,8 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
               activeRole === "primary" && !primaryOk
                 ? "Driver first + last name required to save"
                 : hasAnyData(activeForm)
-                ? ""
-                : "Nothing to save"
+                  ? ""
+                  : "Nothing to save"
             }
           >
             Save {roleLabel(activeRole)}
@@ -428,9 +427,12 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
         <CustomerDocuments
           dealId={dealId}
           onStatus={(s: { credit_app: boolean; credit_bureau: boolean }) => {
-            setDocStatus(s);
-            // Clear doc-related error if they just satisfied it
-            if (s.credit_app && s.credit_bureau && error?.toLowerCase().includes("upload")) {
+            setDocStatus({
+              credit_bureau: s.credit_bureau,
+            });
+
+            // Clear doc-related error if bureau is uploaded
+            if (s.credit_bureau && error?.toLowerCase().includes("upload")) {
               setError(null);
             }
           }}
@@ -441,8 +443,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
       <div className="text-xs text-muted-foreground">
         Required to continue:{" "}
         <b>
-          Driver name {primaryOk ? "✓" : "✗"} · Credit App{" "}
-          {docStatus.credit_app ? "✓" : "✗"} · Credit Bureau{" "}
+          Driver name {primaryOk ? "✓" : "✗"} · Credit Bureau{" "}
           {docStatus.credit_bureau ? "✓" : "✗"}
         </b>
       </div>
