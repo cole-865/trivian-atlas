@@ -38,8 +38,13 @@ function principalFromPayment(payment: number, apr: number, termMonths: number):
   return round2(P);
 }
 
-function estimateTax(price: number, taxRateMain: number, taxAddBase: number, taxAddRate: number) {
-  const p = Number(price) || 0;
+function estimateTax(
+  taxableAmount: number,
+  taxRateMain: number,
+  taxAddBase: number,
+  taxAddRate: number
+) {
+  const p = Number(taxableAmount) || 0;
   const main = p * (Number(taxRateMain) || 0);
   const add = Math.min(p, Number(taxAddBase) || 0) * (Number(taxAddRate) || 0);
   return round2(main + add);
@@ -50,6 +55,8 @@ type PayOption = {
   include_vsc: boolean;
   include_gap: boolean;
   product_total: number;
+  tax_est: number;
+  fees_est: number;
   amount_financed_est: number;
   monthly_payment: number;
   term_months: number;
@@ -297,13 +304,21 @@ export async function GET(
     const effectiveDown = round2(Math.max(cashDown, requiredDown));
     const minimumDownShortfall = round2(Math.max(0, requiredDown - cashDown));
 
-    const tax = estimateTax(price, taxRateMain, taxAddBase, taxAddRate);
-    const baseFees = round2(docFee + titleLicense + tax);
-
     const vehiclePriceOk = maxVehiclePrice > 0 ? price <= maxVehiclePrice : true;
 
     const paymentOptions: PayOption[] = optionsTemplate.map((ot) => {
       const optionTermMonths = ot.vsc && ot.gap ? vehicleMaxTermMonths : vehicleBaseTermMonths;
+
+      const taxableAmount = price + (ot.vsc ? vscPrice : 0);
+
+      const tax = estimateTax(
+        taxableAmount,
+        taxRateMain,
+        taxAddBase,
+        taxAddRate
+      );
+
+      const baseFees = round2(docFee + titleLicense + tax);
 
       const amountFinanced = round2(price + baseFees + ot.productTotal - effectiveDown);
 
@@ -357,6 +372,8 @@ export async function GET(
         include_vsc: ot.vsc,
         include_gap: ot.gap,
         product_total: ot.productTotal,
+        tax_est: tax,
+        fees_est: baseFees,
         amount_financed_est: amountFinanced,
         monthly_payment: payment,
         term_months: optionTermMonths,
@@ -403,8 +420,6 @@ export async function GET(
         base_term_months: vehicleBaseTermMonths,
         cash_down_used: effectiveDown,
         trade_payoff: tradePayoff,
-        fees_est: baseFees,
-        tax_est: tax,
         doc_fee: docFee,
         title_license: titleLicense,
         vsc_price: vscPrice,

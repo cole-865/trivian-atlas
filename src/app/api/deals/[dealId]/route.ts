@@ -112,3 +112,36 @@ export async function GET(
     vehicle_selection: vehicle_selection ?? null,
   });
 }
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ dealId: string }> }
+) {
+  const { dealId } = await params;
+
+  if (!dealId) {
+    return NextResponse.json({ error: "Missing dealId" }, { status: 400 });
+  }
+
+  const body = await req.json();
+  const supabase = await supabaseServer();
+
+  const { data, error } = await supabase
+    .from("deals")
+    .update({
+      cash_down: body.cash_down,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", dealId)
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json(
+      { error: "Failed to update deal", details: error.message },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ ok: true, deal: data });
+}

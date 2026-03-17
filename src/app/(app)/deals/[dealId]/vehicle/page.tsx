@@ -211,7 +211,8 @@ export default function DealVehiclePage() {
       setRows(incoming);
 
       const serverDown = incoming?.[0]?.assumptions?.cash_down_used;
-      if (cashDownApplied == null && serverDown != null && cashDownInput === "") {
+      if (cashDownApplied == null && serverDown != null) {
+        setCashDownApplied(Number(serverDown));
         setCashDownInput(String(serverDown));
       }
 
@@ -335,8 +336,30 @@ export default function DealVehiclePage() {
       return;
     }
 
-    setCashDownApplied(n);
-    await load(n);
+    try {
+      const res = await fetch(`/api/deals/${dealId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cash_down: n,
+        }),
+      });
+
+      const result = await res.text();
+      console.log("PATCH /api/deals response", res.status, result);
+
+      if (!res.ok) {
+        throw new Error("Failed to save cash down");
+      }
+
+      setCashDownApplied(n);
+      await load(n);
+    } catch (e) {
+      console.error(e);
+      setErr("Failed to save cash down");
+    }
   }
 
   function buildDealUrl(sel: Selected) {
