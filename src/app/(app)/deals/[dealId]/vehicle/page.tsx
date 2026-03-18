@@ -44,6 +44,7 @@ type ApiRow = {
     date_in_stock: string | null;
     asking_price: number | null;
     jd_power_retail_book?: number | null;
+    vehicle_category?: "car" | "suv" | "truck" | "van" | null;
     additional_down_required: number | null;
     vehicle_age_years?: number | null;
     vehicle_policy_max_term_months?: number | null;
@@ -225,6 +226,7 @@ export default function DealVehiclePage() {
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selected | null>(null);
+  const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>("all");
 
   async function load(cashDown: number | null) {
     if (!dealId) return;
@@ -360,11 +362,39 @@ export default function DealVehiclePage() {
     return out;
   }, [rows]);
 
+  const vehicleCategoryCounts = useMemo(() => {
+    const counts = {
+      all: vehicles.length,
+      car: 0,
+      suv: 0,
+      truck: 0,
+      van: 0,
+    };
+
+    for (const v of vehicles) {
+      const cat = v.vehicle.vehicle_category ?? "car";
+
+      if (cat === "car") counts.car += 1;
+      else if (cat === "suv") counts.suv += 1;
+      else if (cat === "truck") counts.truck += 1;
+      else if (cat === "van") counts.van += 1;
+    }
+
+    return counts;
+  }, [vehicles]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return vehicles;
 
     return vehicles.filter((v) => {
+      const matchesCategory =
+        vehicleCategory === "all" ||
+        (v.vehicle.vehicle_category ?? "car") === vehicleCategory;
+
+      if (!matchesCategory) return false;
+
+      if (!q) return true;
+
       const hay = [
         v.vehicle.stock_number,
         v.vehicle.year?.toString(),
@@ -378,7 +408,7 @@ export default function DealVehiclePage() {
 
       return hay.includes(q);
     });
-  }, [vehicles, query]);
+  }, [vehicles, query, vehicleCategory]);
 
   async function handleApplyDown() {
     const n = Number(cashDownInput);
@@ -564,6 +594,37 @@ export default function DealVehiclePage() {
           <button type="button" onClick={handleApplyDown} style={btnSecondary}>
             Apply
           </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {(
+            [
+              { key: "all", label: "All" },
+              { key: "car", label: "Cars" },
+              { key: "suv", label: "SUVs" },
+              { key: "truck", label: "Trucks" },
+              { key: "van", label: "Vans" },
+            ] as Array<{ key: VehicleCategory; label: string }>
+          ).map((item) => {
+            const active = vehicleCategory === item.key;
+
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setVehicleCategory(item.key)}
+                style={{
+                  ...filterBtn,
+                  background: active ? "#e8f0fe" : "#fff",
+                  borderColor: active ? "#7aa2e3" : "#d8d8d8",
+                  color: active ? "#0f3d91" : "#222",
+                  boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+                }}
+              >
+                {item.label} ({vehicleCategoryCounts[item.key]})
+              </button>
+            );
+          })}
         </div>
 
         <input
@@ -848,6 +909,16 @@ const btnPrimary: React.CSSProperties = {
   background: "#111",
   color: "#fff",
   fontWeight: 900,
+};
+
+const filterBtn: React.CSSProperties = {
+  padding: "9px 14px",
+  borderRadius: 12,
+  border: "1px solid #d8d8d8",
+  background: "#fff",
+  cursor: "pointer",
+  fontWeight: 800,
+  minWidth: 72,
 };
 
 const btnSecondary: React.CSSProperties = {

@@ -102,6 +102,7 @@ type InventoryVehicle = {
   asking_price: number | string | null;
   date_in_stock: string | null;
   jd_power_retail_book: number | string | null;
+  vehicle_category: "car" | "suv" | "truck" | "van" | null;
 };
 
 function getVehicleAgeYears(year: number | null | undefined) {
@@ -231,7 +232,7 @@ export async function GET(
   const { data: vehicles, error: invErr } = await supabase
     .from("trivian_inventory")
     .select(
-      "id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock, jd_power_retail_book"
+      "id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock, jd_power_retail_book, vehicle_category"
     )
     .order("date_in_stock", { ascending: true })
     .range(offset, offset + limit - 1);
@@ -409,6 +410,7 @@ export async function GET(
         asking_price: price,
         date_in_stock: v.date_in_stock,
         jd_power_retail_book: retailBook,
+        vehicle_category: v.vehicle_category,
         additional_down_required: minimumDownShortfall,
         vehicle_age_years,
         vehicle_policy_max_term_months,
