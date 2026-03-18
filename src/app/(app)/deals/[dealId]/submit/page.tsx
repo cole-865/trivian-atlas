@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { DealStepNav } from "@/components/DealStepNav";
 
 function asString(value: string | string[] | undefined): string {
   if (!value) return "";
@@ -20,9 +19,112 @@ type Selection = {
   cash_down: number | null;
 };
 
+type DealDocument = {
+  id: string;
+  deal_id: string;
+  doc_type: string;
+  storage_bucket: string;
+  storage_path: string;
+  original_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  created_at: string;
+};
+
+type DocumentsResponse = {
+  ok: boolean;
+  documents: {
+    credit_bureau: DealDocument | null;
+    proof_of_income: DealDocument[];
+    proof_of_residence: DealDocument[];
+    driver_license: DealDocument[];
+    insurance: DealDocument[];
+    references: DealDocument[];
+    other: DealDocument[];
+  };
+};
+
+type StipConfig = {
+  key:
+  | "proof_of_income"
+  | "proof_of_residence"
+  | "driver_license"
+  | "insurance"
+  | "references"
+  | "other";
+  label: string;
+  required: boolean;
+  helper: string;
+  allowMultiple: boolean;
+};
+
+const STIP_CONFIG: StipConfig[] = [
+  {
+    key: "proof_of_income",
+    label: "Proof of Income",
+    required: true,
+    helper: "Pay stubs, bank statements, benefit letter, or other income proof.",
+    allowMultiple: true,
+  },
+  {
+    key: "proof_of_residence",
+    label: "Proof of Residence",
+    required: true,
+    helper: "Utility bill, lease, mail, or other address verification.",
+    allowMultiple: true,
+  },
+  {
+    key: "driver_license",
+    label: "Driver License",
+    required: true,
+    helper: "Front/back images or a PDF scan.",
+    allowMultiple: true,
+  },
+  {
+    key: "insurance",
+    label: "Insurance",
+    required: false,
+    helper: "Insurance card, binder, or declarations page.",
+    allowMultiple: true,
+  },
+  {
+    key: "references",
+    label: "References",
+    required: false,
+    helper: "Reference sheet or supporting contact documentation.",
+    allowMultiple: true,
+  },
+  {
+    key: "other",
+    label: "Other",
+    required: false,
+    helper: "Anything else needed to fund or explain the deal.",
+    allowMultiple: true,
+  },
+];
+
 function money(n: number | null | undefined) {
   const v = Number(n ?? 0);
   return v.toLocaleString(undefined, { style: "currency", currency: "USD" });
+}
+
+function yesNo(v: boolean) {
+  return v ? "Yes" : "No";
+}
+
+function formatBytes(bytes: number | null | undefined) {
+  const value = Number(bytes ?? 0);
+  if (!value) return "—";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(ts: string | null | undefined) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
 }
 
 export default function DealSubmitPage() {
@@ -31,41 +133,170 @@ export default function DealSubmitPage() {
   const dealId = asString(params?.dealId);
 
   const [loading, setLoading] = useState(true);
+  const [loadingDocs, setLoadingDocs] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [documents, setDocuments] = useState<DocumentsResponse["documents"] | null>(null);
+
+  const [submitNotes, setSubmitNotes] = useState("");
+  const [internalNotes, setInternalNotes] = useState("");
+
+  const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
     if (!dealId) return;
 
     let cancelled = false;
 
-    async function load() {
-      setLoading(true);
-      setErr(null);
-
+    async function loadSelection() {
       try {
-        const r = await fetch(`/api/deals/${dealId}/vehicle-selection`, { cache: "no-store" });
+        const r = await fetch(`/api/deals/${dealId}/vehicle-selection`, {
+          cache: "no-store",
+        });
         const j = await r.json();
-        if (!r.ok) throw new Error(j?.details || j?.error || "Failed to load selection");
 
-        if (!cancelled) setSelection(j.selection ?? null);
+        if (!r.ok) {
+          throw new Error(j?.details || j?.error || "Failed to load selection");
+        }
+
+        if (!cancelled) {
+          setSelection(j.selection ?? null);
+        }
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message || "Load failed");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          throw new Error(e?.message || "Failed to load selection");
+        }
       }
     }
 
-    load();
+    async function loadDocuments() {
+      try {
+        const r = await fetch(`/api/deals/${dealId}/documents`, {
+          cache: "no-store",
+        });
+        const j: DocumentsResponse = await r.json();
+
+        if (!r.ok) {
+          throw new Error((j as any)?.details || (j as any)?.error || "Failed to load documents");
+        }
+
+        if (!cancelled) {
+          setDocuments(j.documents);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          throw new Error(e?.message || "Failed to load documents");
+        }
+      }
+    }
+
+    async function loadAll() {
+      setLoading(true);
+      setLoadingDocs(true);
+      setErr(null);
+
+      try {
+        await Promise.all([loadSelection(), loadDocuments()]);
+      } catch (e: any) {
+        if (!cancelled) {
+          setErr(e?.message || "Load failed");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setLoadingDocs(false);
+        }
+      }
+    }
+
+    loadAll();
+
     return () => {
       cancelled = true;
     };
   }, [dealId]);
 
-  const canSubmit = useMemo(() => {
-    // For now: require vehicle selection. Later: require docs + income + people completion, etc.
-    return !!selection;
-  }, [selection]);
+  async function refreshDocuments() {
+    if (!dealId) return;
+
+    setLoadingDocs(true);
+    try {
+      const r = await fetch(`/api/deals/${dealId}/documents`, {
+        cache: "no-store",
+      });
+      const j: DocumentsResponse = await r.json();
+
+      if (!r.ok) {
+        throw new Error((j as any)?.details || (j as any)?.error || "Failed to refresh documents");
+      }
+
+      setDocuments(j.documents);
+    } catch (e: any) {
+      setUploadError(e?.message || "Failed to refresh documents");
+    } finally {
+      setLoadingDocs(false);
+    }
+  }
+
+  const requiredStipsComplete = useMemo(() => {
+    if (!documents) return false;
+
+    return STIP_CONFIG.filter((x) => x.required).every((stip) => {
+      const files = documents[stip.key] ?? [];
+      return files.length > 0;
+    });
+  }, [documents]);
+
+  const checklistItems = useMemo(() => {
+    const creditBureauPresent = !!documents?.credit_bureau;
+
+    return [
+      {
+        ok: !!selection,
+        label: "Vehicle selected",
+        detail: !!selection
+          ? "A vehicle has been saved for this deal."
+          : "No selected vehicle found.",
+      },
+      {
+        ok: !!selection,
+        label: "Structure selected",
+        detail: !!selection
+          ? "Payment option, term, and down payment are present."
+          : "No saved structure found.",
+      },
+      {
+        ok: creditBureauPresent,
+        label: "Credit bureau uploaded",
+        detail: creditBureauPresent
+          ? "A bureau file exists for this deal."
+          : "No credit bureau file found.",
+      },
+      {
+        ok: requiredStipsComplete,
+        label: "Required stipulations uploaded",
+        detail: requiredStipsComplete
+          ? "Required stip docs are present."
+          : "Missing one or more required stips.",
+      },
+      {
+        ok: true,
+        label: "Underwriting / deal review",
+        detail: "Placeholder until final submit rules are wired.",
+      },
+    ];
+  }, [selection, documents, requiredStipsComplete]);
+
+  const readyCount = checklistItems.filter((x) => x.ok).length;
+  const totalCount = checklistItems.length;
+
+  const canContinue = useMemo(() => {
+    return !!selection && !!documents?.credit_bureau && requiredStipsComplete;
+  }, [selection, documents, requiredStipsComplete]);
 
   function onPrev() {
     router.push(`/deals/${dealId}/deal`);
@@ -73,29 +304,70 @@ export default function DealSubmitPage() {
 
   function onNext() {
     setErr(null);
-    if (!canSubmit) {
-      setErr("Missing vehicle selection. Go back and complete Step 3/4.");
+
+    if (!canContinue) {
+      setErr("This deal is not ready yet. Make sure the structure, bureau, and required stipulations are all in place.");
       return;
     }
+
     router.push(`/deals/${dealId}/fund`);
+  }
+
+  function openPicker(docType: StipConfig["key"]) {
+    setUploadError(null);
+    fileInputRefs.current[docType]?.click();
+  }
+
+  async function onUploadFile(docType: string, file: File | null) {
+    if (!file || !dealId) return;
+
+    setUploadError(null);
+    setUploadingDocType(docType);
+
+    try {
+      const form = new FormData();
+      form.append("doc_type", docType);
+      form.append("file", file);
+
+      const r = await fetch(`/api/deals/${dealId}/documents`, {
+        method: "POST",
+        body: form,
+      });
+
+      const j = await r.json();
+
+      if (!r.ok) {
+        throw new Error(j?.details || j?.error || "Upload failed");
+      }
+
+      await refreshDocuments();
+    } catch (e: any) {
+      setUploadError(e?.message || "Upload failed");
+    } finally {
+      setUploadingDocType(null);
+
+      const input = fileInputRefs.current[docType];
+      if (input) input.value = "";
+    }
   }
 
   if (!dealId) {
     return (
       <div style={{ padding: 16, color: "crimson" }}>
-        Missing dealId in route params. (Check folder name:{" "}
-        <code>deals/[dealId]/submit</code>)
+        Missing dealId in route params. (Check folder name: <code>deals/[dealId]/submit</code>)
       </div>
     );
   }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <DealStepNav dealId={dealId} />
-
-      {/* Header + Prev/Next */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <h2 style={{ margin: 0 }}>Step 5: Submit</h2>
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={headerRow}>
+        <div>
+          <h2 style={{ margin: 0 }}>Step 5: Review & Submit</h2>
+          <div style={{ marginTop: 4, fontSize: 13, color: "#666", fontWeight: 600 }}>
+            Final review, required stip uploads, and deal packet assembly.
+          </div>
+        </div>
 
         <div style={{ flex: 1 }} />
 
@@ -106,85 +378,349 @@ export default function DealSubmitPage() {
         <button
           type="button"
           onClick={onNext}
-          disabled={!canSubmit || loading}
+          disabled={!canContinue || loading}
           style={{
             ...btnPrimary,
-            background: !canSubmit || loading ? "#999" : "#111",
-            cursor: !canSubmit || loading ? "not-allowed" : "pointer",
+            background: !canContinue || loading ? "#999" : "#111",
+            borderColor: !canContinue || loading ? "#999" : "#111",
+            cursor: !canContinue || loading ? "not-allowed" : "pointer",
           }}
         >
           Next →
         </button>
       </div>
 
-      {loading ? <div style={{ opacity: 0.8 }}>Loading…</div> : null}
-      {err ? <div style={{ color: "crimson", fontWeight: 900 }}>{err}</div> : null}
+      {loading ? <div style={infoBox}>Loading submit review…</div> : null}
+      {err ? <div style={errorBox}>{err}</div> : null}
+      {uploadError ? <div style={errorBox}>{uploadError}</div> : null}
 
-      {/* Preflight */}
-      <div style={{ ...card, background: "#fafafa" }}>
-        <div style={{ fontWeight: 900, marginBottom: 8 }}>Preflight Checklist</div>
+      <div style={gridTwo}>
+        <section style={card}>
+          <div style={sectionTitle}>Preflight Checklist</div>
 
-        <div style={{ display: "grid", gap: 8 }}>
-          <Row ok={!!selection} label="Vehicle selection saved" />
-          <Row ok={true} label="Income applied (we’ll validate later)" />
-          <Row ok={true} label="Docs uploaded (we’ll validate later)" />
-        </div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1 }}>
+              {readyCount}/{totalCount}
+            </div>
+            <div style={{ fontSize: 13, color: "#666", fontWeight: 700, marginTop: 4 }}>
+              Checks passing
+            </div>
+          </div>
 
-        {selection ? (
-          <div style={{ marginTop: 12, borderTop: "1px solid #eee", paddingTop: 12 }}>
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Selection</div>
-            <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gap: 10 }}>
+            {checklistItems.map((item) => (
+              <ChecklistRow
+                key={item.label}
+                ok={item.ok}
+                label={item.label}
+                detail={item.detail}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section style={card}>
+          <div style={sectionTitle}>Structure Summary</div>
+
+          {selection ? (
+            <div style={kvGrid}>
               <div style={k}>Vehicle ID</div>
               <div style={v}>{selection.vehicle_id}</div>
 
               <div style={k}>Package</div>
-              <div style={v}>
-                <b>{selection.option_label}</b>{" "}
-                <span style={{ opacity: 0.75, fontSize: 13 }}>
-                  ({selection.include_vsc ? "VSC" : "No VSC"} •{" "}
-                  {selection.include_gap ? "GAP" : "No GAP"})
-                </span>
-              </div>
+              <div style={v}>{selection.option_label}</div>
 
-              <div style={k}>Payment</div>
-              <div style={v}>
-                <b>{money(selection.monthly_payment)}</b>
-              </div>
+              <div style={k}>Monthly Payment</div>
+              <div style={vStrong}>{money(selection.monthly_payment)}</div>
 
               <div style={k}>Term</div>
-              <div style={v}>
-                <b>{selection.term_months}</b> months
-              </div>
+              <div style={vStrong}>{selection.term_months} months</div>
 
               <div style={k}>Cash Down</div>
-              <div style={v}>{selection.cash_down != null ? money(selection.cash_down) : "—"}</div>
+              <div style={vStrong}>
+                {selection.cash_down != null ? money(selection.cash_down) : "—"}
+              </div>
+
+              <div style={k}>VSC</div>
+              <div style={v}>{yesNo(selection.include_vsc)}</div>
+
+              <div style={k}>GAP</div>
+              <div style={v}>{yesNo(selection.include_gap)}</div>
             </div>
+          ) : (
+            <div style={{ fontSize: 14, color: "#666", lineHeight: 1.5 }}>
+              No structure has been saved yet.
+            </div>
+          )}
+        </section>
+      </div>
+
+      <section style={card}>
+        <div style={sectionTitle}>Credit Bureau</div>
+
+        {documents?.credit_bureau ? (
+          <div style={docCard}>
+            <div>
+              <div style={{ fontWeight: 900 }}>{documents.credit_bureau.original_name || "Credit Bureau PDF"}</div>
+              <div style={docMeta}>
+                Uploaded {formatDate(documents.credit_bureau.created_at)} •{" "}
+                {formatBytes(documents.credit_bureau.size_bytes)}
+              </div>
+            </div>
+            <span style={statusGood}>Present</span>
           </div>
         ) : (
-          <div style={{ marginTop: 10, opacity: 0.85 }}>
-            No selection found. That means Step 4 still isn’t persisting the choice yet.
+          <div style={warningBox}>
+            No credit bureau file found for this deal. Step 5 can’t go forward without it.
           </div>
         )}
+      </section>
+
+      <section style={card}>
+        <div style={sectionTitle}>Stipulations & Uploads</div>
+        <div style={helperText}>
+          Upload the docs needed to fund the deal. Required items are flagged. Multiple uploads per
+          category are allowed because real life enjoys being messy.
+        </div>
+
+        {loadingDocs ? <div style={infoBox}>Loading documents…</div> : null}
+
+        <div style={{ display: "grid", gap: 12 }}>
+          {STIP_CONFIG.map((stip) => {
+            const files = documents?.[stip.key] ?? [];
+            const isUploading = uploadingDocType === stip.key;
+
+            return (
+              <div key={stip.key} style={stipRow}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 900, fontSize: 14 }}>{stip.label}</div>
+                    {stip.required ? <span style={pillRequired}>Required</span> : <span style={pillOptional}>Optional</span>}
+                    {files.length > 0 ? <span style={pillGood}>{files.length} file{files.length === 1 ? "" : "s"}</span> : null}
+                  </div>
+                  <div style={stipHelper}>{stip.helper}</div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <input
+                    ref={(el) => {
+                      fileInputRefs.current[stip.key] = el;
+                    }}
+                    type="file"
+                    hidden
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                    onChange={(e) => onUploadFile(stip.key, e.target.files?.[0] ?? null)}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => openPicker(stip.key)}
+                    disabled={isUploading}
+                    style={{
+                      ...btnSecondary,
+                      minWidth: 120,
+                      cursor: isUploading ? "not-allowed" : "pointer",
+                      opacity: isUploading ? 0.65 : 1,
+                    }}
+                  >
+                    {isUploading ? "Uploading..." : "Upload"}
+                  </button>
+                </div>
+
+                {files.length > 0 ? (
+                  <div style={{ gridColumn: "1 / -1", display: "grid", gap: 8 }}>
+                    {files.map((doc) => (
+                      <div key={doc.id} style={docCard}>
+                        <div>
+                          <div style={{ fontWeight: 800 }}>{doc.original_name || "Uploaded file"}</div>
+                          <div style={docMeta}>
+                            {formatDate(doc.created_at)} • {formatBytes(doc.size_bytes)} •{" "}
+                            {doc.mime_type || "unknown type"}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "#777", fontWeight: 700 }}>
+                    No files uploaded yet.
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <div style={gridTwo}>
+        <section style={card}>
+          <div style={sectionTitle}>Funding Notes</div>
+          <div style={helperText}>
+            UI only for now. Wire these later once you decide whether they belong on the deal or in a notes table.
+          </div>
+          <textarea
+            value={submitNotes}
+            onChange={(e) => setSubmitNotes(e.target.value)}
+            placeholder="Add stipulations, conditions, callback notes, or funding comments..."
+            style={textarea}
+          />
+        </section>
+
+        <section style={card}>
+          <div style={sectionTitle}>Internal Notes</div>
+          <div style={helperText}>
+            Handoff notes to finance, sales, recon, or whoever gets the pleasure next.
+          </div>
+          <textarea
+            value={internalNotes}
+            onChange={(e) => setInternalNotes(e.target.value)}
+            placeholder="Add internal deal notes..."
+            style={textarea}
+          />
+        </section>
+      </div>
+
+      <section style={card}>
+        <div style={sectionTitle}>Submit Status</div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={statusRow}>
+            <span style={statusLabel}>Ready for next step</span>
+            <span style={canContinue ? statusGood : statusBad}>{canContinue ? "Yes" : "No"}</span>
+          </div>
+
+          <div style={statusRow}>
+            <span style={statusLabel}>Blocking items</span>
+            <span style={statusText}>
+              {!selection
+                ? "Missing saved structure."
+                : !documents?.credit_bureau
+                  ? "Missing credit bureau PDF."
+                  : !requiredStipsComplete
+                    ? "Missing one or more required stip docs."
+                    : "No blockers found."}
+            </span>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ChecklistRow({
+  ok,
+  label,
+  detail,
+}: {
+  ok: boolean;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "22px 1fr",
+        gap: 10,
+        alignItems: "start",
+        padding: "10px 12px",
+        border: "1px solid #ececec",
+        borderRadius: 12,
+        background: ok ? "#f8fff8" : "#fff8f8",
+      }}
+    >
+      <div
+        style={{
+          fontWeight: 900,
+          color: ok ? "green" : "crimson",
+          fontSize: 16,
+          lineHeight: "18px",
+        }}
+      >
+        {ok ? "✓" : "✕"}
+      </div>
+
+      <div>
+        <div style={{ fontWeight: 900, fontSize: 14 }}>{label}</div>
+        <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{detail}</div>
       </div>
     </div>
   );
 }
 
-function Row({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-      <span style={{ fontWeight: 900, color: ok ? "green" : "crimson" }}>
-        {ok ? "✓" : "✕"}
-      </span>
-      <span style={{ fontWeight: 800 }}>{label}</span>
-    </div>
-  );
-}
+const headerRow: React.CSSProperties = {
+  display: "flex",
+  gap: 12,
+  alignItems: "center",
+  flexWrap: "wrap",
+};
+
+const gridTwo: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+  gap: 14,
+};
 
 const card: React.CSSProperties = {
   border: "1px solid #e5e5e5",
   borderRadius: 14,
-  padding: 14,
+  padding: 16,
+  background: "#fff",
+};
+
+const sectionTitle: React.CSSProperties = {
+  fontWeight: 900,
+  fontSize: 16,
+  marginBottom: 12,
+};
+
+const kvGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "160px 1fr",
+  gap: 10,
+};
+
+const k: React.CSSProperties = {
+  fontSize: 12,
+  opacity: 0.72,
+  fontWeight: 900,
+  alignSelf: "center",
+};
+
+const v: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 800,
+};
+
+const vStrong: React.CSSProperties = {
+  fontSize: 15,
+  fontWeight: 900,
+};
+
+const helperText: React.CSSProperties = {
+  fontSize: 12,
+  color: "#666",
+  marginBottom: 10,
+  lineHeight: 1.45,
+};
+
+const stipHelper: React.CSSProperties = {
+  fontSize: 12,
+  color: "#666",
+  lineHeight: 1.45,
+  marginTop: 4,
+};
+
+const textarea: React.CSSProperties = {
+  width: "100%",
+  minHeight: 120,
+  resize: "vertical",
+  borderRadius: 12,
+  border: "1px solid #d8d8d8",
+  padding: 12,
+  fontSize: 14,
+  fontFamily: "inherit",
+  outline: "none",
 };
 
 const btnPrimary: React.CSSProperties = {
@@ -205,13 +741,115 @@ const btnSecondary: React.CSSProperties = {
   fontWeight: 900,
 };
 
-const k: React.CSSProperties = {
-  fontSize: 12,
-  opacity: 0.7,
+const infoBox: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid #e5e5e5",
+  background: "#fafafa",
+  fontWeight: 700,
+};
+
+const warningBox: React.CSSProperties = {
+  padding: 14,
+  borderRadius: 12,
+  border: "1px solid #f0d2a8",
+  background: "#fff8ef",
+  color: "#8a4b00",
+};
+
+const errorBox: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid #f1b5b5",
+  background: "#fff3f3",
+  color: "crimson",
   fontWeight: 900,
 };
 
-const v: React.CSSProperties = {
+const statusRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "180px 1fr",
+  gap: 10,
+  alignItems: "start",
+};
+
+const statusLabel: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 900,
+  color: "#555",
+};
+
+const statusText: React.CSSProperties = {
   fontSize: 14,
-  fontWeight: 800,
+  fontWeight: 700,
+};
+
+const statusGood: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 900,
+  color: "green",
+};
+
+const statusBad: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 900,
+  color: "crimson",
+};
+
+const stipRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  gap: 12,
+  alignItems: "start",
+  padding: 12,
+  border: "1px solid #ececec",
+  borderRadius: 12,
+  background: "#fcfcfc",
+};
+
+const docCard: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "center",
+  border: "1px solid #ececec",
+  borderRadius: 10,
+  padding: 10,
+  background: "#fff",
+};
+
+const docMeta: React.CSSProperties = {
+  fontSize: 12,
+  color: "#666",
+  marginTop: 2,
+};
+
+const pillRequired: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#fff3f3",
+  color: "crimson",
+  border: "1px solid #f1c7c7",
+};
+
+const pillOptional: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#f4f4f4",
+  color: "#666",
+  border: "1px solid #e0e0e0",
+};
+
+const pillGood: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 900,
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "#f2fff2",
+  color: "green",
+  border: "1px solid #cfe9cf",
 };

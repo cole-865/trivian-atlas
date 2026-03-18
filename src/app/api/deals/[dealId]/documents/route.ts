@@ -1,24 +1,59 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
-const ALLOWED_TYPES = new Set(["credit_app", "credit_bureau"]);
+const ALLOWED_TYPES = new Set([
+  "credit_bureau",
+  "proof_of_income",
+  "proof_of_residence",
+  "driver_license",
+  "insurance",
+  "references",
+  "other",
+]);
 
-const BUCKET_CREDIT_APP = "deal-docs";
+const BUCKET_DEAL_DOCS = "deal-docs";
 const BUCKET_CREDIT_BUREAU_RAW = "credit_reports_raw";
+
+const GENERAL_ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
 
 function isPdf(file: File) {
   const name = (file.name || "").toLowerCase();
   const type = (file.type || "").toLowerCase();
+
   return name.endsWith(".pdf") || type === "application/pdf";
 }
 
-function safeDocType(v: any): "credit_app" | "credit_bureau" | null {
+function isAllowedGeneralFile(file: File) {
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+
+  return (
+    GENERAL_ALLOWED_MIME_TYPES.has(type) ||
+    name.endsWith(".pdf") ||
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".png") ||
+    name.endsWith(".webp") ||
+    name.endsWith(".heic") ||
+    name.endsWith(".heif")
+  );
+}
+
+function safeDocType(v: unknown): string | null {
   const s = String(v ?? "").toLowerCase();
-  return ALLOWED_TYPES.has(s) ? (s as any) : null;
+  return ALLOWED_TYPES.has(s) ? s : null;
 }
 
 function safeFileName(name: string) {
-  return (name || "upload.pdf")
+  return (name || "upload")
     .replace(/[^a-zA-Z0-9._-]/g, "_")
     .toLowerCase()
     .slice(0, 120);
@@ -37,7 +72,6 @@ export async function GET(
       "id, deal_id, doc_type, storage_bucket, storage_path, original_name, mime_type, size_bytes, created_at"
     )
     .eq("deal_id", dealId)
-    .in("doc_type", ["credit_app", "credit_bureau"])
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -48,15 +82,24 @@ export async function GET(
   }
 
   const latest: Record<string, any> = {};
+  const grouped: Record<string, any[]> = {};
+
   for (const row of data ?? []) {
     if (!latest[row.doc_type]) latest[row.doc_type] = row;
+    if (!grouped[row.doc_type]) grouped[row.doc_type] = [];
+    grouped[row.doc_type].push(row);
   }
 
   return NextResponse.json({
     ok: true,
     documents: {
-      credit_app: latest["credit_app"] ?? null,
       credit_bureau: latest["credit_bureau"] ?? null,
+      proof_of_income: grouped["proof_of_income"] ?? [],
+      proof_of_residence: grouped["proof_of_residence"] ?? [],
+      driver_license: grouped["driver_license"] ?? [],
+      insurance: grouped["insurance"] ?? [],
+      references: grouped["references"] ?? [],
+      other: grouped["other"] ?? [],
     },
   });
 }
@@ -85,13 +128,28 @@ export async function POST(
     return NextResponse.json({ error: "Missing file" }, { status: 400 });
   }
 
-  if (!isPdf(file)) {
-    return NextResponse.json({ error: "PDF only" }, { status: 400 });
+  if (docType === "credit_bureau") {
+    if (!isPdf(file)) {
+      return NextResponse.json(
+        { error: "Credit bureau upload must be a PDF" },
+        { status: 400 }
+      );
+    }
+  } else {
+    if (!isAllowedGeneralFile(file)) {
+      return NextResponse.json(
+        {
+          error:
+            "Allowed file types: PDF, JPG, JPEG, PNG, WEBP, HEIC, HEIF",
+        },
+        { status: 400 }
+      );
+    }
   }
 
   const userRes = await supabase.auth.getUser();
-  console.log("UPLOAD USER:", userRes.data.user?.id);
   const uploadedBy = userRes.data.user?.id ?? null;
+
   if (!uploadedBy) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -99,21 +157,24 @@ export async function POST(
   const ts = Date.now();
   const safeName = safeFileName(file.name);
 
-  // Choose bucket + path based on doc type
   const bucket =
-    docType === "credit_bureau" ? BUCKET_CREDIT_BUREAU_RAW : BUCKET_CREDIT_APP;
+    docType === "credit_bureau"
+      ? BUCKET_CREDIT_BUREAU_RAW
+      : BUCKET_DEAL_DOCS;
 
   const storagePath =
     docType === "credit_bureau"
       ? `deal/${dealId}/bureau/${ts}_${safeName}`
       : `deals/${dealId}/${docType}/${ts}-${safeName}`;
 
-  // Upload to Storage
   const arrayBuffer = await file.arrayBuffer();
-  const { error: upErr } = await supabase.storage.from(bucket).upload(storagePath, arrayBuffer, {
-    contentType: "application/pdf",
-    upsert: false, // don't overwrite silently
-  });
+
+  const { error: upErr } = await supabase.storage
+    .from(bucket)
+    .upload(storagePath, arrayBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
 
   if (upErr) {
     return NextResponse.json(
@@ -122,7 +183,6 @@ export async function POST(
     );
   }
 
-  // Track in deal_documents (UI uses this)
   const { data: docRow, error: insErr } = await supabase
     .from("deal_documents")
     .insert({
@@ -131,7 +191,7 @@ export async function POST(
       storage_bucket: bucket,
       storage_path: storagePath,
       original_name: file.name ?? null,
-      mime_type: "application/pdf",
+      mime_type: file.type || null,
       size_bytes: file.size ?? null,
       uploaded_by: uploadedBy,
     })
@@ -141,27 +201,23 @@ export async function POST(
     .single();
 
   if (insErr) {
-    // avoid orphan file
     await supabase.storage.from(bucket).remove([storagePath]);
+
     return NextResponse.json(
       { error: "Failed to save document record", details: insErr.message },
       { status: 500 }
     );
   }
 
-  // If credit bureau: create processing job + clean long-term tables
   if (docType === "credit_bureau") {
-    // Clean “official” record (we only want the latest bureau to be the truth)
     await supabase.from("credit_reports").delete().eq("deal_id", dealId);
 
-    // Mark any in-progress jobs as superseded (optional but recommended)
     await supabase
       .from("credit_report_jobs")
       .update({ status: "failed", error_message: "Superseded by newer upload" })
       .eq("deal_id", dealId)
       .in("status", ["queued", "uploaded", "parsing", "redacting", "scoring"]);
 
-    // Insert new job that the worker will pick up
     const { error: jobErr } = await supabase.from("credit_report_jobs").insert({
       deal_id: dealId,
       uploaded_by: uploadedBy,
@@ -172,7 +228,6 @@ export async function POST(
     });
 
     if (jobErr) {
-      // rollback-ish: remove file + doc row to keep system consistent
       await supabase.storage.from(bucket).remove([storagePath]);
       await supabase.from("deal_documents").delete().eq("id", docRow.id);
 
