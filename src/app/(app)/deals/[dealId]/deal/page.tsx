@@ -27,6 +27,82 @@ type Selection = {
   updated_at?: string;
 };
 
+type DealStructureResponse = {
+  ok: boolean;
+  deal_id: string;
+  structure: {
+    deal_id: string;
+    selection: {
+      vehicle_id: string;
+      option_label: "NONE" | "VSC" | "GAP" | "VSC+GAP";
+      include_vsc: boolean;
+      include_gap: boolean;
+    };
+    vehicle: {
+      id: string;
+      stock_number: string | null;
+      vin: string | null;
+      year: number | null;
+      make: string | null;
+      model: string | null;
+      odometer: number | null;
+      status: string | null;
+      date_in_stock: string | null;
+      asking_price: number;
+      jd_power_retail_book: number;
+      vehicle_category: "car" | "suv" | "truck" | "van" | null;
+      vehicle_age_years: number | null;
+      vehicle_policy_max_term_months: number | null;
+      vehicle_term_policy_note: string | null;
+    };
+    structure: {
+      sale_price: number;
+      cash_down_input: number;
+      cash_down_effective: number;
+      required_down: number;
+      additional_down_needed: number;
+      taxable_amount: number;
+      sales_tax: number;
+      doc_fee: number;
+      title_license: number;
+      fees_total: number;
+      product_total: number;
+      vsc_price: number;
+      gap_price: number;
+      amount_financed: number;
+      apr: number;
+      term_months: number;
+      monthly_payment: number;
+      ltv: number;
+      fits_program: boolean;
+      fail_reasons: string[];
+      checks: {
+        vehicle_price_ok: boolean;
+        amount_financed_ok: boolean;
+        ltv_ok: boolean;
+        payment_ok: boolean;
+      };
+      additional_down_breakdown: {
+        min_down: number;
+        amount_financed: number;
+        ltv: number;
+        pti: number;
+      };
+    };
+    assumptions: {
+      tier: string | null;
+      max_payment_cap: number;
+      max_amount_financed: number;
+      max_vehicle_price: number;
+      max_ltv: number;
+      trade_payoff: number;
+      underwriting_max_term_months: number;
+      vehicle_max_term_months: number;
+      vehicle_base_term_months: number;
+    };
+  };
+};
+
 function asString(value: string | string[] | undefined): string {
   if (!value) return "";
   return Array.isArray(value) ? value[0] : value;
@@ -35,6 +111,11 @@ function asString(value: string | string[] | undefined): string {
 function money(n: number | null | undefined) {
   const v = Number(n ?? 0);
   return v.toLocaleString(undefined, { style: "currency", currency: "USD" });
+}
+
+function num(n: number | null | undefined) {
+  const v = Number(n ?? 0);
+  return v.toLocaleString();
 }
 
 function parseNumOrNull(s: string | null): number | null {
@@ -52,6 +133,21 @@ function isValidLabel(v: string | null): v is Selection["option_label"] {
   if (!v) return false;
   const s = v.toUpperCase();
   return s === "NONE" || s === "VSC" || s === "GAP" || s === "VSC+GAP";
+}
+
+function normalizeReason(reason: string | null | undefined) {
+  switch (reason) {
+    case "PTI":
+      return "Payment too high";
+    case "LTV":
+      return "LTV too high";
+    case "AMOUNT_FINANCED":
+      return "Amount financed too high";
+    case "VEHICLE_PRICE":
+      return "Vehicle price too high";
+    default:
+      return reason ?? "Does not fit";
+  }
 }
 
 export default function DealDealPage() {
@@ -78,6 +174,7 @@ export default function DealDealPage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [structure, setStructure] = useState<DealStructureResponse["structure"] | null>(null);
 
   const hasQuerySelection = useMemo(() => {
     return (
@@ -89,20 +186,31 @@ export default function DealDealPage() {
   }, [query.vehicleId, query.option, query.pmt, query.term]);
 
   async function loadSelection() {
-    if (!dealId) return;
-    setLoading(true);
-    setErr(null);
+    if (!dealId) return null;
 
-    try {
-      const r = await fetch(`/api/deals/${dealId}/vehicle-selection`, { cache: "no-store" });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.details || j?.error || "Failed to load selection");
-      setSelection(j.selection ?? null);
-    } catch (e: any) {
-      setErr(e?.message || "Load failed");
-    } finally {
-      setLoading(false);
+    const r = await fetch(`/api/deals/${dealId}/vehicle-selection`, { cache: "no-store" });
+    const j = await r.json();
+
+    if (!r.ok) {
+      throw new Error(j?.details || j?.error || "Failed to load selection");
     }
+
+    const nextSelection = j.selection ?? null;
+    setSelection(nextSelection);
+    return nextSelection;
+  }
+
+  async function loadStructure() {
+    if (!dealId) return;
+
+    const r = await fetch(`/api/deals/${dealId}/deal-structure`, { cache: "no-store" });
+    const j: DealStructureResponse = await r.json();
+
+    if (!r.ok) {
+      throw new Error((j as any)?.details || (j as any)?.error || "Failed to load deal structure");
+    }
+
+    setStructure(j.structure ?? null);
   }
 
   async function persistFromQueryThenCleanUrl() {
@@ -134,30 +242,59 @@ export default function DealDealPage() {
 
       setSelection(j.selection ?? null);
 
-      // Clean URL (remove querystring) but stay on Step 4
+      await loadStructure();
+
       router.replace(`/deals/${dealId}/deal`);
     } catch (e: any) {
       setErr(e?.message || "Failed to save selection");
     } finally {
       setSaving(false);
+      setLoading(false);
     }
   }
 
   useEffect(() => {
     if (!dealId) return;
 
-    // If querystring has selection, persist it and then clean the URL.
-    // Otherwise, just load whatever is saved.
-    if (hasQuerySelection) {
-      persistFromQueryThenCleanUrl();
-      return;
+    let cancelled = false;
+
+    async function run() {
+      setLoading(true);
+      setErr(null);
+
+      try {
+        if (hasQuerySelection) {
+          await persistFromQueryThenCleanUrl();
+          return;
+        }
+
+        const loadedSelection = await loadSelection();
+
+        if (!cancelled && loadedSelection) {
+          await loadStructure();
+        } else if (!cancelled) {
+          setStructure(null);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setErr(e?.message || "Load failed");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     }
 
-    loadSelection();
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId, hasQuerySelection]);
 
-  const canNext = !!selection && !loading && !saving;
+  const canNext = !!selection && !!structure && !loading && !saving;
 
   function onPrev() {
     router.push(`/deals/${dealId}/vehicle`);
@@ -165,28 +302,36 @@ export default function DealDealPage() {
 
   function onNext() {
     setErr(null);
+
     if (!selection) {
       setErr("No vehicle selection saved. Go back to Step 3 and pick an option.");
       return;
     }
+
+    if (!structure) {
+      setErr("Deal structure is not ready yet.");
+      return;
+    }
+
     router.push(`/deals/${dealId}/submit`);
   }
 
   if (!dealId) {
     return (
       <div style={{ padding: 16, color: "crimson" }}>
-        Missing dealId in route params. (Check folder name:{" "}
-        <code>deals/[dealId]/deal</code>)
+        Missing dealId in route params. (Check folder name: <code>deals/[dealId]/deal</code>)
       </div>
     );
   }
 
+  const vehicle = structure?.vehicle;
+  const dealMath = structure?.structure;
+  const assumptions = structure?.assumptions;
+
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <DealStepNav dealId={dealId} />
 
-      {/* Header + Prev/Next */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Step 4: Deal</h2>
 
         {loading ? <span style={{ opacity: 0.7 }}>Loading…</span> : null}
@@ -208,75 +353,292 @@ export default function DealDealPage() {
             background: canNext ? "#111" : "#999",
             cursor: canNext ? "pointer" : "not-allowed",
           }}
-          title={!selection ? "Select a vehicle option in Step 3" : ""}
+          title={!structure ? "Deal structure is not ready" : ""}
         >
           Next →
         </button>
       </div>
 
-      {/* Selection card */}
-      <div style={{ ...card, background: "#fafafa" }}>
-        <div style={{ fontWeight: 900, marginBottom: 8 }}>Vehicle Selection</div>
-
-        {!selection ? (
+      {!selection ? (
+        <div style={{ ...card, background: "#fafafa" }}>
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>Vehicle Selection</div>
           <div style={{ opacity: 0.85 }}>
             No selection saved yet. Go to <b>Step 3</b> and click a payment option.
           </div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 10 }}>
-              <div style={k}>Vehicle ID</div>
-              <div style={v}>{selection.vehicle_id}</div>
+        </div>
+      ) : null}
 
-              <div style={k}>Package</div>
-              <div style={v}>
-                <b>{selection.option_label}</b>{" "}
-                <span style={{ opacity: 0.75, fontSize: 13 }}>
-                  ({selection.include_vsc ? "VSC" : "No VSC"} •{" "}
-                  {selection.include_gap ? "GAP" : "No GAP"})
-                </span>
+      {structure && vehicle && dealMath ? (
+        <>
+          <div style={{ ...card, background: "#fafafa" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 900 }}>Selected Unit</div>
+              <div>
+                <b>
+                  {vehicle.stock_number ?? "—"} • {vehicle.year ?? "—"} {vehicle.make ?? "—"}{" "}
+                  {vehicle.model ?? "—"}
+                </b>
               </div>
-
-              <div style={k}>Monthly Payment</div>
-              <div style={v}>
-                <b>{money(selection.monthly_payment)}</b>
+              <div style={{ opacity: 0.75 }}>
+                {money(vehicle.asking_price)} •{" "}
+                {vehicle.odometer != null ? `${num(vehicle.odometer)} mi` : "—"} •{" "}
+                {(vehicle.vehicle_category ?? "car").toUpperCase()}
               </div>
-
-              <div style={k}>Term</div>
-              <div style={v}>
-                <b>{selection.term_months}</b> months
+              <div style={{ flex: 1 }} />
+              <div
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  fontWeight: 900,
+                  fontSize: 12,
+                  background: dealMath.fits_program ? "#ecfdf3" : "#fff7ed",
+                  color: dealMath.fits_program ? "#166534" : "#c2410c",
+                  border: `1px solid ${dealMath.fits_program ? "#bbf7d0" : "#fed7aa"}`,
+                }}
+              >
+                {dealMath.fits_program ? "Fits Program" : "Needs Attention"}
               </div>
-
-              <div style={k}>Cash Down</div>
-              <div style={v}>
-                {selection.cash_down != null ? money(selection.cash_down) : "—"}
-              </div>
-            </div>
-
-            <div style={{ opacity: 0.75, fontSize: 13 }}>
-              Next: we’ll build the deal math (taxes, fee pack, VSC/GAP pricing rules) and write
-              the full approval package.
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Debug (only helpful while you’re wiring this up) */}
-      <div style={card}>
-        <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug</div>
-        <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, opacity: 0.85 }}>
-{JSON.stringify(
-  {
-    dealId,
-    query,
-    hasQuerySelection,
-    selection,
-  },
-  null,
-  2
-)}
-        </pre>
-      </div>
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            }}
+          >
+            <div style={card}>
+              <div style={sectionTitle}>Vehicle & Program</div>
+
+              <div style={grid2}>
+                <div style={k}>Stock #</div>
+                <div style={v}>{vehicle.stock_number ?? "—"}</div>
+
+                <div style={k}>Vehicle</div>
+                <div style={v}>
+                  {vehicle.year ?? "—"} {vehicle.make ?? "—"} {vehicle.model ?? "—"}
+                </div>
+
+                <div style={k}>Mileage</div>
+                <div style={v}>{vehicle.odometer != null ? num(vehicle.odometer) : "—"}</div>
+
+                <div style={k}>Sale Price</div>
+                <div style={v}>{money(dealMath.sale_price)}</div>
+
+                <div style={k}>JDP Retail Book</div>
+                <div style={v}>{money(vehicle.jd_power_retail_book)}</div>
+
+                <div style={k}>Tier</div>
+                <div style={v}>{assumptions?.tier ?? "—"}</div>
+
+                <div style={k}>Package</div>
+                <div style={v}>
+                  <b>{structure.selection.option_label}</b>{" "}
+                  <span style={{ opacity: 0.75, fontSize: 13 }}>
+                    ({structure.selection.include_vsc ? "VSC" : "No VSC"} •{" "}
+                    {structure.selection.include_gap ? "GAP" : "No GAP"})
+                  </span>
+                </div>
+
+                <div style={k}>APR</div>
+                <div style={v}>{Number(dealMath.apr ?? 0).toFixed(2)}%</div>
+
+                <div style={k}>Term</div>
+                <div style={v}>{dealMath.term_months} months</div>
+
+                <div style={k}>Monthly Payment</div>
+                <div style={v}>
+                  <b>{money(dealMath.monthly_payment)}</b>
+                </div>
+
+                <div style={k}>LTV</div>
+                <div style={v}>
+                  {dealMath.ltv ? `${(Number(dealMath.ltv) * 100).toFixed(1)}%` : "—"}
+                </div>
+              </div>
+            </div>
+
+            <div style={card}>
+              <div style={sectionTitle}>Fees, Products & Cash</div>
+
+              <div style={grid2}>
+                <div style={k}>Cash Down Entered</div>
+                <div style={v}>{money(dealMath.cash_down_input)}</div>
+
+                <div style={k}>Cash Down Used</div>
+                <div style={v}>{money(dealMath.cash_down_effective)}</div>
+
+                <div style={k}>Required Down</div>
+                <div style={v}>{money(dealMath.required_down)}</div>
+
+                <div style={k}>Additional Down Needed</div>
+                <div style={v}>
+                  {dealMath.additional_down_needed > 0
+                    ? money(dealMath.additional_down_needed)
+                    : "—"}
+                </div>
+
+                <div style={k}>VSC Price</div>
+                <div style={v}>{money(dealMath.vsc_price)}</div>
+
+                <div style={k}>GAP Price</div>
+                <div style={v}>{money(dealMath.gap_price)}</div>
+
+                <div style={k}>Product Total</div>
+                <div style={v}>{money(dealMath.product_total)}</div>
+
+                <div style={k}>Taxable Amount</div>
+                <div style={v}>{money(dealMath.taxable_amount)}</div>
+
+                <div style={k}>Sales Tax</div>
+                <div style={v}>{money(dealMath.sales_tax)}</div>
+
+                <div style={k}>Doc Fee</div>
+                <div style={v}>{money(dealMath.doc_fee)}</div>
+
+                <div style={k}>Title / License</div>
+                <div style={v}>{money(dealMath.title_license)}</div>
+
+                <div style={k}>Fees Total</div>
+                <div style={v}>{money(dealMath.fees_total)}</div>
+              </div>
+              {dealMath.cash_down_effective > dealMath.cash_down_input ? (
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 13,
+                    color: "#7c2d12",
+                    fontWeight: 700,
+                  }}
+                >
+                  Program minimum down increased cash used to the required threshold.
+                </div>
+              ) : null}
+            </div>
+
+            <div style={card}>
+              <div style={sectionTitle}>Program Limits</div>
+
+              <div style={grid2}>
+                <div style={k}>Amount Financed</div>
+                <div style={v}>
+                  <b>{money(dealMath.amount_financed)}</b>
+                </div>
+
+                <div style={k}>Payment Cap</div>
+                <div style={v}>{money(assumptions?.max_payment_cap)}</div>
+
+                <div style={k}>Max Amount Financed</div>
+                <div style={v}>
+                  {assumptions?.max_amount_financed
+                    ? money(assumptions.max_amount_financed)
+                    : "—"}
+                </div>
+
+                <div style={k}>Max Vehicle Price</div>
+                <div style={v}>
+                  {assumptions?.max_vehicle_price
+                    ? money(assumptions.max_vehicle_price)
+                    : "—"}
+                </div>
+
+                <div style={k}>Max LTV</div>
+                <div style={v}>
+                  {assumptions?.max_ltv
+                    ? `${(Number(assumptions.max_ltv) * 100).toFixed(1)}%`
+                    : "—"}
+                </div>
+
+                <div style={k}>Trade Payoff</div>
+                <div style={v}>{money(assumptions?.trade_payoff)}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={card}>
+            <div style={sectionTitle}>Program Checks</div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
+            >
+              <CheckPill
+                label="Vehicle Price"
+                ok={dealMath.checks.vehicle_price_ok}
+              />
+              <CheckPill
+                label="Amount Financed"
+                ok={dealMath.checks.amount_financed_ok}
+              />
+              <CheckPill label="LTV" ok={dealMath.checks.ltv_ok} />
+              <CheckPill label="Payment" ok={dealMath.checks.payment_ok} />
+            </div>
+
+            {!dealMath.fits_program ? (
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 900, color: "#b91c1c" }}>Blocking Issues</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {dealMath.fail_reasons.map((reason) => (
+                    <span key={reason} style={failTag}>
+                      {normalizeReason(reason)}
+                    </span>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                  {dealMath.additional_down_breakdown.min_down > 0 ? (
+                    <div style={hintText}>
+                      Minimum down shortfall: {money(dealMath.additional_down_breakdown.min_down)}
+                    </div>
+                  ) : null}
+                  {dealMath.additional_down_breakdown.amount_financed > 0 ? (
+                    <div style={hintText}>
+                      Over max amount financed by{" "}
+                      {money(dealMath.additional_down_breakdown.amount_financed)}
+                    </div>
+                  ) : null}
+                  {dealMath.additional_down_breakdown.ltv > 0 ? (
+                    <div style={hintText}>
+                      Over LTV by {money(dealMath.additional_down_breakdown.ltv)}
+                    </div>
+                  ) : null}
+                  {dealMath.additional_down_breakdown.pti > 0 ? (
+                    <div style={hintText}>
+                      Over payment cap by {money(dealMath.additional_down_breakdown.pti)}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function CheckPill({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}`,
+        background: ok ? "#f0fdf4" : "#fef2f2",
+        color: ok ? "#166534" : "#b91c1c",
+        borderRadius: 12,
+        padding: "10px 12px",
+        fontWeight: 900,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+      }}
+    >
+      <span>{label}</span>
+      <span>{ok ? "OK" : "Blocked"}</span>
     </div>
   );
 }
@@ -285,6 +647,18 @@ const card: React.CSSProperties = {
   border: "1px solid #e5e5e5",
   borderRadius: 14,
   padding: 14,
+  background: "#fff",
+};
+
+const sectionTitle: React.CSSProperties = {
+  fontWeight: 900,
+  marginBottom: 10,
+};
+
+const grid2: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "180px 1fr",
+  gap: 10,
 };
 
 const btnPrimary: React.CSSProperties = {
@@ -314,4 +688,20 @@ const k: React.CSSProperties = {
 const v: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 800,
+};
+
+const failTag: React.CSSProperties = {
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#b91c1c",
+  fontWeight: 900,
+  fontSize: 12,
+};
+
+const hintText: React.CSSProperties = {
+  fontSize: 13,
+  color: "#7c2d12",
+  fontWeight: 700,
 };
