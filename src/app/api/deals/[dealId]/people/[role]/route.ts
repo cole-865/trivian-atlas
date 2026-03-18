@@ -7,12 +7,6 @@ function bool(v: unknown) {
   return v === true;
 }
 
-function numOrNull(v: unknown) {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 function strOrNull(v: unknown) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
@@ -24,6 +18,31 @@ function buildCustomerName(firstName: unknown, lastName: unknown) {
   const last = strOrNull(lastName) ?? "";
   const full = `${first} ${last}`.trim();
   return full.length ? full : null;
+}
+
+function isValidDateString(v: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+function monthsSinceMoveIn(moveInDate: string | null) {
+  if (!moveInDate || !isValidDateString(moveInDate)) return null;
+
+  const [y, m, d] = moveInDate.split("-").map(Number);
+  const move = new Date(y, m - 1, d);
+  const today = new Date();
+
+  if (Number.isNaN(move.getTime())) return null;
+  if (move > today) return 0;
+
+  let months =
+    (today.getFullYear() - move.getFullYear()) * 12 +
+    (today.getMonth() - move.getMonth());
+
+  if (today.getDate() < move.getDate()) {
+    months -= 1;
+  }
+
+  return Math.max(0, months);
 }
 
 export async function PATCH(
@@ -49,10 +68,17 @@ export async function PATCH(
 
   if (userErr || !user) {
     return NextResponse.json(
-      { ok: false, error: "Auth error", details: userErr?.message ?? "Not authenticated" },
+      {
+        ok: false,
+        error: "Auth error",
+        details: userErr?.message ?? "Not authenticated",
+      },
       { status: 401 }
     );
   }
+
+  const move_in_date = strOrNull(body.move_in_date);
+  const residence_months = monthsSinceMoveIn(move_in_date);
 
   const payload = {
     deal_id: dealId,
@@ -68,7 +94,8 @@ export async function PATCH(
     state: strOrNull(body.state),
     zip: strOrNull(body.zip),
 
-    residence_months: numOrNull(body.residence_months),
+    move_in_date,
+    residence_months,
 
     banking_checking: bool(body.banking_checking),
     banking_savings: bool(body.banking_savings),

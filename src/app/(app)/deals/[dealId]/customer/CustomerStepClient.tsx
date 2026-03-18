@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import CustomerDocuments from "./CustomerDocuments";
 
@@ -17,12 +17,14 @@ type PersonForm = {
   state: string;
   zip: string;
 
-  residence_months: string; // keep as string for input
+  move_in_date: string;
 
   banking_checking: boolean;
   banking_savings: boolean;
   banking_prepaid: boolean;
 };
+
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 const emptyForm = (): PersonForm => ({
   first_name: "",
@@ -33,7 +35,7 @@ const emptyForm = (): PersonForm => ({
   city: "",
   state: "",
   zip: "",
-  residence_months: "",
+  move_in_date: "",
   banking_checking: false,
   banking_savings: false,
   banking_prepaid: false,
@@ -41,10 +43,6 @@ const emptyForm = (): PersonForm => ({
 
 function roleLabel(role: Role) {
   return role === "primary" ? "Driver" : "Co-app";
-}
-
-function clampDigitsOnly(s: string) {
-  return (s ?? "").replace(/[^\d]/g, "");
 }
 
 function hasAnyData(p: PersonForm) {
@@ -57,7 +55,7 @@ function hasAnyData(p: PersonForm) {
     p.city.trim() ||
     p.state.trim() ||
     p.zip.trim() ||
-    p.residence_months.trim() ||
+    p.move_in_date.trim() ||
     p.banking_checking ||
     p.banking_savings ||
     p.banking_prepaid
@@ -66,6 +64,10 @@ function hasAnyData(p: PersonForm) {
 
 function primaryNameOk(p: PersonForm) {
   return p.first_name.trim().length > 0 && p.last_name.trim().length > 0;
+}
+
+function primaryResidenceOk(p: PersonForm) {
+  return p.move_in_date.trim().length > 0;
 }
 
 function formatSaveError(j: any, fallback: string) {
@@ -78,18 +80,54 @@ function formatSaveError(j: any, fallback: string) {
   );
 }
 
+function formsEqual(a: PersonForm, b: PersonForm) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function getResidenceBreakdown(moveInDate: string) {
+  if (!moveInDate) return { years: "", months: "" };
+
+  const parts = moveInDate.split("-");
+  if (parts.length !== 3) return { years: "", months: "" };
+
+  const [y, m, d] = parts.map(Number);
+  const move = new Date(y, m - 1, d);
+  const today = new Date();
+
+  if (Number.isNaN(move.getTime()) || move > today) {
+    return { years: "0", months: "0" };
+  }
+
+  let totalMonths =
+    (today.getFullYear() - move.getFullYear()) * 12 +
+    (today.getMonth() - move.getMonth());
+
+  if (today.getDate() < move.getDate()) {
+    totalMonths -= 1;
+  }
+
+  totalMonths = Math.max(0, totalMonths);
+
+  return {
+    years: String(Math.floor(totalMonths / 12)),
+    months: String(totalMonths % 12),
+  };
+}
+
 export default function CustomerStepClient({ dealId }: { dealId: string }) {
   const router = useRouter();
 
   const [activeRole, setActiveRole] = useState<Role>("primary");
-
   const [loading, setLoading] = useState(true);
-  const [savingRole, setSavingRole] = useState<Role | null>(null);
   const [navBusy, setNavBusy] = useState(false);
-
   const [error, setError] = useState<string | null>(null);
 
   const [people, setPeople] = useState<Record<Role, PersonForm>>({
+    primary: emptyForm(),
+    co: emptyForm(),
+  });
+
+  const [lastSavedPeople, setLastSavedPeople] = useState<Record<Role, PersonForm>>({
     primary: emptyForm(),
     co: emptyForm(),
   });
@@ -98,11 +136,41 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
     credit_bureau: false,
   });
 
+  const [saveStateByRole, setSaveStateByRole] = useState<Record<Role, SaveState>>({
+    primary: "idle",
+    co: "idle",
+  });
+
   const activeForm = useMemo(() => people[activeRole], [people, activeRole]);
 
+  const activeResidence = useMemo(
+    () => getResidenceBreakdown(activeForm.move_in_date),
+    [activeForm.move_in_date]
+  );
+
   const primaryOk = useMemo(() => primaryNameOk(people.primary), [people.primary]);
+  const primaryResidenceComplete = useMemo(
+    () => primaryResidenceOk(people.primary),
+    [people.primary]
+  );
+
   const docsOk = docStatus.credit_bureau;
-  const canNext = primaryOk && docsOk && !loading && !navBusy && !savingRole;
+  const anySaving = saveStateByRole.primary === "saving" || saveStateByRole.co === "saving";
+  const canNext =
+    primaryOk &&
+    primaryResidenceComplete &&
+    docsOk &&
+    !loading &&
+    !navBusy &&
+    !anySaving;
+
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveSequenceRef = useRef<Record<Role, number>>({
+    primary: 0,
+    co: 0,
+  });
+  const firstLoadDoneRef = useRef(false);
+  const saveBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,21 +200,26 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
             last_name: p.last_name ?? "",
             phone: p.phone ?? "",
             email: p.email ?? "",
-
             address_line1: p.address_line1 ?? "",
             city: p.city ?? "",
             state: p.state ?? "",
             zip: p.zip ?? "",
-
-            residence_months: p.residence_months?.toString?.() ?? "",
-
+            move_in_date: p.move_in_date ?? "",
             banking_checking: !!p.banking_checking,
             banking_savings: !!p.banking_savings,
             banking_prepaid: !!p.banking_prepaid,
           };
         }
 
-        if (!cancelled) setPeople(next);
+        if (!cancelled) {
+          setPeople(next);
+          setLastSavedPeople(next);
+          setSaveStateByRole({
+            primary: "idle",
+            co: "idle",
+          });
+          firstLoadDoneRef.current = true;
+        }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || "Load error");
       } finally {
@@ -155,8 +228,11 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
     }
 
     load();
+
     return () => {
       cancelled = true;
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (saveBadgeTimerRef.current) clearTimeout(saveBadgeTimerRef.current);
     };
   }, [dealId]);
 
@@ -168,54 +244,132 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
         [key]: value,
       },
     }));
+
+    setSaveStateByRole((prev) => ({
+      ...prev,
+      [activeRole]: "idle",
+    }));
   }
 
-  async function saveRole(role: Role) {
-    // ✅ Don’t create/update empty rows at all
-    if (!hasAnyData(people[role])) return;
+  async function saveRole(role: Role, opts?: { silent?: boolean }) {
+    const silent = !!opts?.silent;
+    const current = people[role];
+    const lastSaved = lastSavedPeople[role];
 
-    // ✅ Hard rule: primary must have first + last name
-    if (role === "primary" && !primaryNameOk(people.primary)) {
-      const msg = "Driver first + last name are required.";
-      setError(msg);
-      throw new Error(msg);
+    if (!hasAnyData(current)) {
+      if (role === "co") {
+        setSaveStateByRole((prev) => ({ ...prev, [role]: "idle" }));
+        return;
+      }
     }
 
-    setSavingRole(role);
-    setError(null);
+    if (role === "primary" && !primaryNameOk(current)) {
+      if (!silent) {
+        const msg = "Driver first + last name are required.";
+        setError(msg);
+        setSaveStateByRole((prev) => ({ ...prev, [role]: "error" }));
+      }
+      return;
+    }
+
+    if (role === "primary" && !primaryResidenceOk(current)) {
+      if (!silent) {
+        const msg = "Driver move-in date is required.";
+        setError(msg);
+        setSaveStateByRole((prev) => ({ ...prev, [role]: "error" }));
+      }
+      return;
+    }
+
+    if (formsEqual(current, lastSaved)) return;
+
+    const seq = ++saveSequenceRef.current[role];
+
+    setSaveStateByRole((prev) => ({
+      ...prev,
+      [role]: "saving",
+    }));
+
+    if (!silent) setError(null);
 
     try {
-      const payload = {
-        ...people[role],
-        residence_months:
-          people[role].residence_months === ""
-            ? null
-            : Number(people[role].residence_months),
-      };
-
       const r = await fetch(`/api/deals/${dealId}/people/${role}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(current),
       });
 
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(formatSaveError(j, "Save failed"));
+
+      if (saveSequenceRef.current[role] !== seq) return;
+
+      setLastSavedPeople((prev) => ({
+        ...prev,
+        [role]: current,
+      }));
+
+      setSaveStateByRole((prev) => ({
+        ...prev,
+        [role]: "saved",
+      }));
+
+      if (saveBadgeTimerRef.current) clearTimeout(saveBadgeTimerRef.current);
+      saveBadgeTimerRef.current = setTimeout(() => {
+        setSaveStateByRole((prev) => ({
+          ...prev,
+          [role]: prev[role] === "saved" ? "idle" : prev[role],
+        }));
+      }, 1500);
     } catch (e: any) {
-      setError(e?.message || "Save error");
-      throw e;
-    } finally {
-      setSavingRole(null);
+      if (saveSequenceRef.current[role] !== seq) return;
+
+      setSaveStateByRole((prev) => ({
+        ...prev,
+        [role]: "error",
+      }));
+
+      if (!silent) {
+        setError(e?.message || "Save error");
+      }
     }
   }
 
+  useEffect(() => {
+    if (!firstLoadDoneRef.current) return;
+    if (loading || navBusy) return;
+
+    const current = people[activeRole];
+    const lastSaved = lastSavedPeople[activeRole];
+
+    if (formsEqual(current, lastSaved)) return;
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+
+    autosaveTimerRef.current = setTimeout(() => {
+      void saveRole(activeRole, {
+        silent:
+          activeRole === "primary" &&
+          (!primaryNameOk(current) || !primaryResidenceOk(current)),
+      });
+    }, 900);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [people, activeRole, loading, navBusy, lastSavedPeople]);
+
   function nextBlockerMessage() {
     if (!primaryOk) return "Enter Driver first + last name to continue.";
+    if (!primaryResidenceComplete) return "Enter Driver move-in date to continue.";
     if (!docsOk) return "Upload Credit Bureau PDFs before continuing.";
     return null;
   }
 
   async function onPrev() {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    await saveRole("primary", { silent: true });
+    await saveRole("co", { silent: true });
     router.push("/deals");
   }
 
@@ -228,47 +382,84 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
       return;
     }
 
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+
     setNavBusy(true);
     try {
-      // Save primary (required)
       await saveRole("primary");
-
-      // Save co-app only if they entered anything
-      await saveRole("co");
-
+      await saveRole("co", { silent: true });
       router.push(`/deals/${dealId}/income`);
-    } catch {
-      // saveRole already set error
     } finally {
       setNavBusy(false);
     }
   }
 
+  const activeRoleSaveState = saveStateByRole[activeRole];
   const headerStatus = (() => {
     if (loading) return "Loading…";
-    if (savingRole) return `Saving ${roleLabel(savingRole)}…`;
     if (navBusy) return "Continuing…";
+    if (activeRoleSaveState === "saving") return `Saving ${roleLabel(activeRole)}…`;
+    if (activeRoleSaveState === "saved") return `${roleLabel(activeRole)} saved`;
+    if (activeRoleSaveState === "error") return `Error saving ${roleLabel(activeRole)}`;
     return null;
   })();
 
+  const hasUnsavedActiveChanges = !formsEqual(
+    people[activeRole],
+    lastSavedPeople[activeRole]
+  );
+
+  const hasAnyUnsavedChanges =
+    !formsEqual(people.primary, lastSavedPeople.primary) ||
+    !formsEqual(people.co, lastSavedPeople.co);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!hasAnyUnsavedChanges) return;
+
+      e.preventDefault();
+      e.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handler);
+
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+    };
+  }, [hasAnyUnsavedChanges]);
+
   return (
     <div className="grid gap-4">
-      {/* Header + Nav */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-[220px]">
           <h2 className="m-0 text-lg font-semibold">Step 1: Customer</h2>
           <div className="text-xs text-muted-foreground">
-            Required: Driver name + Credit Bureau PDF.
+            Required: Driver name + move-in date + Credit Bureau PDF.
           </div>
         </div>
 
         {headerStatus ? (
-          <span className="text-xs text-muted-foreground">{headerStatus}</span>
+          <span
+            className={[
+              "rounded-full px-2.5 py-1 text-xs font-medium",
+              activeRoleSaveState === "saving"
+                ? "bg-gray-100 text-gray-700"
+                : activeRoleSaveState === "saved"
+                  ? "bg-green-100 text-green-700"
+                  : activeRoleSaveState === "error"
+                    ? "bg-red-100 text-red-700"
+                    : "text-muted-foreground",
+            ].join(" ")}
+          >
+            {headerStatus}
+          </span>
+        ) : hasUnsavedActiveChanges ? (
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+            Unsaved changes
+          </span>
         ) : null}
 
-        {error ? (
-          <span className="text-sm text-red-600">{error}</span>
-        ) : null}
+        {error ? <span className="text-sm text-red-600">{error}</span> : null}
 
         <div className="flex-1" />
 
@@ -294,51 +485,57 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
         </button>
       </div>
 
-      {/* Data entry box */}
       <div className="rounded-2xl border bg-white p-4 shadow-sm grid gap-3">
-        {/* Tabs + Save */}
-        <div className="flex flex-wrap gap-2 items-center">
-          {(["primary", "co"] as Role[]).map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setActiveRole(r)}
-              className={[
-                "rounded-xl border px-3 py-2 text-sm font-semibold",
-                activeRole === r
-                  ? "bg-black text-white border-black"
-                  : "bg-white hover:bg-gray-50",
-              ].join(" ")}
-            >
-              {roleLabel(r)}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {(["primary", "co"] as Role[]).map((r) => {
+            const state = saveStateByRole[r];
+
+            return (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setActiveRole(r)}
+                className={[
+                  "rounded-xl border px-3 py-2 text-sm font-semibold",
+                  activeRole === r
+                    ? "bg-black text-white border-black"
+                    : "bg-white hover:bg-gray-50",
+                ].join(" ")}
+              >
+                {roleLabel(r)}
+                {state === "saving" ? " · Saving…" : ""}
+                {state === "saved" ? " · Saved" : ""}
+                {state === "error" ? " · Error" : ""}
+              </button>
+            );
+          })}
 
           <div className="flex-1" />
 
           <button
             type="button"
             onClick={() => saveRole(activeRole)}
-            disabled={loading || !!savingRole || navBusy}
+            disabled={loading || anySaving || navBusy}
             className={[
               "rounded-xl px-3 py-2 text-sm font-semibold text-white",
-              loading || !!savingRole || navBusy
+              loading || anySaving || navBusy
                 ? "bg-gray-400 cursor-not-allowed"
                 : "bg-black hover:opacity-90",
             ].join(" ")}
             title={
               activeRole === "primary" && !primaryOk
                 ? "Driver first + last name required to save"
-                : hasAnyData(activeForm)
-                  ? ""
-                  : "Nothing to save"
+                : activeRole === "primary" && !primaryResidenceComplete
+                  ? "Driver move-in date required to save"
+                  : hasAnyData(activeForm)
+                    ? ""
+                    : "Nothing to save"
             }
           >
             Save {roleLabel(activeRole)}
           </button>
         </div>
 
-        {/* Form */}
         <div className="grid gap-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Field
@@ -376,7 +573,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
             onChange={(v) => updateField("address_line1", v)}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <Field
               label="City"
               value={activeForm.city}
@@ -392,11 +589,21 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
               value={activeForm.zip}
               onChange={(v) => updateField("zip", v)}
             />
-            <Field
-              label="Residence (months)"
-              value={activeForm.residence_months}
-              onChange={(v) => updateField("residence_months", clampDigitsOnly(v))}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <ReadonlyField label="Years" value={activeResidence.years} />
+            <ReadonlyField label="Months" value={activeResidence.months} />
+            <DateField
+              label="Move-in Date"
+              value={activeForm.move_in_date}
+              onChange={(v) => updateField("move_in_date", v)}
+              required={activeRole === "primary"}
+              invalid={activeRole === "primary" && !activeForm.move_in_date.trim()}
             />
+            <div className="text-xs text-muted-foreground pb-2">
+              Residence time is calculated from move-in date.
+            </div>
           </div>
 
           <div className="grid gap-2">
@@ -422,7 +629,6 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
         </div>
       </div>
 
-      {/* Documents */}
       <div className="rounded-2xl border bg-white p-4 shadow-sm grid gap-3">
         <CustomerDocuments
           dealId={dealId}
@@ -431,7 +637,6 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
               credit_bureau: s.credit_bureau,
             });
 
-            // Clear doc-related error if bureau is uploaded
             if (s.credit_bureau && error?.toLowerCase().includes("upload")) {
               setError(null);
             }
@@ -439,11 +644,11 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
         />
       </div>
 
-      {/* Tiny status line */}
       <div className="text-xs text-muted-foreground">
         Required to continue:{" "}
         <b>
-          Driver name {primaryOk ? "✓" : "✗"} · Credit Bureau{" "}
+          Driver name {primaryOk ? "✓" : "✗"} · Move-in date{" "}
+          {primaryResidenceComplete ? "✓" : "✗"} · Credit Bureau{" "}
           {docStatus.credit_bureau ? "✓" : "✗"}
         </b>
       </div>
@@ -467,8 +672,7 @@ function Field({
   return (
     <label className="grid gap-1">
       <div className="text-xs text-muted-foreground">
-        {label}{" "}
-        {required ? <span className="text-red-600 font-semibold">*</span> : null}
+        {label} {required ? <span className="text-red-600 font-semibold">*</span> : null}
       </div>
       <input
         value={value}
@@ -477,6 +681,56 @@ function Field({
           "rounded-xl border px-3 py-2 text-sm outline-none",
           invalid ? "border-red-400" : "border-gray-200",
         ].join(" ")}
+      />
+    </label>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+  required,
+  invalid,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  required?: boolean;
+  invalid?: boolean;
+}) {
+  return (
+    <label className="grid gap-1">
+      <div className="text-xs text-muted-foreground">
+        {label} {required ? <span className="text-red-600 font-semibold">*</span> : null}
+      </div>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={[
+          "rounded-xl border px-3 py-2 text-sm outline-none",
+          invalid ? "border-red-400" : "border-gray-200",
+        ].join(" ")}
+      />
+    </label>
+  );
+}
+
+function ReadonlyField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <label className="grid gap-1">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <input
+        value={value}
+        readOnly
+        className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none"
       />
     </label>
   );

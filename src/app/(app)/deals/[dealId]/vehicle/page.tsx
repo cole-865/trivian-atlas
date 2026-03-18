@@ -3,6 +3,8 @@
 import React, { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+type VehicleCategory = "all" | "car" | "suv" | "truck" | "van";
+
 type PayOption = {
   label: "NONE" | "VSC" | "GAP" | "VSC+GAP";
   include_vsc: boolean;
@@ -102,18 +104,22 @@ function daysSince(dateIso: string | null | undefined) {
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
 }
 
+function hasPriceError(vehicle: ApiRow["vehicle"]) {
+  return vehicle.asking_price == null || Number(vehicle.asking_price) <= 0;
+}
+
 function normalizeReason(reason: string | null | undefined) {
   switch (reason) {
     case "PTI":
-      return "Max Payment";
+      return "Payment too high";
     case "LTV":
-      return "LTV";
+      return "LTV too high";
     case "AMOUNT_FINANCED":
-      return "Max Amt Fin";
+      return "Amount financed too high";
     case "VEHICLE_PRICE":
-      return "Max Price";
+      return "Vehicle price too high";
     default:
-      return reason ?? "—";
+      return reason ?? "Does not fit";
   }
 }
 
@@ -132,32 +138,77 @@ function optionSortValue(label: PayOption["label"]) {
   }
 }
 
-function getOptionHoverText(opt: PayOption) {
-  if (opt.fits_cap) return "Select this option";
+function getOptionReasonSummary(opt: PayOption) {
+  if (opt.fits_cap) return null;
 
-  const reasons = (opt.fail_reasons ?? []).map(normalizeReason);
+  const reasons = (opt.fail_reasons ?? []).map(normalizeReason).filter(Boolean);
   if (!reasons.length) return "Does not fit";
 
-  const detailParts: string[] = [];
+  return reasons.slice(0, 2).join(" • ");
+}
+
+function getOptionReasonDetail(opt: PayOption) {
+  if (opt.fits_cap) return null;
+
+  const parts: string[] = [];
+
+  if (opt.additional_down_breakdown?.pti && opt.additional_down_breakdown.pti > 0) {
+    parts.push(`Payment: +${money(opt.additional_down_breakdown.pti)}`);
+  }
+  if (opt.additional_down_breakdown?.ltv && opt.additional_down_breakdown.ltv > 0) {
+    parts.push(`LTV: +${money(opt.additional_down_breakdown.ltv)}`);
+  }
+  if (
+    opt.additional_down_breakdown?.amount_financed &&
+    opt.additional_down_breakdown.amount_financed > 0
+  ) {
+    parts.push(`Amt Fin: +${money(opt.additional_down_breakdown.amount_financed)}`);
+  }
+  if (opt.additional_down_breakdown?.min_down && opt.additional_down_breakdown.min_down > 0) {
+    parts.push(`Min Down: +${money(opt.additional_down_breakdown.min_down)}`);
+  }
+
+  return parts.length ? parts.slice(0, 2).join(" • ") : null;
+}
+
+function getOptionHoverText(opt: PayOption) {
+  if (opt.fits_cap) return "✔ This structure works";
+
+  const reasons = (opt.fail_reasons ?? []).map(normalizeReason).filter(Boolean);
+
+  const lines: string[] = [];
+
+  if (reasons.length) {
+    lines.push(`Blocked by ${reasons[0]}`);
+  } else {
+    lines.push("Doesn’t fit program");
+  }
+
+  if (reasons.length > 1) {
+    lines.push(`Also: ${reasons[1]}`);
+  }
 
   if (opt.additional_down_breakdown) {
-    if (opt.additional_down_breakdown.pti > 0) {
-      detailParts.push(`Max Payment: +${money(opt.additional_down_breakdown.pti)}`);
+    const b = opt.additional_down_breakdown;
+
+    if (b.min_down > 0) {
+      lines.push(`Add ${money(b.min_down)} down`);
     }
-    if (opt.additional_down_breakdown.ltv > 0) {
-      detailParts.push(`LTV: +${money(opt.additional_down_breakdown.ltv)}`);
+
+    if (b.pti > 0) {
+      lines.push(`Over payment cap by ${money(b.pti)}`);
     }
-    if (opt.additional_down_breakdown.amount_financed > 0) {
-      detailParts.push(`Max Amt Fin: +${money(opt.additional_down_breakdown.amount_financed)}`);
+
+    if (b.ltv > 0) {
+      lines.push(`Over LTV by ${money(b.ltv)}`);
     }
-    if (opt.additional_down_breakdown.min_down > 0) {
-      detailParts.push(`Min Down: +${money(opt.additional_down_breakdown.min_down)}`);
+
+    if (b.amount_financed > 0) {
+      lines.push(`Amount financed too high by ${money(b.amount_financed)}`);
     }
   }
 
-  return detailParts.length
-    ? `${reasons.join(" • ")}\n${detailParts.join("\n")}`
-    : reasons.join(" • ");
+  return lines.join("\n");
 }
 
 export default function DealVehiclePage() {
@@ -226,7 +277,7 @@ export default function DealVehiclePage() {
 
   useEffect(() => {
     if (!dealId) return;
-    load(cashDownApplied);
+    void load(cashDownApplied);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
 
@@ -347,9 +398,6 @@ export default function DealVehiclePage() {
         }),
       });
 
-      const result = await res.text();
-      console.log("PATCH /api/deals response", res.status, result);
-
       if (!res.ok) {
         throw new Error("Failed to save cash down");
       }
@@ -384,7 +432,7 @@ export default function DealVehiclePage() {
 
   function onNext() {
     if (!incomeAppliedOk) {
-      setErr("Income has not been applied. Go back to Step 2 and click 'Apply Income'.");
+      setErr("Income totals are not ready yet. Go back to Step 2 and let income finish updating.");
       return;
     }
 
@@ -398,7 +446,12 @@ export default function DealVehiclePage() {
 
   function onPick(v: VehicleRow, opt: PayOption) {
     if (!incomeAppliedOk) {
-      setErr("Income has not been applied. Go back to Step 2 and click 'Apply Income'.");
+      setErr("Income totals are not ready yet. Go back to Step 2 and let income finish updating.");
+      return;
+    }
+
+    if (hasPriceError(v.vehicle)) {
+      setErr("Vehicle is not priced yet.");
       return;
     }
 
@@ -451,7 +504,13 @@ export default function DealVehiclePage() {
             background: nextDisabled ? "#999" : "#111",
             cursor: nextDisabled ? "not-allowed" : "pointer",
           }}
-          title={!incomeAppliedOk ? "Apply Income in Step 2" : !selected ? "Pick an option" : ""}
+          title={
+            !incomeAppliedOk
+              ? "Wait for Step 2 income totals to finish updating"
+              : !selected
+                ? "Pick an option"
+                : ""
+          }
         >
           Next →
         </button>
@@ -459,10 +518,10 @@ export default function DealVehiclePage() {
 
       {!loading && !incomeAppliedOk ? (
         <div style={{ ...card, borderColor: "#f2c9c9", background: "#fff7f7" }}>
-          <div style={{ fontWeight: 900, color: "crimson" }}>Income isn’t applied yet.</div>
+          <div style={{ fontWeight: 900, color: "crimson" }}>Income totals are not ready yet.</div>
           <div style={{ marginTop: 6, opacity: 0.85 }}>
-            Go back to <b>Step 2</b> and click <b>Apply Income</b>. Until then, vehicle options are
-            locked.
+            Go back to <b>Step 2</b> and let the income step finish saving and updating totals.
+            Until then, vehicle options are locked.
           </div>
         </div>
       ) : null}
@@ -497,7 +556,7 @@ export default function DealVehiclePage() {
             value={cashDownInput}
             onChange={(e) => setCashDownInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleApplyDown();
+              if (e.key === "Enter") void handleApplyDown();
             }}
             placeholder="1.00"
             style={input}
@@ -566,6 +625,7 @@ export default function DealVehiclePage() {
               {filtered.map((v) => {
                 const age = daysSince(v.vehicle.date_in_stock);
                 const rowSpan = v.options.length;
+                const priceError = hasPriceError(v.vehicle);
 
                 return (
                   <Fragment key={v.vehicle.id}>
@@ -580,12 +640,15 @@ export default function DealVehiclePage() {
                         <tr
                           key={`${v.vehicle.id}-${opt.label}`}
                           style={{
-                            background: v.fitsNow ? "#f8fff9" : "#fff",
+                            background: priceError ? "#fff7e6" : v.fitsNow ? "#f8fff9" : "#fff",
                           }}
                         >
                           {idx === 0 ? (
                             <>
-                              <td rowSpan={rowSpan} style={{ ...tdTop, width: 42, paddingLeft: 6, paddingRight: 6 }}>
+                              <td
+                                rowSpan={rowSpan}
+                                style={{ ...tdTop, width: 42, paddingLeft: 6, paddingRight: 6 }}
+                              >
                                 {age == null ? "—" : age}
                               </td>
                               <td rowSpan={rowSpan} style={tdTop}>
@@ -604,7 +667,17 @@ export default function DealVehiclePage() {
                                 {v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}
                               </td>
                               <td rowSpan={rowSpan} style={tdTop}>
-                                {v.primaryBlock ? (
+                                {priceError ? (
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                      color: "#b45309",
+                                    }}
+                                  >
+                                    No Price
+                                  </span>
+                                ) : v.primaryBlock ? (
                                   <span
                                     style={{
                                       fontSize: 12,
@@ -640,23 +713,25 @@ export default function DealVehiclePage() {
                           <td style={tdRight}>
                             <button
                               type="button"
-                              disabled={!incomeAppliedOk}
+                              disabled={!incomeAppliedOk || priceError}
                               onClick={() => onPick(v, opt)}
                               style={{
                                 border: "none",
                                 background: "transparent",
                                 padding: 0,
-                                cursor: !incomeAppliedOk ? "not-allowed" : "pointer",
+                                cursor: !incomeAppliedOk || priceError ? "not-allowed" : "pointer",
                                 fontWeight: 900,
                                 fontSize: 15,
                                 textDecoration: "underline",
-                                opacity: !incomeAppliedOk ? 0.35 : ok ? 1 : 0.7,
+                                opacity: !incomeAppliedOk || priceError ? 0.35 : ok ? 1 : 0.7,
                                 color: ok ? "#111" : "#666",
                               }}
                               title={
                                 !incomeAppliedOk
-                                  ? "Income not applied"
-                                  : getOptionHoverText(opt)
+                                  ? "Income totals not ready"
+                                  : priceError
+                                    ? "Vehicle is not priced yet"
+                                    : getOptionHoverText(opt)
                               }
                             >
                               {money(opt.monthly_payment)}
