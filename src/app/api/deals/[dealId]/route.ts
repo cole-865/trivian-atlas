@@ -130,6 +130,9 @@ export async function PATCH(
     .from("deals")
     .update({
       cash_down: body.cash_down,
+      trade_value: body.trade_value,
+      trade_payoff: body.trade_payoff,
+      has_trade: body.has_trade,
       updated_at: new Date().toISOString(),
     })
     .eq("id", dealId)

@@ -173,7 +173,7 @@ export async function GET(
 
   const { data: deal, error: dealErr } = await supabase
     .from("deals")
-    .select("id, max_payment, cash_down, trade_payoff, has_trade")
+    .select("id, max_payment, cash_down, trade_value, trade_payoff, has_trade")
     .eq("id", dealId)
     .single();
 
@@ -245,7 +245,9 @@ export async function GET(
   }
 
   const apr = Number(uwResult?.apr ?? 28.99);
-  const underwritingMaxTermMonths = Number(uwResult?.max_term_months ?? uwInputs?.term_months ?? 48);
+  const underwritingMaxTermMonths = Number(
+    uwResult?.max_term_months ?? uwInputs?.term_months ?? 48
+  );
 
   const maxAmountFinanced = Number(uwResult?.max_amount_financed ?? 0);
   const maxVehiclePrice = Number(uwResult?.max_vehicle_price ?? 0);
@@ -259,7 +261,12 @@ export async function GET(
   const cashDown =
     cashDownOverride != null ? Number(cashDownOverride) : Number(deal?.cash_down ?? 0);
 
+  const tradeValue = Number(deal?.trade_value ?? 0);
   const tradePayoff = Number(deal?.trade_payoff ?? 0);
+
+  const tradeEquity = deal?.has_trade ? round2(tradeValue - tradePayoff) : 0;
+  const positiveTradeEquity = round2(Math.max(0, tradeEquity));
+  const negativeTradeEquity = round2(Math.max(0, -tradeEquity));
 
   const taxRateMain = Number(cfg?.tax_rate_main ?? 0.07);
   const taxAddBase = Number(cfg?.tax_add_base ?? 320);
@@ -302,7 +309,10 @@ export async function GET(
 
     const pctDown = round2(price * Number(uwResult?.min_down_pct ?? 0));
     const requiredDown = Math.max(Number(uwResult?.min_cash_down ?? 0), pctDown);
-    const effectiveDown = round2(Math.max(cashDown, requiredDown));
+
+    const effectiveCashDown = round2(Math.max(cashDown, requiredDown));
+    const effectiveDown = round2(effectiveCashDown + positiveTradeEquity);
+
     const minimumDownShortfall = round2(Math.max(0, requiredDown - cashDown));
 
     const vehiclePriceOk = maxVehiclePrice > 0 ? price <= maxVehiclePrice : true;
@@ -311,17 +321,12 @@ export async function GET(
       const optionTermMonths = ot.vsc && ot.gap ? vehicleMaxTermMonths : vehicleBaseTermMonths;
 
       const taxableAmount = price + (ot.vsc ? vscPrice : 0);
-
-      const tax = estimateTax(
-        taxableAmount,
-        taxRateMain,
-        taxAddBase,
-        taxAddRate
-      );
-
+      const tax = estimateTax(taxableAmount, taxRateMain, taxAddBase, taxAddRate);
       const baseFees = round2(docFee + titleLicense + tax);
 
-      const amountFinanced = round2(price + baseFees + ot.productTotal - effectiveDown);
+      const amountFinanced = round2(
+        price + baseFees + ot.productTotal + negativeTradeEquity - effectiveDown
+      );
 
       const fitsAmountFinanced =
         maxAmountFinanced > 0 ? amountFinanced <= maxAmountFinanced : true;
@@ -421,7 +426,9 @@ export async function GET(
         term_months: vehicleMaxTermMonths,
         base_term_months: vehicleBaseTermMonths,
         cash_down_used: effectiveDown,
+        trade_value: tradeValue,
         trade_payoff: tradePayoff,
+        trade_equity: tradeEquity,
         doc_fee: docFee,
         title_license: titleLicense,
         vsc_price: vscPrice,

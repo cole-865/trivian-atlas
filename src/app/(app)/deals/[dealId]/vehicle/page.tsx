@@ -58,6 +58,9 @@ type ApiRow = {
     max_payment_cap: number;
     cash_down_used: number;
     max_amount_financed?: number;
+    trade_value?: number;
+    trade_payoff?: number;
+    trade_equity?: number;
     max_vehicle_price?: number;
     max_ltv?: number;
     tier?: string | null;
@@ -223,7 +226,8 @@ export default function DealVehiclePage() {
 
   const [cashDownInput, setCashDownInput] = useState<string>("");
   const [cashDownApplied, setCashDownApplied] = useState<number | null>(null);
-
+  const [tradeValueInput, setTradeValueInput] = useState<string>("");
+  const [tradePayoffInput, setTradePayoffInput] = useState<string>("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selected | null>(null);
   const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>("all");
@@ -268,7 +272,15 @@ export default function DealVehiclePage() {
         setCashDownApplied(Number(serverDown));
         setCashDownInput(String(serverDown));
       }
+      const serverTradeValue = incoming?.[0]?.assumptions?.trade_value;
+      if (serverTradeValue != null) {
+        setTradeValueInput(String(serverTradeValue));
+      }
 
+      const serverTradePayoff = incoming?.[0]?.assumptions?.trade_payoff;
+      if (serverTradePayoff != null) {
+        setTradePayoffInput(String(serverTradePayoff));
+      }
       setSelected(null);
     } catch (e: any) {
       setErr(e?.message || "Failed to load");
@@ -410,10 +422,23 @@ export default function DealVehiclePage() {
     });
   }, [vehicles, query, vehicleCategory]);
 
-  async function handleApplyDown() {
-    const n = Number(cashDownInput);
-    if (Number.isNaN(n) || n < 0) {
+  async function handleApplyDealInputs() {
+    const cashDown = Number(cashDownInput || 0);
+    const tradeValue = Number(tradeValueInput || 0);
+    const tradePayoff = Number(tradePayoffInput || 0);
+
+    if (Number.isNaN(cashDown) || cashDown < 0) {
       setErr("Cash down must be a valid non-negative number.");
+      return;
+    }
+
+    if (Number.isNaN(tradeValue) || tradeValue < 0) {
+      setErr("Trade in must be a valid non-negative number.");
+      return;
+    }
+
+    if (Number.isNaN(tradePayoff) || tradePayoff < 0) {
+      setErr("Trade payoff must be a valid non-negative number.");
       return;
     }
 
@@ -424,21 +449,26 @@ export default function DealVehiclePage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          cash_down: n,
+          cash_down: cashDown,
+          trade_value: tradeValue,
+          trade_payoff: tradePayoff,
+          has_trade: tradeValue > 0 || tradePayoff > 0,
         }),
       });
 
       if (!res.ok) {
-        throw new Error("Failed to save cash down");
+        throw new Error("Failed to save deal inputs");
       }
 
-      setCashDownApplied(n);
-      await load(n);
+      setCashDownApplied(cashDown);
+      await load(cashDown);
     } catch (e) {
       console.error(e);
-      setErr("Failed to save cash down");
+      setErr("Failed to save deal inputs");
     }
   }
+  const tradeEquityPreview =
+    (Number(tradeValueInput || 0) || 0) - (Number(tradePayoffInput || 0) || 0);
 
   function buildDealUrl(sel: Selected) {
     const qs = new URLSearchParams();
@@ -586,15 +616,36 @@ export default function DealVehiclePage() {
             value={cashDownInput}
             onChange={(e) => setCashDownInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void handleApplyDown();
+              if (e.key === "Enter") void handleApplyDealInputs();
             }}
             placeholder="1.00"
             style={input}
           />
-          <button type="button" onClick={handleApplyDown} style={btnSecondary}>
-            Apply
-          </button>
         </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>Trade In</div>
+          <input
+            value={tradeValueInput}
+            onChange={(e) => setTradeValueInput(e.target.value)}
+            placeholder="0.00"
+            style={input}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>Trade Payoff</div>
+          <input
+            value={tradePayoffInput}
+            onChange={(e) => setTradePayoffInput(e.target.value)}
+            placeholder="0.00"
+            style={input}
+          />
+        </div>
+
+        <button type="button" onClick={handleApplyDealInputs} style={btnSecondary}>
+          Apply
+        </button>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {(
@@ -633,6 +684,17 @@ export default function DealVehiclePage() {
           placeholder="Search stock / year / make / model / VIN..."
           style={{ ...input, flex: 1, minWidth: 260 }}
         />
+      </div>
+
+      <div style={{ fontSize: 13, fontWeight: 800, opacity: 0.85 }}>
+        Trade Equity:{" "}
+        <span
+          style={{
+            color: tradeEquityPreview > 0 ? "green" : tradeEquityPreview < 0 ? "crimson" : "#444",
+          }}
+        >
+          {money(tradeEquityPreview)}
+        </span>
       </div>
 
       {loading ? <div style={{ opacity: 0.8 }}>Loading…</div> : null}
