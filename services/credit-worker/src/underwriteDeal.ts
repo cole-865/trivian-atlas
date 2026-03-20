@@ -1,5 +1,7 @@
 // services/credit-worker/src/underwriteDeal.ts
 
+import { createClient } from "@supabase/supabase-js";
+
 type Tier = "A" | "B" | "C" | "D" | "BHPH";
 
 type UnderwriteArgs = {
@@ -37,6 +39,21 @@ type UnderwriteResult = {
   notes: string;
 };
 
+type TierPolicyRow = {
+  tier: string;
+  max_vehicle_price: string | number;
+  max_amount_financed: string | number;
+  max_ltv: string | number;
+  max_term_months: number;
+  max_pti: string | number;
+  min_cash_down: string | number;
+  min_down_pct: string | number;
+  apr: string | number | null;
+  active: boolean;
+  sort_order: number;
+  updated_at?: string;
+};
+
 const TIER_ORDER: Tier[] = ["BHPH", "D", "C", "B", "A"];
 
 function clampTierIndex(idx: number): number {
@@ -64,11 +81,96 @@ function monthsBetween(dateStr: string | null | undefined): number | null {
   return Math.max(0, months);
 }
 
+function toNumber(value: string | number | null | undefined, fallback = 0): number {
+  if (value === null || value === undefined || value === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeTier(value: string): Tier {
+  const tier = String(value || "").trim().toUpperCase();
+  if (tier === "A" || tier === "B" || tier === "C" || tier === "D" || tier === "BHPH") {
+    return tier;
+  }
+  throw new Error(`Unsupported tier from underwriting_tier_policy: ${value}`);
+}
+
+function getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+  if (!url) {
+    throw new Error("Missing SUPABASE_URL in credit-worker environment");
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error(
+      "Missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY) in credit-worker environment"
+    );
+  }
+
+  return createClient(url, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function loadTierPolicy(tier: Tier) {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("underwriting_tier_policy")
+    .select(
+      `
+      tier,
+      max_vehicle_price,
+      max_amount_financed,
+      max_ltv,
+      max_term_months,
+      max_pti,
+      min_cash_down,
+      min_down_pct,
+      apr,
+      active,
+      sort_order,
+      updated_at
+    `
+    )
+    .eq("tier", tier)
+    .eq("active", true)
+    .order("sort_order", { ascending: true })
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed loading underwriting_tier_policy for ${tier}: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error(`No active underwriting_tier_policy row found for tier ${tier}`);
+  }
+
+  const row = data as TierPolicyRow;
+
+  return {
+    tier: normalizeTier(row.tier),
+    maxTermMonths: Number(row.max_term_months || 0),
+    minCashDown: toNumber(row.min_cash_down),
+    minDownPct: toNumber(row.min_down_pct),
+    maxPti: toNumber(row.max_pti),
+    maxAmountFinanced: toNumber(row.max_amount_financed),
+    maxVehiclePrice: toNumber(row.max_vehicle_price),
+    maxLtv: toNumber(row.max_ltv),
+    apr: toNumber(row.apr, 28.99),
+  };
+}
+
 export function calcJobMonthsFromHireDate(hireDate: string | null | undefined): number | null {
   return monthsBetween(hireDate);
 }
 
-export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
+export async function underwriteDeal(args: UnderwriteArgs): Promise<UnderwriteResult> {
   const factors: UnderwriteResult["scoreFactors"] = [];
 
   // Hard stops
@@ -149,7 +251,6 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
     movement -= 1;
     factors.push({ code: "NO_AUTO_HISTORY", points: -1, note: "No auto history" });
   } else if (args.openAutoTrades > 0) {
-    // We do not have reliable open-auto age normalization yet, so hold neutral for v1
     factors.push({ code: "OPEN_AUTO_PRESENT", points: 0, note: "Open auto present; neutral in v1" });
   }
 
@@ -165,127 +266,11 @@ export function underwriteDeal(args: UnderwriteArgs): UnderwriteResult {
     factors.push({ code: "RES_UNDER_6", points: -1, note: "Residence under 6 months" });
   }
 
-  /*
-  // Stability - job
-  if ((args.jobMonths ?? 0) > 24) {
-    movement += 1;
-    factors.push({ code: "JOB_OVER_24", points: 1, note: "Job over 24 months" });
-  } else if ((args.jobMonths ?? 0) >= 12) {
-    movement += 0.5;
-    factors.push({ code: "JOB_12_24", points: 0.5, note: "Job 12-24 months" });
-  } else if ((args.jobMonths ?? 0) < 6) {
-    movement -= 1;
-    factors.push({ code: "JOB_UNDER_6", points: -1, note: "Job under 6 months" });
-  }
-
-  // Repo impact
-  if (args.repoCount > 0 && args.monthsSinceRepo !== null) {
-    if (args.monthsSinceRepo < 12) {
-      movement -= 1.5;
-      factors.push({ code: "REPO_LT_12", points: -1.5, note: "Repo under 12 months" });
-    } else if (args.monthsSinceRepo < 24) {
-      movement -= 1;
-      factors.push({ code: "REPO_12_24", points: -1, note: "Repo 12-24 months" });
-    } else if (args.monthsSinceRepo < 48) {
-      movement -= 0.5;
-      factors.push({ code: "REPO_24_48", points: -0.5, note: "Repo 24-48 months" });
-    }
-  }
-*/
-
-  /*
-    // Cash down adjustment
-    const downPct =
-      args.vehiclePrice > 0 ? (args.cashDown / args.vehiclePrice) * 100 : 0;
-  
-    if (downPct > 20) {
-      movement += 2;
-      factors.push({ code: "DOWN_GT_20", points: 2, note: "Cash down over 20%" });
-    } else if (downPct >= 15) {
-      movement += 1;
-      factors.push({ code: "DOWN_15_20", points: 1, note: "Cash down 15-20%" });
-    } else if (downPct < 10) {
-      movement -= 1;
-      factors.push({ code: "DOWN_LT_10", points: -1, note: "Cash down under 10%" });
-    }
-  
-  */
-
   // Cap total movement at +/- 2
   const cappedMovement = Math.max(-2, Math.min(2, roundHalfStep(movement)));
+  const tier = moveTier("C", Math.trunc(cappedMovement));
 
-  let tier = moveTier("C", Math.trunc(cappedMovement));
-
-  const tierMatrix: Record<
-    Tier,
-    {
-      maxTermMonths: number;
-      minCashDown: number;
-      maxPti: number;
-      minDownPct: number;
-      maxAmountFinanced: number;
-      maxVehiclePrice: number;
-      maxLtv: number;
-      apr: number;
-    }
-  > = {
-    A: {
-      maxTermMonths: 60,
-      minCashDown: 500,
-      maxPti: 0.22,
-      minDownPct: 0.05,
-      maxAmountFinanced: 25000,
-      maxVehiclePrice: 25000,
-      maxLtv: 1.5,
-      apr: 28.99,
-    },
-    B: {
-      maxTermMonths: 54,
-      minCashDown: 750,
-      maxPti: 0.20,
-      minDownPct: 0.07,
-      maxAmountFinanced: 22000,
-      maxVehiclePrice: 22000,
-      maxLtv: 1.4,
-      apr: 28.99,
-    },
-    C: {
-      maxTermMonths: 48,
-      minCashDown: 1000,
-      maxPti: 0.18,
-      minDownPct: 0.10,
-      maxAmountFinanced: 18000,
-      maxVehiclePrice: 18000,
-      maxLtv: 1.3,
-      apr: 28.99,
-    },
-    D: {
-      maxTermMonths: 42,
-      minCashDown: 1500,
-      maxPti: 0.16,
-      minDownPct: 0.12,
-      maxAmountFinanced: 15000,
-      maxVehiclePrice: 15000,
-      maxLtv: 1.2,
-      apr: 28.99,
-    },
-    BHPH: {
-      maxTermMonths: 36,
-      minCashDown: 1500,
-      maxPti: 0.15,
-      minDownPct: 0.15,
-      maxAmountFinanced: 12000,
-      maxVehiclePrice: 12000,
-      maxLtv: 1.1,
-      apr: 28.99,
-    },
-  };
-
-  const tierRule = tierMatrix[tier as Tier];
-
-  if (!tierRule) {
-    throw new Error(`Invalid tier produced by underwriting engine: ${tier}`);
-  }
+  const tierRule = await loadTierPolicy(tier);
 
   return {
     decision: "approved",

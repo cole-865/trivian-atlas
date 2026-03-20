@@ -394,7 +394,7 @@ export async function processJob(job) {
             .single();
         if (personError)
             throw personError;
-        const uw = underwriteDeal({
+        const uw = await underwriteDeal({
             incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
             score: bureauSummary.score,
             repoCount: Number(bureauSummary.repo_count ?? 0),
