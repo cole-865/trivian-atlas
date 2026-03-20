@@ -216,6 +216,28 @@ export default function CustomerDocuments({
     }
   }
 
+  async function refreshUnderwriting() {
+    if (!dealId) return;
+
+    setBusyType("credit_bureau");
+    setErr(null);
+
+    try {
+      const r = await fetch(`/api/deals/${dealId}/refresh-underwriting`, {
+        method: "POST",
+      });
+
+      const j = await r.json();
+      if (!r.ok) throw new Error(cleanErrorMessage(j, "Failed to refresh underwriting"));
+
+      await refresh();
+    } catch (e: any) {
+      setErr(e?.message || "Failed to refresh underwriting");
+    } finally {
+      setBusyType(null);
+    }
+  }
+
   async function refresh() {
     if (!dealId) return;
     setLoading(true);
@@ -527,10 +549,10 @@ export default function CustomerDocuments({
               cursor: busy ? "not-allowed" : "pointer",
             }}
             disabled={busy}
-            onClick={() => refresh()}
-            title="Refresh document + bureau status"
+            onClick={() => refreshUnderwriting()}
+            title="Refresh underwriting from current bureau data"
           >
-            Refresh
+            Refresh Underwriting
           </button>
 
           {type === "credit_bureau" ? (
