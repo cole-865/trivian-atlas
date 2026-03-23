@@ -145,6 +145,10 @@ export default function DealSubmitPage() {
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
@@ -153,44 +157,37 @@ export default function DealSubmitPage() {
     let cancelled = false;
 
     async function loadSelection() {
-      try {
-        const r = await fetch(`/api/deals/${dealId}/vehicle-selection`, {
-          cache: "no-store",
-        });
-        const j = await r.json();
+      const r = await fetch(`/api/deals/${dealId}/vehicle-selection`, {
+        cache: "no-store",
+      });
 
-        if (!r.ok) {
-          throw new Error(j?.details || j?.error || "Failed to load selection");
-        }
+      const j = await r.json().catch(() => ({}));
 
-        if (!cancelled) {
-          setSelection(j.selection ?? null);
-        }
-      } catch (e: any) {
-        if (!cancelled) {
-          throw new Error(e?.message || "Failed to load selection");
-        }
+      if (!r.ok) {
+        throw new Error(j?.details || j?.error || "Failed to load selection");
+      }
+
+      if (!cancelled) {
+        setSelection(j.selection ?? null);
       }
     }
 
     async function loadDocuments() {
-      try {
-        const r = await fetch(`/api/deals/${dealId}/documents`, {
-          cache: "no-store",
-        });
-        const j: DocumentsResponse = await r.json();
+      const r = await fetch(`/api/deals/${dealId}/documents`, {
+        cache: "no-store",
+      });
 
-        if (!r.ok) {
-          throw new Error((j as any)?.details || (j as any)?.error || "Failed to load documents");
-        }
+      const j: DocumentsResponse = await r.json().catch(() => ({
+        ok: false,
+        documents: null,
+      } as any));
 
-        if (!cancelled) {
-          setDocuments(j.documents);
-        }
-      } catch (e: any) {
-        if (!cancelled) {
-          throw new Error(e?.message || "Failed to load documents");
-        }
+      if (!r.ok) {
+        throw new Error((j as any)?.details || (j as any)?.error || "Failed to load documents");
+      }
+
+      if (!cancelled) {
+        setDocuments(j.documents);
       }
     }
 
@@ -213,7 +210,7 @@ export default function DealSubmitPage() {
       }
     }
 
-    loadAll();
+    void loadAll();
 
     return () => {
       cancelled = true;
@@ -224,11 +221,16 @@ export default function DealSubmitPage() {
     if (!dealId) return;
 
     setLoadingDocs(true);
+
     try {
       const r = await fetch(`/api/deals/${dealId}/documents`, {
         cache: "no-store",
       });
-      const j: DocumentsResponse = await r.json();
+
+      const j: DocumentsResponse = await r.json().catch(() => ({
+        ok: false,
+        documents: null,
+      } as any));
 
       if (!r.ok) {
         throw new Error((j as any)?.details || (j as any)?.error || "Failed to refresh documents");
@@ -250,6 +252,16 @@ export default function DealSubmitPage() {
       return files.length > 0;
     });
   }, [documents]);
+
+  const blockingItems = useMemo(() => {
+    const blockers: string[] = [];
+
+    if (!selection) blockers.push("Missing saved structure.");
+    if (!documents?.credit_bureau) blockers.push("Missing credit bureau PDF.");
+    if (!requiredStipsComplete) blockers.push("Missing one or more required stip docs.");
+
+    return blockers;
+  }, [selection, documents, requiredStipsComplete]);
 
   const checklistItems = useMemo(() => {
     const creditBureauPresent = !!documents?.credit_bureau;
@@ -284,17 +296,19 @@ export default function DealSubmitPage() {
           : "Missing one or more required stips.",
       },
       {
-        ok: true,
-        label: "Underwriting / deal review",
-        detail: "Placeholder until final submit rules are wired.",
+        ok: submitted,
+        label: "Deal submitted",
+        detail: submitted
+          ? "Step 5 submit completed successfully."
+          : "Deal has not been submitted yet.",
       },
     ];
-  }, [selection, documents, requiredStipsComplete]);
+  }, [selection, documents, requiredStipsComplete, submitted]);
 
   const readyCount = checklistItems.filter((x) => x.ok).length;
   const totalCount = checklistItems.length;
 
-  const canContinue = useMemo(() => {
+  const canSubmit = useMemo(() => {
     return !!selection && !!documents?.credit_bureau && requiredStipsComplete;
   }, [selection, documents, requiredStipsComplete]);
 
@@ -302,15 +316,53 @@ export default function DealSubmitPage() {
     router.push(`/deals/${dealId}/deal`);
   }
 
-  function onNext() {
-    setErr(null);
+  function onContinueToFund() {
+    router.push(`/deals/${dealId}/fund`);
+  }
 
-    if (!canContinue) {
-      setErr("This deal is not ready yet. Make sure the structure, bureau, and required stipulations are all in place.");
+  async function onSubmitDeal() {
+    setErr(null);
+    setSubmitSuccess(null);
+
+    if (!canSubmit) {
+      setErr(
+        "This deal is not ready yet. Make sure the structure, bureau, and required stipulations are all in place."
+      );
       return;
     }
 
-    router.push(`/deals/${dealId}/fund`);
+    setSubmitting(true);
+
+    try {
+      const r = await fetch(`/api/deals/${dealId}/submit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          funding_notes: submitNotes,
+          internal_notes: internalNotes,
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        const blockerText =
+          Array.isArray(j?.blockers) && j.blockers.length > 0
+            ? ` ${j.blockers.join(" • ")}`
+            : "";
+
+        throw new Error(j?.details || j?.error || `Submit failed.${blockerText}`);
+      }
+
+      setSubmitted(true);
+      setSubmitSuccess("Deal submitted successfully. You can continue to funding.");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to submit deal.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function openPicker(docType: StipConfig["key"]) {
@@ -334,7 +386,7 @@ export default function DealSubmitPage() {
         body: form,
       });
 
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
 
       if (!r.ok) {
         throw new Error(j?.details || j?.error || "Upload failed");
@@ -375,24 +427,32 @@ export default function DealSubmitPage() {
           ← Previous
         </button>
 
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={!canContinue || loading}
-          style={{
-            ...btnPrimary,
-            background: !canContinue || loading ? "#999" : "#111",
-            borderColor: !canContinue || loading ? "#999" : "#111",
-            cursor: !canContinue || loading ? "not-allowed" : "pointer",
-          }}
-        >
-          Next →
-        </button>
+        {submitted ? (
+          <button type="button" onClick={onContinueToFund} style={btnPrimary}>
+            Continue to Fund →
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onSubmitDeal}
+            disabled={!canSubmit || loading || submitting}
+            style={{
+              ...btnPrimary,
+              background: !canSubmit || loading || submitting ? "#999" : "#111",
+              borderColor: !canSubmit || loading || submitting ? "#999" : "#111",
+              cursor:
+                !canSubmit || loading || submitting ? "not-allowed" : "pointer",
+            }}
+          >
+            {submitting ? "Submitting..." : "Submit Deal"}
+          </button>
+        )}
       </div>
 
       {loading ? <div style={infoBox}>Loading submit review…</div> : null}
       {err ? <div style={errorBox}>{err}</div> : null}
       {uploadError ? <div style={errorBox}>{uploadError}</div> : null}
+      {submitSuccess ? <div style={successBox}>{submitSuccess}</div> : null}
 
       <div style={gridTwo}>
         <section style={card}>
@@ -461,7 +521,9 @@ export default function DealSubmitPage() {
         {documents?.credit_bureau ? (
           <div style={docCard}>
             <div>
-              <div style={{ fontWeight: 900 }}>{documents.credit_bureau.original_name || "Credit Bureau PDF"}</div>
+              <div style={{ fontWeight: 900 }}>
+                {documents.credit_bureau.original_name || "Credit Bureau PDF"}
+              </div>
               <div style={docMeta}>
                 Uploaded {formatDate(documents.credit_bureau.created_at)} •{" "}
                 {formatBytes(documents.credit_bureau.size_bytes)}
@@ -493,10 +555,25 @@ export default function DealSubmitPage() {
             return (
               <div key={stip.key} style={stipRow}>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <div style={{ fontWeight: 900, fontSize: 14 }}>{stip.label}</div>
-                    {stip.required ? <span style={pillRequired}>Required</span> : <span style={pillOptional}>Optional</span>}
-                    {files.length > 0 ? <span style={pillGood}>{files.length} file{files.length === 1 ? "" : "s"}</span> : null}
+                    {stip.required ? (
+                      <span style={pillRequired}>Required</span>
+                    ) : (
+                      <span style={pillOptional}>Optional</span>
+                    )}
+                    {files.length > 0 ? (
+                      <span style={pillGood}>
+                        {files.length} file{files.length === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
                   </div>
                   <div style={stipHelper}>{stip.helper}</div>
                 </div>
@@ -532,7 +609,9 @@ export default function DealSubmitPage() {
                     {files.map((doc) => (
                       <div key={doc.id} style={docCard}>
                         <div>
-                          <div style={{ fontWeight: 800 }}>{doc.original_name || "Uploaded file"}</div>
+                          <div style={{ fontWeight: 800 }}>
+                            {doc.original_name || "Uploaded file"}
+                          </div>
                           <div style={docMeta}>
                             {formatDate(doc.created_at)} • {formatBytes(doc.size_bytes)} •{" "}
                             {doc.mime_type || "unknown type"}
@@ -542,7 +621,14 @@ export default function DealSubmitPage() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "#777", fontWeight: 700 }}>
+                  <div
+                    style={{
+                      gridColumn: "1 / -1",
+                      fontSize: 13,
+                      color: "#777",
+                      fontWeight: 700,
+                    }}
+                  >
                     No files uploaded yet.
                   </div>
                 )}
@@ -556,7 +642,7 @@ export default function DealSubmitPage() {
         <section style={card}>
           <div style={sectionTitle}>Funding Notes</div>
           <div style={helperText}>
-            UI only for now. Wire these later once you decide whether they belong on the deal or in a notes table.
+            Notes that travel with the deal handoff into funding.
           </div>
           <textarea
             value={submitNotes}
@@ -585,20 +671,23 @@ export default function DealSubmitPage() {
 
         <div style={{ display: "grid", gap: 10 }}>
           <div style={statusRow}>
-            <span style={statusLabel}>Ready for next step</span>
-            <span style={canContinue ? statusGood : statusBad}>{canContinue ? "Yes" : "No"}</span>
+            <span style={statusLabel}>Ready for submit</span>
+            <span style={canSubmit ? statusGood : statusBad}>
+              {canSubmit ? "Yes" : "No"}
+            </span>
+          </div>
+
+          <div style={statusRow}>
+            <span style={statusLabel}>Submitted</span>
+            <span style={submitted ? statusGood : statusBad}>
+              {submitted ? "Yes" : "No"}
+            </span>
           </div>
 
           <div style={statusRow}>
             <span style={statusLabel}>Blocking items</span>
             <span style={statusText}>
-              {!selection
-                ? "Missing saved structure."
-                : !documents?.credit_bureau
-                  ? "Missing credit bureau PDF."
-                  : !requiredStipsComplete
-                    ? "Missing one or more required stip docs."
-                    : "No blockers found."}
+              {blockingItems.length > 0 ? blockingItems.join(" ") : "No blockers found."}
             </span>
           </div>
         </div>
@@ -763,6 +852,15 @@ const errorBox: React.CSSProperties = {
   border: "1px solid #f1b5b5",
   background: "#fff3f3",
   color: "crimson",
+  fontWeight: 900,
+};
+
+const successBox: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid #cfe9cf",
+  background: "#f2fff2",
+  color: "green",
   fontWeight: 900,
 };
 

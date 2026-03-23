@@ -1,0 +1,185 @@
+import { NextResponse } from "next/server";
+import { supabaseServer } from "@/lib/supabase/server";
+
+const REQUIRED_DOC_TYPES = [
+    "proof_of_income",
+    "proof_of_residence",
+    "driver_license",
+] as const;
+
+export async function POST(
+    req: Request,
+    { params }: { params: Promise<{ dealId: string }> }
+) {
+    const { dealId } = await params;
+    const supabase = await supabaseServer();
+
+    const {
+        data: { user },
+        error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const fundingNotes = String(body.funding_notes ?? "").trim();
+    const internalNotes = String(body.internal_notes ?? "").trim();
+
+    // Load deal
+    const { data: deal, error: dealErr } = await supabase
+        .from("deals")
+        .select("id, workflow_status, current_step")
+        .eq("id", dealId)
+        .maybeSingle();
+
+    if (dealErr) {
+        return NextResponse.json(
+            { error: "Failed to load deal", details: dealErr.message },
+            { status: 500 }
+        );
+    }
+
+    if (!deal?.id) {
+        return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
+
+    // Load saved structure (this is the real source of truth, not vehicle_selection)
+    const { data: dealStructure, error: structureErr } = await supabase
+        .from("deal_structure")
+        .select(`
+      deal_id,
+      vehicle_id,
+      option_label,
+      include_vsc,
+      include_gap,
+      cash_down,
+      term_months,
+      monthly_payment,
+      amount_financed,
+      apr,
+      fits_program
+    `)
+        .eq("deal_id", dealId)
+        .maybeSingle();
+
+    if (structureErr) {
+        return NextResponse.json(
+            { error: "Failed to load deal structure", details: structureErr.message },
+            { status: 500 }
+        );
+    }
+
+    // Verify selected vehicle still exists in inventory
+    let inventoryRow: { id: string; status: string | null } | null = null;
+
+    if (dealStructure?.vehicle_id) {
+        const { data: inv, error: inventoryErr } = await supabase
+            .from("trivian_inventory")
+            .select("id, status")
+            .eq("id", dealStructure.vehicle_id)
+            .maybeSingle();
+
+        if (inventoryErr) {
+            return NextResponse.json(
+                { error: "Failed to verify inventory", details: inventoryErr.message },
+                { status: 500 }
+            );
+        }
+
+        inventoryRow = inv;
+    }
+
+    // Credit bureau present?
+    const { data: bureauDocs, error: bureauErr } = await supabase
+        .from("deal_documents")
+        .select("id, doc_type")
+        .eq("deal_id", dealId)
+        .eq("doc_type", "credit_bureau");
+
+    if (bureauErr) {
+        return NextResponse.json(
+            { error: "Failed to load bureau docs", details: bureauErr.message },
+            { status: 500 }
+        );
+    }
+
+    // All docs for stip validation
+    const { data: docs, error: docsErr } = await supabase
+        .from("deal_documents")
+        .select("id, doc_type")
+        .eq("deal_id", dealId);
+
+    if (docsErr) {
+        return NextResponse.json(
+            { error: "Failed to load deal documents", details: docsErr.message },
+            { status: 500 }
+        );
+    }
+
+    const uploadedTypes = new Set((docs ?? []).map((d) => d.doc_type));
+    const missingRequiredDocs = REQUIRED_DOC_TYPES.filter((t) => !uploadedTypes.has(t));
+
+    const blockers: string[] = [];
+
+    if (!dealStructure) {
+        blockers.push("Deal structure missing");
+    } else if (!dealStructure.vehicle_id) {
+        blockers.push("Vehicle selection missing");
+    }
+
+    if (dealStructure?.vehicle_id && !inventoryRow?.id) {
+        blockers.push("Selected vehicle is no longer in inventory");
+    }
+
+    if (!bureauDocs || bureauDocs.length === 0) {
+        blockers.push("Credit bureau missing");
+    }
+
+    if (missingRequiredDocs.length > 0) {
+        blockers.push(`Missing required docs: ${missingRequiredDocs.join(", ")}`);
+    }
+
+    if (blockers.length > 0) {
+        return NextResponse.json(
+            {
+                error: "Deal is not ready for submit",
+                blockers,
+            },
+            { status: 400 }
+        );
+    }
+
+    const now = new Date().toISOString();
+
+    const { error: updateErr } = await supabase
+        .from("deals")
+        .update({
+            funding_notes: fundingNotes,
+            internal_notes: internalNotes,
+            submitted_at: now,
+            submitted_by: user.id,
+            submit_status: "submitted",
+            workflow_status: "submitted_complete",
+            current_step: 6,
+            updated_at: now,
+        })
+        .eq("id", dealId);
+
+    if (updateErr) {
+        return NextResponse.json(
+            { error: "Failed to submit deal", details: updateErr.message },
+            { status: 500 }
+        );
+    }
+
+    return NextResponse.json({
+        ok: true,
+        deal_id: dealId,
+        submitted_at: now,
+        submitted_by: user.id,
+        submit_status: "submitted",
+        next_step: 6,
+    });
+}
