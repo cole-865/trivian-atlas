@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
+import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 
 type DashboardMetrics = {
   deals_created_30d: number;
@@ -143,9 +144,15 @@ async function getRecentDeals() {
     return [];
   }
 
-  return (data ?? []).map((d) => ({
+  const rows = data ?? [];
+  const primaryNames = await loadPrimaryCustomerNames(
+    supabase,
+    rows.map((deal) => String(deal.id))
+  );
+
+  return rows.map((d) => ({
     id: String(d.id),
-    customer_name: d.customer_name ?? "(No name)",
+    customer_name: primaryNames[String(d.id)] ?? d.customer_name ?? "(No name)",
     status: d.status ?? "unknown",
     updated_at: d.updated_at ?? d.created_at,
   }));

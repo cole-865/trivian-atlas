@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
+import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 
 type Props = {
   searchParams?: Promise<{ q?: string }>;
@@ -10,22 +11,63 @@ export default async function DealsPage({ searchParams }: Props) {
   const q = (sp.q ?? "").trim();
 
   const supabase = await createClient();
-
-  // basic search: by customer_name or id text
-  let query = supabase
-    .from("deals")
-    .select("id, customer_name, status, updated_at, created_at")
-    .order("updated_at", { ascending: false })
-    .limit(50);
+  let data: Array<{
+    id: string;
+    customer_name: string | null;
+    status: string | null;
+    updated_at: string | null;
+    created_at: string | null;
+  }> | null = null;
+  let error: { message?: string } | null = null;
 
   if (q) {
-    // UUID search works via id::text ilike
-    query = query.or(
-      `customer_name.ilike.%${q}%,id::text.ilike.%${q}%`
-    ) as any;
-  }
+    const [{ data: dealMatches, error: dealErr }, { data: personMatches, error: peopleErr }] =
+      await Promise.all([
+        supabase
+          .from("deals")
+          .select("id")
+          .or(`customer_name.ilike.%${q}%,id::text.ilike.%${q}%`)
+          .limit(50),
+        supabase
+          .from("deal_people")
+          .select("deal_id")
+          .eq("role", "primary")
+          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
+          .limit(50),
+      ]);
 
-  const { data, error } = await query;
+    error = dealErr ?? peopleErr;
+
+    const matchedIds = Array.from(
+      new Set([
+        ...((dealMatches ?? []).map((row) => String(row.id))),
+        ...((personMatches ?? []).map((row) => String(row.deal_id))),
+      ])
+    );
+
+    if (!error && matchedIds.length) {
+      const result = await supabase
+        .from("deals")
+        .select("id, customer_name, status, updated_at, created_at")
+        .in("id", matchedIds)
+        .order("updated_at", { ascending: false })
+        .limit(50);
+
+      data = result.data;
+      error = result.error;
+    } else if (!error) {
+      data = [];
+    }
+  } else {
+    const result = await supabase
+      .from("deals")
+      .select("id, customer_name, status, updated_at, created_at")
+      .order("updated_at", { ascending: false })
+      .limit(50);
+
+    data = result.data;
+    error = result.error;
+  }
 
   if (error) {
     return (
@@ -37,6 +79,10 @@ export default async function DealsPage({ searchParams }: Props) {
   }
 
   const deals = data ?? [];
+  const primaryNames = await loadPrimaryCustomerNames(
+    supabase,
+    deals.map((deal) => String(deal.id))
+  );
 
   return (
     <div className="space-y-4">
@@ -60,7 +106,7 @@ export default async function DealsPage({ searchParams }: Props) {
               >
                 <div className="min-w-0">
                   <div className="font-medium truncate">
-                    {d.customer_name ?? "(No name)"}
+                    {primaryNames[String(d.id)] ?? d.customer_name ?? "(No name)"}
                   </div>
                   <div className="text-xs text-muted-foreground truncate">
                     {d.id}

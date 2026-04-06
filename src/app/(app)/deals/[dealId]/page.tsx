@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
+import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 
 type PageProps = {
   params: Promise<{ dealId: string }>;
@@ -31,21 +32,24 @@ export default async function DealPage({ params }: PageProps) {
     );
   }
 
+  const primaryNames = await loadPrimaryCustomerNames(supabase, [dealId]);
+  const customerName = primaryNames[dealId] ?? deal.customer_name ?? "(No name)";
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-xl font-semibold">{deal.customer_name}</div>
+          <div className="text-xl font-semibold">{customerName}</div>
           <div className="text-xs text-muted-foreground">
             Deal ID: {deal.id}
           </div>
         </div>
 
         <Link
-          href={`/deals/${encodeURIComponent(deal.id)}/people`}
+          href={`/deals/${encodeURIComponent(deal.id)}/customer`}
           className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
         >
-          Go to Step 1 (People)
+          Go to Step 1 (Customer)
         </Link>
       </div>
 
@@ -66,10 +70,12 @@ export default async function DealPage({ params }: PageProps) {
       <div className="mt-8 rounded-2xl border bg-white p-4 shadow-sm">
         <div className="text-sm font-medium">Steps</div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/people`}>People</Link>
+          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/customer`}>Customer</Link>
           <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/income`}>Income</Link>
-          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/vehicle-selection`}>Vehicle</Link>
-          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/documents`}>Documents</Link>
+          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/vehicle`}>Vehicle</Link>
+          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/deal`}>Deal</Link>
+          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/submit`}>Submit</Link>
+          <Link className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50" href={`/deals/${deal.id}/fund`}>Fund</Link>
         </div>
       </div>
     </div>

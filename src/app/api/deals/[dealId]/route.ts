@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 
 export async function GET(
   _req: Request,
@@ -26,6 +27,9 @@ export async function GET(
       { status: 404 }
     );
   }
+
+  const primaryNames = await loadPrimaryCustomerNames(supabase, [dealId]);
+  const displayCustomerName = primaryNames[dealId] ?? deal.customer_name ?? null;
 
   // 2) People
   const { data: people, error: peopleErr } = await supabase
@@ -63,7 +67,7 @@ export async function GET(
 
   // 4) Documents
   const { data: documents, error: docsErr } = await supabase
-    .from("documents")
+    .from("deal_documents")
     .select("*")
     .eq("deal_id", dealId)
     .order("created_at", { ascending: false });
@@ -75,23 +79,23 @@ export async function GET(
     );
   }
 
-  // 5) Vehicle options
-  const { data: vehicle_options, error: voErr } = await supabase
-    .from("vehicle_options")
+  // 5) Vehicle options are now derived from the saved structure snapshot.
+  const { data: dealStructure, error: voErr } = await supabase
+    .from("deal_structure")
     .select("*")
     .eq("deal_id", dealId)
-    .order("created_at", { ascending: false });
+    .maybeSingle();
 
   if (voErr) {
     return NextResponse.json(
-      { error: "Failed to load vehicle options", details: voErr.message },
+      { error: "Failed to load deal structure", details: voErr.message },
       { status: 500 }
     );
   }
 
   // 6) Vehicle selection
   const { data: vehicle_selection, error: vsErr } = await supabase
-    .from("vehicle_selection")
+    .from("deal_vehicle_selection")
     .select("*")
     .eq("deal_id", dealId)
     .maybeSingle();
@@ -104,12 +108,16 @@ export async function GET(
   }
 
   return NextResponse.json({
-    deal,
+    deal: {
+      ...deal,
+      customer_name: displayCustomerName,
+    },
     people: people ?? [],
     income_profiles: income_profiles ?? [],
     documents: documents ?? [],
-    vehicle_options: vehicle_options ?? [],
+    vehicle_options: dealStructure ? [dealStructure] : [],
     vehicle_selection: vehicle_selection ?? null,
+    deal_structure: dealStructure ?? null,
   });
 }
 

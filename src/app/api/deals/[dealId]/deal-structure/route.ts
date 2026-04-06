@@ -34,6 +34,23 @@ function estimateTax(
     return round2(main + add);
 }
 
+function resolveMaxPayment(args: {
+    grossMonthlyIncome: number;
+    maxPaymentPct: number;
+    maxPti: number | null;
+}) {
+    const grossMonthlyIncome = Number(args.grossMonthlyIncome ?? 0);
+    const basePct = Number(args.maxPaymentPct ?? 0);
+    const maxPti = args.maxPti != null ? Number(args.maxPti) : null;
+
+    if (grossMonthlyIncome <= 0) return 0;
+    if (maxPti != null && Number.isFinite(maxPti) && maxPti > 0) {
+        return round2(grossMonthlyIncome * maxPti);
+    }
+
+    return round2(grossMonthlyIncome * (basePct > 0 ? basePct : 0.22));
+}
+
 type VehicleTermPolicy = {
     id: string;
     sort_order: number;
@@ -163,7 +180,7 @@ export async function GET(
 
     const { data: deal, error: dealErr } = await supabase
         .from("deals")
-        .select("id, max_payment, cash_down, trade_payoff, has_trade")
+        .select("id, cash_down, trade_payoff, has_trade")
         .eq("id", dealId)
         .single();
 
@@ -192,7 +209,7 @@ export async function GET(
 
     const { data: uwInputs, error: uwInputsErr } = await supabase
         .from("underwriting_inputs")
-        .select("interest_rate_apr, term_months, max_payment_pct, vsc_price, gap_price")
+        .select("gross_monthly_income, interest_rate_apr, term_months, max_payment_pct, vsc_price, gap_price")
         .eq("deal_id", dealId)
         .maybeSingle();
 
@@ -252,10 +269,11 @@ export async function GET(
     const maxVehiclePrice = Number(uwResult?.max_vehicle_price ?? 0);
     const maxLtv = Number(uwResult?.max_ltv ?? 0);
 
-    const maxPayment =
-        uwResult?.max_pti != null
-            ? round2((Number(deal?.max_payment ?? 0) / 0.22) * Number(uwResult.max_pti))
-            : Number(deal?.max_payment ?? 0);
+    const maxPayment = resolveMaxPayment({
+        grossMonthlyIncome: Number(uwInputs?.gross_monthly_income ?? 0),
+        maxPaymentPct: Number(uwInputs?.max_payment_pct ?? cfg?.payment_cap_pct ?? 0.22),
+        maxPti: uwResult?.max_pti != null ? Number(uwResult.max_pti) : null,
+    });
 
     const cashDown = Number(selection.cash_down ?? deal?.cash_down ?? 0);
     const tradePayoff = Number(deal?.trade_payoff ?? 0);

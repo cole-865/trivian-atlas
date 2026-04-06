@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
-function asLabel(v: any): "NONE" | "VSC" | "GAP" | "VSC+GAP" | null {
+function asLabel(v: unknown): "NONE" | "VSC" | "GAP" | "VSC+GAP" | null {
   const s = String(v ?? "").toUpperCase().trim();
   if (s === "NONE" || s === "VSC" || s === "GAP" || s === "VSC+GAP") return s;
   return null;
 }
 
-function numOrNull(v: any) {
+function numOrNull(v: unknown) {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
 
-function numRequired(v: any, name: string) {
+function numRequired(v: unknown, name: string) {
   const n = Number(v);
   if (!Number.isFinite(n)) throw new Error(`${name} must be a number`);
   return n;
@@ -48,7 +48,7 @@ export async function POST(
 ) {
   const { dealId } = await params;
 
-  let body: any = {};
+  let body: Record<string, unknown> = {};
   try {
     body = await req.json();
   } catch {
@@ -72,8 +72,9 @@ export async function POST(
   try {
     term_months = Math.round(numRequired(body?.term_months, "term_months"));
     monthly_payment = numRequired(body?.monthly_payment, "monthly_payment");
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Invalid numbers" }, { status: 400 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Invalid numbers";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   const cash_down = numOrNull(body?.cash_down);
@@ -105,24 +106,6 @@ export async function POST(
       { error: "Failed to save selection", details: error.message },
       { status: 500 }
     );
-  }
-
-  // Optional: keep deals.cash_down in sync if provided
-  if (cash_down != null) {
-    const { error: dErr } = await supabase
-      .from("deals")
-      .update({ cash_down })
-      .eq("id", dealId);
-
-    if (dErr) {
-      return NextResponse.json(
-        {
-          error: "Selection saved but failed to update deals.cash_down",
-          details: dErr.message,
-        },
-        { status: 500 }
-      );
-    }
   }
 
   return NextResponse.json({ ok: true, selection: data });

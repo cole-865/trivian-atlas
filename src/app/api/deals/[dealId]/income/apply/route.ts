@@ -6,7 +6,7 @@ function round2(n: number) {
   return Math.round(v * 100) / 100;
 }
 
-function num(v: any): number {
+function num(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   if (typeof v === "string") {
@@ -18,7 +18,7 @@ function num(v: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function pickMonthly(row: any): number {
+function pickMonthly(row: Record<string, unknown>): number {
   const calc = row?.monthly_gross_calculated;
   const manual = row?.monthly_gross_manual;
 
@@ -29,7 +29,7 @@ function pickMonthly(row: any): number {
   return round2(val);
 }
 
-function sumApplied(rows: any[]) {
+function sumApplied(rows: Array<Record<string, unknown>>) {
   return round2(
     (rows || [])
       .filter((r) => r?.applied_to_deal === true)
@@ -153,7 +153,7 @@ export async function POST(
   // 5) Upsert underwriting_inputs
   const nowIso = new Date().toISOString();
 
-  const uwPayload: any = {
+  const uwPayload: Record<string, unknown> = {
     deal_id: dealId,
     gross_monthly_income: grossMonthlyIncome,
     other_monthly_income: 0,
@@ -174,7 +174,7 @@ export async function POST(
     );
   }
 
-  let saved: any;
+  let saved: Record<string, unknown> | null = null;
 
   if (existing?.id) {
     const { data, error } = await supabase
@@ -205,22 +205,6 @@ export async function POST(
       );
     }
     saved = data;
-  }
-
-  // 6) Store max_payment on deals for quick UI use
-  const { error: dealUpdErr } = await supabase
-    .from("deals")
-    .update({ max_payment: maxPayment })
-    .eq("id", dealId);
-
-  if (dealUpdErr) {
-    return NextResponse.json(
-      {
-        error: "Income applied but failed to update deals.max_payment",
-        details: dealUpdErr.message,
-      },
-      { status: 500 }
-    );
   }
 
   return NextResponse.json({

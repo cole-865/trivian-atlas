@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { buildCustomerName } from "@/lib/deals/customerName";
 
 const ALLOWED_ROLES = new Set(["primary", "co"] as const);
 
@@ -11,13 +12,6 @@ function strOrNull(v: unknown) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s.length ? s : null;
-}
-
-function buildCustomerName(firstName: unknown, lastName: unknown) {
-  const first = strOrNull(firstName) ?? "";
-  const last = strOrNull(lastName) ?? "";
-  const full = `${first} ${last}`.trim();
-  return full.length ? full : null;
 }
 
 function isValidDateString(v: string) {
@@ -51,7 +45,7 @@ export async function PATCH(
 ) {
   const { dealId, role } = await context.params;
 
-  if (!ALLOWED_ROLES.has(role as any)) {
+  if (!ALLOWED_ROLES.has(role as "primary" | "co")) {
     return NextResponse.json(
       { ok: false, error: "Invalid role", allowed: Array.from(ALLOWED_ROLES) },
       { status: 400 }
@@ -120,25 +114,10 @@ export async function PATCH(
     );
   }
 
-  if (role === "primary") {
-    const customer_name = buildCustomerName(data.first_name, data.last_name);
-
-    const { error: dealErr } = await supabase
-      .from("deals")
-      .update({ customer_name })
-      .eq("id", dealId);
-
-    if (dealErr) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Saved person but failed to sync deal name",
-          details: dealErr.message,
-        },
-        { status: 500 }
-      );
-    }
-  }
-
-  return NextResponse.json({ ok: true, person: data });
+  return NextResponse.json({
+    ok: true,
+    person: data,
+    customer_name:
+      role === "primary" ? buildCustomerName(data.first_name, data.last_name) : null,
+  });
 }
