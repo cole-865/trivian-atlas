@@ -136,7 +136,7 @@ export async function GET(
     const { data: selection, error: selectionErr } = await supabase
         .from("deal_vehicle_selection")
         .select(
-            "deal_id, vehicle_id, option_label, include_vsc, include_gap, monthly_payment, term_months, cash_down"
+            "deal_id, vehicle_id, option_label, include_vsc, include_gap, cash_down"
         )
         .eq("deal_id", dealId)
         .maybeSingle();

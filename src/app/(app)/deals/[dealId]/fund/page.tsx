@@ -2,14 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { DealStepNav } from "@/components/DealStepNav";
 
 function asString(value: string | string[] | undefined): string {
   if (!value) return "";
   return Array.isArray(value) ? value[0] : value;
 }
 
-type Selection = {
+type SavedStructureSummary = {
   deal_id: string;
   vehicle_id: string;
   option_label: string;
@@ -43,7 +42,7 @@ type FundResponse = {
     submitted_at: string | null;
     funded_at?: string | null;
   } | null;
-  selection: Selection | null;
+  selection: SavedStructureSummary | null;
   documents: {
     credit_bureau: DealDocument | null;
     proof_of_income: DealDocument[];
@@ -58,6 +57,16 @@ type FundResponse = {
     credit_bureau: boolean;
     required_stips: boolean;
   } | null;
+};
+
+type FundErrorResponse = {
+  ok: false;
+  deal: null;
+  selection: null;
+  documents: null;
+  checklist: null;
+  details?: string;
+  error?: string;
 };
 
 function money(n: number | null | undefined) {
@@ -82,7 +91,7 @@ export default function DealFundPage() {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [data, setData] = useState<FundResponse | null>(null);
+  const [fundSummary, setFundSummary] = useState<FundResponse | null>(null);
 
   useEffect(() => {
     if (!dealId) return;
@@ -98,7 +107,7 @@ export default function DealFundPage() {
           cache: "no-store",
         });
 
-        const j: FundResponse = await r.json().catch(() => ({
+        const response: FundResponse | FundErrorResponse = await r.json().catch(() => ({
           ok: false,
           deal: null,
           selection: null,
@@ -107,15 +116,15 @@ export default function DealFundPage() {
         }));
 
         if (!r.ok) {
-          throw new Error((j as any)?.details || (j as any)?.error || "Failed to load fund page");
+          throw new Error(response.details || response.error || "Failed to load fund page");
         }
 
         if (!cancelled) {
-          setData(j);
+          setFundSummary(response);
         }
-      } catch (e: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
-          setErr(e?.message || "Failed to load fund page");
+          setErr(error instanceof Error ? error.message : "Failed to load fund page");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -131,11 +140,13 @@ export default function DealFundPage() {
 
   const requiredDocCounts = useMemo(() => {
     return {
-      proof_of_income: data?.documents?.proof_of_income?.length ?? 0,
-      proof_of_residence: data?.documents?.proof_of_residence?.length ?? 0,
-      driver_license: data?.documents?.driver_license?.length ?? 0,
+      proof_of_income: fundSummary?.documents?.proof_of_income?.length ?? 0,
+      proof_of_residence: fundSummary?.documents?.proof_of_residence?.length ?? 0,
+      driver_license: fundSummary?.documents?.driver_license?.length ?? 0,
     };
-  }, [data]);
+  }, [fundSummary]);
+
+  const savedStructure = fundSummary?.selection ?? null;
 
   if (!dealId) {
     return (
@@ -147,7 +158,6 @@ export default function DealFundPage() {
 
   return (
     <div style={{ padding: 16, display: "grid", gap: 14 }}>
-
       <div>
         <h2 style={{ margin: "14px 0 4px" }}>Step 6: Fund</h2>
         <div style={{ fontSize: 13, color: "#666", fontWeight: 600 }}>
@@ -158,7 +168,7 @@ export default function DealFundPage() {
       {loading ? <div style={infoBox}>Loading funding packet…</div> : null}
       {err ? <div style={errorBox}>{err}</div> : null}
 
-      {!loading && !err && data ? (
+      {!loading && !err && fundSummary ? (
         <>
           <div style={gridTwo}>
             <section style={card}>
@@ -166,28 +176,28 @@ export default function DealFundPage() {
 
               <div style={{ display: "grid", gap: 10 }}>
                 <CheckRow
-                  ok={!!data.checklist?.submitted}
+                  ok={!!fundSummary.checklist?.submitted}
                   label="Deal submitted"
                   detail={
-                    data.checklist?.submitted
+                    fundSummary.checklist?.submitted
                       ? "Step 5 handoff completed."
                       : "Deal has not been formally submitted."
                   }
                 />
                 <CheckRow
-                  ok={!!data.checklist?.credit_bureau}
+                  ok={!!fundSummary.checklist?.credit_bureau}
                   label="Credit bureau present"
                   detail={
-                    data.checklist?.credit_bureau
+                    fundSummary.checklist?.credit_bureau
                       ? "Credit bureau file is attached."
                       : "Credit bureau file is missing."
                   }
                 />
                 <CheckRow
-                  ok={!!data.checklist?.required_stips}
+                  ok={!!fundSummary.checklist?.required_stips}
                   label="Required stips present"
                   detail={
-                    data.checklist?.required_stips
+                    fundSummary.checklist?.required_stips
                       ? "Required stip docs are on file."
                       : "One or more required stip docs are missing."
                   }
@@ -200,16 +210,16 @@ export default function DealFundPage() {
 
               <div style={kvGrid}>
                 <div style={k}>Workflow Status</div>
-                <div style={v}>{data.deal?.workflow_status || "—"}</div>
+                <div style={v}>{fundSummary.deal?.workflow_status || "—"}</div>
 
                 <div style={k}>Submit Status</div>
-                <div style={v}>{data.deal?.submit_status || "—"}</div>
+                <div style={v}>{fundSummary.deal?.submit_status || "—"}</div>
 
                 <div style={k}>Submitted At</div>
-                <div style={v}>{formatDate(data.deal?.submitted_at)}</div>
+                <div style={v}>{formatDate(fundSummary.deal?.submitted_at)}</div>
 
                 <div style={k}>Funded At</div>
-                <div style={v}>{formatDate(data.deal?.funded_at)}</div>
+                <div style={v}>{formatDate(fundSummary.deal?.funded_at)}</div>
               </div>
             </section>
           </div>
@@ -218,30 +228,30 @@ export default function DealFundPage() {
             <section style={card}>
               <div style={sectionTitle}>Structure Summary</div>
 
-              {data.selection ? (
+              {savedStructure ? (
                 <div style={kvGrid}>
                   <div style={k}>Vehicle ID</div>
-                  <div style={v}>{data.selection.vehicle_id}</div>
+                  <div style={v}>{savedStructure.vehicle_id}</div>
 
                   <div style={k}>Package</div>
-                  <div style={v}>{data.selection.option_label}</div>
+                  <div style={v}>{savedStructure.option_label}</div>
 
                   <div style={k}>Monthly Payment</div>
-                  <div style={vStrong}>{money(data.selection.monthly_payment)}</div>
+                  <div style={vStrong}>{money(savedStructure.monthly_payment)}</div>
 
                   <div style={k}>Term</div>
-                  <div style={vStrong}>{data.selection.term_months} months</div>
+                  <div style={vStrong}>{savedStructure.term_months} months</div>
 
                   <div style={k}>Cash Down</div>
                   <div style={vStrong}>
-                    {data.selection.cash_down != null ? money(data.selection.cash_down) : "—"}
+                    {savedStructure.cash_down != null ? money(savedStructure.cash_down) : "—"}
                   </div>
 
                   <div style={k}>VSC</div>
-                  <div style={v}>{yesNo(data.selection.include_vsc)}</div>
+                  <div style={v}>{yesNo(savedStructure.include_vsc)}</div>
 
                   <div style={k}>GAP</div>
-                  <div style={v}>{yesNo(data.selection.include_gap)}</div>
+                  <div style={v}>{yesNo(savedStructure.include_gap)}</div>
                 </div>
               ) : (
                 <div style={{ color: "#666", fontWeight: 700 }}>No saved structure found.</div>
@@ -262,7 +272,7 @@ export default function DealFundPage() {
                 <div style={v}>{requiredDocCounts.driver_license} file(s)</div>
 
                 <div style={k}>Credit Bureau</div>
-                <div style={v}>{data.documents?.credit_bureau ? "Present" : "Missing"}</div>
+                <div style={v}>{fundSummary.documents?.credit_bureau ? "Present" : "Missing"}</div>
               </div>
             </section>
           </div>
@@ -270,12 +280,12 @@ export default function DealFundPage() {
           <div style={gridTwo}>
             <section style={card}>
               <div style={sectionTitle}>Funding Notes</div>
-              <div style={noteBox}>{data.deal?.funding_notes?.trim() || "No funding notes."}</div>
+              <div style={noteBox}>{fundSummary.deal?.funding_notes?.trim() || "No funding notes."}</div>
             </section>
 
             <section style={card}>
               <div style={sectionTitle}>Internal Notes</div>
-              <div style={noteBox}>{data.deal?.internal_notes?.trim() || "No internal notes."}</div>
+              <div style={noteBox}>{fundSummary.deal?.internal_notes?.trim() || "No internal notes."}</div>
             </section>
           </div>
 

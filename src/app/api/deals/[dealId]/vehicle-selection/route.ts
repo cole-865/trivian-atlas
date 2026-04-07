@@ -13,12 +13,6 @@ function numOrNull(v: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
-function numRequired(v: unknown, name: string) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) throw new Error(`${name} must be a number`);
-  return n;
-}
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ dealId: string }> }
@@ -67,16 +61,6 @@ export async function POST(
     return NextResponse.json({ error: "option_label is invalid" }, { status: 400 });
   }
 
-  let term_months: number;
-  let monthly_payment: number;
-  try {
-    term_months = Math.round(numRequired(body?.term_months, "term_months"));
-    monthly_payment = numRequired(body?.monthly_payment, "monthly_payment");
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Invalid numbers";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
-
   const cash_down = numOrNull(body?.cash_down);
 
   const supabase = await supabaseServer();
@@ -89,8 +73,6 @@ export async function POST(
     option_label,
     include_vsc,
     include_gap,
-    term_months,
-    monthly_payment,
     cash_down,
     updated_at: nowIso,
   };

@@ -14,9 +14,42 @@ type Selection = {
   option_label: string;
   include_vsc: boolean;
   include_gap: boolean;
+  cash_down: number | null;
+};
+
+type DealStructure = {
+  deal_id: string;
+  vehicle_id: string;
+  option_label: string;
+  include_vsc: boolean;
+  include_gap: boolean;
   term_months: number;
   monthly_payment: number;
   cash_down: number | null;
+};
+
+type DealStructureResponse = {
+  ok: boolean;
+  deal_id: string;
+  structure: {
+    selection: Selection;
+    structure: DealStructure;
+  } | null;
+};
+
+type DocumentsErrorResponse = {
+  ok: false;
+  documents: null;
+  details?: string;
+  error?: string;
+};
+
+type DealStructureErrorResponse = {
+  ok: false;
+  deal_id: string;
+  structure: null;
+  details?: string;
+  error?: string;
 };
 
 type DealDocument = {
@@ -137,6 +170,7 @@ export default function DealSubmitPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [structure, setStructure] = useState<DealStructure | null>(null);
   const [documents, setDocuments] = useState<DocumentsResponse["documents"] | null>(null);
 
   const [submitNotes, setSubmitNotes] = useState("");
@@ -156,19 +190,24 @@ export default function DealSubmitPage() {
 
     let cancelled = false;
 
-    async function loadSelection() {
-      const r = await fetch(`/api/deals/${dealId}/vehicle-selection`, {
+    async function loadSavedStructure() {
+      const r = await fetch(`/api/deals/${dealId}/deal-structure`, {
         cache: "no-store",
       });
 
-      const j = await r.json().catch(() => ({}));
+      const j: DealStructureResponse | DealStructureErrorResponse = await r.json().catch(() => ({
+        ok: false,
+        deal_id,
+        structure: null,
+      }));
 
       if (!r.ok) {
-        throw new Error(j?.details || j?.error || "Failed to load selection");
+        throw new Error(j.details || j.error || "Failed to load structure");
       }
 
       if (!cancelled) {
-        setSelection(j.selection ?? null);
+        setSelection(j.structure?.selection ?? null);
+        setStructure(j.structure?.structure ?? null);
       }
     }
 
@@ -177,13 +216,13 @@ export default function DealSubmitPage() {
         cache: "no-store",
       });
 
-      const j: DocumentsResponse = await r.json().catch(() => ({
+      const j: DocumentsResponse | DocumentsErrorResponse = await r.json().catch(() => ({
         ok: false,
         documents: null,
-      } as any));
+      }));
 
       if (!r.ok) {
-        throw new Error((j as any)?.details || (j as any)?.error || "Failed to load documents");
+        throw new Error(j.details || j.error || "Failed to load documents");
       }
 
       if (!cancelled) {
@@ -197,10 +236,10 @@ export default function DealSubmitPage() {
       setErr(null);
 
       try {
-        await Promise.all([loadSelection(), loadDocuments()]);
-      } catch (e: any) {
+        await Promise.all([loadSavedStructure(), loadDocuments()]);
+      } catch (error: unknown) {
         if (!cancelled) {
-          setErr(e?.message || "Load failed");
+          setErr(error instanceof Error ? error.message : "Load failed");
         }
       } finally {
         if (!cancelled) {
@@ -227,18 +266,18 @@ export default function DealSubmitPage() {
         cache: "no-store",
       });
 
-      const j: DocumentsResponse = await r.json().catch(() => ({
+      const j: DocumentsResponse | DocumentsErrorResponse = await r.json().catch(() => ({
         ok: false,
         documents: null,
-      } as any));
+      }));
 
       if (!r.ok) {
-        throw new Error((j as any)?.details || (j as any)?.error || "Failed to refresh documents");
+        throw new Error(j.details || j.error || "Failed to refresh documents");
       }
 
       setDocuments(j.documents);
-    } catch (e: any) {
-      setUploadError(e?.message || "Failed to refresh documents");
+    } catch (error: unknown) {
+      setUploadError(error instanceof Error ? error.message : "Failed to refresh documents");
     } finally {
       setLoadingDocs(false);
     }
@@ -256,12 +295,12 @@ export default function DealSubmitPage() {
   const blockingItems = useMemo(() => {
     const blockers: string[] = [];
 
-    if (!selection) blockers.push("Missing saved structure.");
+    if (!selection || !structure) blockers.push("Missing saved structure.");
     if (!documents?.credit_bureau) blockers.push("Missing credit bureau PDF.");
     if (!requiredStipsComplete) blockers.push("Missing one or more required stip docs.");
 
     return blockers;
-  }, [selection, documents, requiredStipsComplete]);
+  }, [selection, structure, documents, requiredStipsComplete]);
 
   const checklistItems = useMemo(() => {
     const creditBureauPresent = !!documents?.credit_bureau;
@@ -275,9 +314,9 @@ export default function DealSubmitPage() {
           : "No selected vehicle found.",
       },
       {
-        ok: !!selection,
+        ok: !!structure,
         label: "Structure selected",
-        detail: !!selection
+        detail: !!structure
           ? "Payment option, term, and down payment are present."
           : "No saved structure found.",
       },
@@ -303,14 +342,14 @@ export default function DealSubmitPage() {
           : "Deal has not been submitted yet.",
       },
     ];
-  }, [selection, documents, requiredStipsComplete, submitted]);
+  }, [selection, structure, documents, requiredStipsComplete, submitted]);
 
   const readyCount = checklistItems.filter((x) => x.ok).length;
   const totalCount = checklistItems.length;
 
   const canSubmit = useMemo(() => {
-    return !!selection && !!documents?.credit_bureau && requiredStipsComplete;
-  }, [selection, documents, requiredStipsComplete]);
+    return !!selection && !!structure && !!documents?.credit_bureau && requiredStipsComplete;
+  }, [selection, structure, documents, requiredStipsComplete]);
 
   function onPrev() {
     router.push(`/deals/${dealId}/deal`);
@@ -358,8 +397,8 @@ export default function DealSubmitPage() {
 
       setSubmitted(true);
       setSubmitSuccess("Deal submitted successfully. You can continue to funding.");
-    } catch (e: any) {
-      setErr(e?.message || "Failed to submit deal.");
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Failed to submit deal.");
     } finally {
       setSubmitting(false);
     }
@@ -393,8 +432,8 @@ export default function DealSubmitPage() {
       }
 
       await refreshDocuments();
-    } catch (e: any) {
-      setUploadError(e?.message || "Upload failed");
+    } catch (error: unknown) {
+      setUploadError(error instanceof Error ? error.message : "Upload failed");
     } finally {
       setUploadingDocType(null);
 
@@ -491,10 +530,10 @@ export default function DealSubmitPage() {
               <div style={v}>{selection.option_label}</div>
 
               <div style={k}>Monthly Payment</div>
-              <div style={vStrong}>{money(selection.monthly_payment)}</div>
+              <div style={vStrong}>{structure ? money(structure.monthly_payment) : "—"}</div>
 
               <div style={k}>Term</div>
-              <div style={vStrong}>{selection.term_months} months</div>
+              <div style={vStrong}>{structure ? `${structure.term_months} months` : "—"}</div>
 
               <div style={k}>Cash Down</div>
               <div style={vStrong}>

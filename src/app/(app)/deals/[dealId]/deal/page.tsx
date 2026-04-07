@@ -2,13 +2,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { DealStepNav } from "@/components/DealStepNav";
 
 type DealQuery = {
   vehicleId: string | null;
   option: string | null;
-  pmt: string | null;
-  term: string | null;
   cashDown: string | null;
   vsc: string | null;
   gap: string | null;
@@ -20,8 +17,6 @@ type Selection = {
   option_label: "NONE" | "VSC" | "GAP" | "VSC+GAP";
   include_vsc: boolean;
   include_gap: boolean;
-  term_months: number;
-  monthly_payment: number;
   cash_down: number | null;
   created_at?: string;
   updated_at?: string;
@@ -103,6 +98,11 @@ type DealStructureResponse = {
   };
 };
 
+type ApiErrorResponse = {
+  error?: string;
+  details?: string;
+};
+
 function asString(value: string | string[] | undefined): string {
   if (!value) return "";
   return Array.isArray(value) ? value[0] : value;
@@ -161,8 +161,6 @@ export default function DealDealPage() {
     () => ({
       vehicleId: sp.get("vehicleId"),
       option: sp.get("option"),
-      pmt: sp.get("pmt"),
-      term: sp.get("term"),
       cashDown: sp.get("cashDown"),
       vsc: sp.get("vsc"),
       gap: sp.get("gap"),
@@ -177,13 +175,8 @@ export default function DealDealPage() {
   const [structure, setStructure] = useState<DealStructureResponse["structure"] | null>(null);
 
   const hasQuerySelection = useMemo(() => {
-    return (
-      !!query.vehicleId &&
-      isValidLabel(query.option) &&
-      parseNumOrNull(query.pmt) != null &&
-      parseNumOrNull(query.term) != null
-    );
-  }, [query.vehicleId, query.option, query.pmt, query.term]);
+    return !!query.vehicleId && isValidLabel(query.option);
+  }, [query.vehicleId, query.option]);
 
   async function loadSelection() {
     if (!dealId) return null;
@@ -204,10 +197,10 @@ export default function DealDealPage() {
     if (!dealId) return;
 
     const r = await fetch(`/api/deals/${dealId}/deal-structure`, { cache: "no-store" });
-    const j: DealStructureResponse = await r.json();
+    const j: DealStructureResponse & ApiErrorResponse = await r.json();
 
     if (!r.ok) {
-      throw new Error((j as any)?.details || (j as any)?.error || "Failed to load deal structure");
+      throw new Error(j.details || j.error || "Failed to load deal structure");
     }
 
     setStructure(j.structure ?? null);
@@ -226,8 +219,6 @@ export default function DealDealPage() {
         option_label: (query.option ?? "").toUpperCase(),
         include_vsc: parseBool(query.vsc),
         include_gap: parseBool(query.gap),
-        term_months: Number(query.term),
-        monthly_payment: Number(query.pmt),
         cash_down: parseNumOrNull(query.cashDown),
       };
 
@@ -245,8 +236,8 @@ export default function DealDealPage() {
       await loadStructure();
 
       router.replace(`/deals/${dealId}/deal`);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to save selection");
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Failed to save selection");
     } finally {
       setSaving(false);
       setLoading(false);
@@ -275,9 +266,9 @@ export default function DealDealPage() {
         } else if (!cancelled) {
           setStructure(null);
         }
-      } catch (e: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
-          setErr(e?.message || "Load failed");
+          setErr(error instanceof Error ? error.message : "Load failed");
         }
       } finally {
         if (!cancelled) {
@@ -689,6 +680,7 @@ const v: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 800,
 };
+
 
 const failTag: React.CSSProperties = {
   padding: "6px 10px",

@@ -84,6 +84,13 @@ type Selected = {
   option: PayOption;
 };
 
+type VehicleOptionsResponse = {
+  ok?: boolean;
+  rows?: ApiRow[];
+  error?: string;
+  details?: string;
+};
+
 function asString(value: string | string[] | undefined): string {
   if (!value) return "";
   return Array.isArray(value) ? value[0] : value;
@@ -252,7 +259,7 @@ export default function DealVehiclePage() {
       });
 
       const text = await res.text();
-      let json: any = {};
+      let json: VehicleOptionsResponse = {};
 
       try {
         json = text ? JSON.parse(text) : {};
@@ -282,8 +289,8 @@ export default function DealVehiclePage() {
         setTradePayoffInput(String(serverTradePayoff));
       }
       setSelected(null);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to load");
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -476,8 +483,6 @@ export default function DealVehiclePage() {
     qs.set("option", sel.option.label);
     qs.set("vsc", String(sel.option.include_vsc));
     qs.set("gap", String(sel.option.include_gap));
-    qs.set("term", String(sel.option.term_months ?? header?.term_months ?? ""));
-    qs.set("pmt", String(sel.option.monthly_payment));
 
     if (cashDownApplied != null) {
       qs.set("cashDown", String(cashDownApplied));
