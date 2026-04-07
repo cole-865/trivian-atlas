@@ -6,6 +6,7 @@ import {
   clearImpersonatedUserId,
   setImpersonatedUserId,
 } from "@/lib/auth/impersonation";
+import { getCurrentOrganizationMembership } from "@/lib/auth/organizationContext";
 import { getAuthContext } from "@/lib/auth/userRole";
 
 type StaffProfileRow = {
@@ -22,7 +23,11 @@ export async function startImpersonationAction(formData: FormData) {
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
 
-  if (authContext.realRole !== "dev" || !authContext.realUser) {
+  if (
+    authContext.realRole !== "dev" ||
+    !authContext.realUser ||
+    !authContext.currentOrganizationId
+  ) {
     return;
   }
 
@@ -45,6 +50,18 @@ export async function startImpersonationAction(formData: FormData) {
 
   const target = data as StaffProfileRow | null;
   if (!target?.id || !target.is_active) {
+    return;
+  }
+
+  const targetMembership = await getCurrentOrganizationMembership(supabase, {
+    userId: target.id,
+    preferredOrganizationId: authContext.currentOrganizationId,
+  });
+
+  if (
+    !targetMembership ||
+    targetMembership.organizationId !== authContext.currentOrganizationId
+  ) {
     return;
   }
 

@@ -1,6 +1,22 @@
 import type { User } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/permissions";
 import { getImpersonatedUserId } from "@/lib/auth/impersonation";
+import {
+  getCurrentOrganization,
+  getCurrentOrganizationId,
+  getCurrentOrganizationMembership,
+  getCurrentOrganizationRole,
+  getOrganizationMembershipsForUser,
+  type Organization,
+  type OrganizationMembership,
+} from "@/lib/auth/organizationContext";
+
+export {
+  getCurrentOrganization,
+  getCurrentOrganizationId,
+  getCurrentOrganizationMembership,
+  getCurrentOrganizationRole,
+} from "@/lib/auth/organizationContext";
 
 const USER_ROLES = ["sales", "management", "admin", "dev"] as const;
 
@@ -47,11 +63,19 @@ export type AuthContext = {
   realUser: User | null;
   realProfile: UserProfile | null;
   realRole: UserRole | null;
+  realOrganizationMembership: OrganizationMembership | null;
+  realOrganizationRole: UserRole | null;
   effectiveProfile: UserProfile | null;
   effectiveRole: UserRole | null;
+  effectiveOrganizationMembership: OrganizationMembership | null;
+  effectiveOrganizationRole: UserRole | null;
   isImpersonating: boolean;
   impersonatedProfile: UserProfile | null;
   impersonatedUserId: string | null;
+  availableOrganizationMemberships: OrganizationMembership[];
+  currentOrganization: Organization | null;
+  currentOrganizationId: string | null;
+  currentOrganizationMembership: OrganizationMembership | null;
 };
 
 function isUserRole(value: unknown): value is UserRole {
@@ -142,6 +166,13 @@ export async function getRealUserRole(
   }
 
   const profile = await getUserProfileById(client, user.id);
+  const organizationRole = await getCurrentOrganizationRole(client, {
+    userId: user.id,
+  });
+
+  if (organizationRole) {
+    return organizationRole;
+  }
 
   if (profile) {
     return profile.isActive ? profile.role : null;
@@ -163,25 +194,47 @@ export async function getAuthContext(
       realUser: null,
       realProfile: null,
       realRole: null,
+      realOrganizationMembership: null,
+      realOrganizationRole: null,
       effectiveProfile: null,
       effectiveRole: null,
+      effectiveOrganizationMembership: null,
+      effectiveOrganizationRole: null,
       isImpersonating: false,
       impersonatedProfile: null,
       impersonatedUserId: null,
+      availableOrganizationMemberships: [],
+      currentOrganization: null,
+      currentOrganizationId: null,
+      currentOrganizationMembership: null,
     };
   }
 
   const realProfile = await getUserProfileById(client, realUser.id);
-  const realRole = realProfile
-    ? realProfile.isActive
-      ? realProfile.role
-      : null
-    : getRoleFromMetadata(realUser);
+  const availableOrganizationMemberships = await getOrganizationMembershipsForUser(
+    client,
+    realUser.id
+  );
+  const realOrganizationMembership = await getCurrentOrganizationMembership(client, {
+    userId: realUser.id,
+  });
+  const realOrganizationRole = realOrganizationMembership?.role ?? null;
+  const realRole =
+    realOrganizationRole ??
+    (realProfile ? (realProfile.isActive ? realProfile.role : null) : null) ??
+    getRoleFromMetadata(realUser);
+  const currentOrganization =
+    realOrganizationMembership?.organization ??
+    (await getCurrentOrganization(client, { userId: realUser.id }));
+  const currentOrganizationId =
+    realOrganizationMembership?.organizationId ??
+    (await getCurrentOrganizationId(client, { userId: realUser.id }));
 
   const requestedImpersonatedUserId = await getImpersonatedUserId();
+  const canImpersonate = realRole === "dev";
 
   if (
-    realRole !== "dev" ||
+    !canImpersonate ||
     !requestedImpersonatedUserId ||
     requestedImpersonatedUserId === realUser.id
   ) {
@@ -189,11 +242,19 @@ export async function getAuthContext(
       realUser,
       realProfile,
       realRole,
+      realOrganizationMembership,
+      realOrganizationRole,
       effectiveProfile: realProfile,
       effectiveRole: realRole,
+      effectiveOrganizationMembership: realOrganizationMembership,
+      effectiveOrganizationRole: realOrganizationRole,
       isImpersonating: false,
       impersonatedProfile: null,
       impersonatedUserId: null,
+      availableOrganizationMemberships,
+      currentOrganization,
+      currentOrganizationId,
+      currentOrganizationMembership: realOrganizationMembership,
     };
   }
 
@@ -207,23 +268,78 @@ export async function getAuthContext(
       realUser,
       realProfile,
       realRole,
+      realOrganizationMembership,
+      realOrganizationRole,
       effectiveProfile: realProfile,
       effectiveRole: realRole,
+      effectiveOrganizationMembership: realOrganizationMembership,
+      effectiveOrganizationRole: realOrganizationRole,
       isImpersonating: false,
       impersonatedProfile: null,
       impersonatedUserId: null,
+      availableOrganizationMemberships,
+      currentOrganization,
+      currentOrganizationId,
+      currentOrganizationMembership: realOrganizationMembership,
     };
   }
+
+  const effectiveOrganizationMembership =
+    currentOrganizationId
+      ? await getCurrentOrganizationMembership(client, {
+          userId: requestedImpersonatedUserId,
+          preferredOrganizationId: currentOrganizationId,
+        })
+      : null;
+
+  if (
+    currentOrganizationId &&
+    (!effectiveOrganizationMembership ||
+      effectiveOrganizationMembership.organizationId !== currentOrganizationId)
+  ) {
+    return {
+      realUser,
+      realProfile,
+      realRole,
+      realOrganizationMembership,
+      realOrganizationRole,
+      effectiveProfile: realProfile,
+      effectiveRole: realRole,
+      effectiveOrganizationMembership: realOrganizationMembership,
+      effectiveOrganizationRole: realOrganizationRole,
+      isImpersonating: false,
+      impersonatedProfile: null,
+      impersonatedUserId: null,
+      availableOrganizationMemberships,
+      currentOrganization,
+      currentOrganizationId,
+      currentOrganizationMembership: realOrganizationMembership,
+    };
+  }
+
+  const effectiveOrganizationRole = effectiveOrganizationMembership?.role ?? null;
+  const effectiveRole =
+    effectiveOrganizationRole ??
+    (impersonatedProfile.isActive ? impersonatedProfile.role : null);
 
   return {
     realUser,
     realProfile,
     realRole,
+    realOrganizationMembership,
+    realOrganizationRole,
     effectiveProfile: impersonatedProfile,
-    effectiveRole: impersonatedProfile.role,
+    effectiveRole,
+    effectiveOrganizationMembership,
+    effectiveOrganizationRole,
     isImpersonating: true,
     impersonatedProfile,
     impersonatedUserId: impersonatedProfile.id,
+    availableOrganizationMemberships,
+    currentOrganization,
+    currentOrganizationId,
+    currentOrganizationMembership:
+      effectiveOrganizationMembership ?? realOrganizationMembership,
   };
 }
 
@@ -238,7 +354,7 @@ export async function getEffectiveUserRole(
   supabase: unknown
 ): Promise<UserRole | null> {
   const authContext = await getAuthContext(supabase);
-  return authContext.effectiveRole;
+  return authContext.effectiveOrganizationRole ?? authContext.effectiveRole;
 }
 
 export async function getCurrentUserProfile(
@@ -251,4 +367,11 @@ export async function getCurrentUserRole(
   supabase: unknown
 ): Promise<UserRole | null> {
   return getEffectiveUserRole(supabase);
+}
+
+export async function getEffectiveOrganizationRole(
+  supabase: unknown
+): Promise<UserRole | null> {
+  const authContext = await getAuthContext(supabase);
+  return authContext.effectiveOrganizationRole;
 }

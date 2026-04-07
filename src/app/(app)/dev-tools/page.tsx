@@ -3,12 +3,21 @@ import { createClient } from "@/utils/supabase/server";
 import { stopImpersonationAction, startImpersonationAction } from "@/lib/auth/impersonationActions";
 import { getAuthContext, type UserProfile } from "@/lib/auth/userRole";
 
-type StaffProfileListRow = {
+type OrganizationUserRow = {
+  user_id: string;
+  role: UserProfile["role"];
+  is_active: boolean;
+};
+
+type StaffProfileRow = {
   id: string;
   email: string | null;
   full_name: string | null;
-  role: UserProfile["role"];
   is_active: boolean;
+};
+
+type StaffProfileListRow = StaffProfileRow & {
+  role: UserProfile["role"];
 };
 
 function displayProfileName(profile: {
@@ -27,20 +36,65 @@ export default async function DevToolsPage() {
     redirect("/settings");
   }
 
-  const { data: activeStaffRows, error: activeStaffError } = await supabase
-    .from("user_profiles")
-    .select("id, email, full_name, role, is_active")
+  const currentOrganizationId = authContext.currentOrganizationId;
+
+  if (!currentOrganizationId) {
+    return (
+      <div className="rounded-2xl border bg-white p-6 shadow-sm">
+        <div className="text-xl font-semibold">Dev Tools</div>
+        <div className="mt-2 text-sm text-muted-foreground">
+          Select or seed an organization before using organization-scoped impersonation tools.
+        </div>
+      </div>
+    );
+  }
+
+  const { data: activeMembershipRows, error: activeMembershipError } = await supabase
+    .from("organization_users")
+    .select("user_id, role, is_active")
+    .eq("organization_id", currentOrganizationId)
     .eq("is_active", true);
+
+  if (activeMembershipError) {
+    throw new Error(`Failed to load organization memberships: ${activeMembershipError.message}`);
+  }
+
+  const activeMemberships = (activeMembershipRows ?? []) as OrganizationUserRow[];
+  const userIds = activeMemberships.map((membership) => membership.user_id);
+
+  const { data: activeStaffRows, error: activeStaffError } = userIds.length
+    ? await supabase
+        .from("user_profiles")
+        .select("id, email, full_name, is_active")
+        .in("id", userIds)
+        .eq("is_active", true)
+    : { data: [], error: null };
 
   if (activeStaffError) {
     throw new Error(`Failed to load staff profiles: ${activeStaffError.message}`);
   }
 
-  const activeStaff = ((activeStaffRows ?? []) as StaffProfileListRow[]).sort((a, b) => {
-    const aName = `${a.full_name ?? ""} ${a.email ?? ""}`.trim().toLowerCase();
-    const bName = `${b.full_name ?? ""} ${b.email ?? ""}`.trim().toLowerCase();
-    return aName.localeCompare(bName);
-  });
+  const staffProfiles = new Map(
+    ((activeStaffRows ?? []) as StaffProfileRow[]).map((staff) => [staff.id, staff])
+  );
+  const activeStaff = activeMemberships
+    .map((membership) => {
+      const profile = staffProfiles.get(membership.user_id);
+      if (!profile) {
+        return null;
+      }
+
+      return {
+        ...profile,
+        role: membership.role,
+      } satisfies StaffProfileListRow;
+    })
+    .filter((staff): staff is StaffProfileListRow => !!staff)
+    .sort((a, b) => {
+      const aName = `${a.full_name ?? ""} ${a.email ?? ""}`.trim().toLowerCase();
+      const bName = `${b.full_name ?? ""} ${b.email ?? ""}`.trim().toLowerCase();
+      return aName.localeCompare(bName);
+    });
 
   return (
     <div className="grid gap-6">
@@ -48,6 +102,13 @@ export default async function DevToolsPage() {
         <div className="text-xl font-semibold">Dev Tools</div>
         <div className="mt-2 text-sm text-muted-foreground">
           Internal testing tools for development and workflow verification.
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+          Current organization:{" "}
+          <span className="font-medium">
+            {authContext.currentOrganization?.name ?? "Unknown organization"}
+          </span>
         </div>
 
         <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -100,12 +161,15 @@ export default async function DevToolsPage() {
             </div>
 
             <div className="text-xs text-amber-900/70">
-              Only active users appear here. Non-dev users cannot start or stop impersonation.
+              Only active users in the current organization appear here. Non-dev users cannot start
+              or stop impersonation.
             </div>
           </form>
 
           <div className="mt-4 rounded-2xl border border-gray-200 bg-white">
-            <div className="border-b px-4 py-3 text-sm font-medium">Active staff users</div>
+            <div className="border-b px-4 py-3 text-sm font-medium">
+              Active staff users in this organization
+            </div>
             <div className="divide-y">
               {activeStaff.map((staff) => (
                 <div

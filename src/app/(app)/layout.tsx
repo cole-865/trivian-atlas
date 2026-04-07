@@ -90,7 +90,9 @@ export default async function AppLayout({
         <aside className="w-64 shrink-0 border-r bg-white min-h-screen">
           <div className="p-4">
             <div className="text-lg font-semibold">Trivian Atlas</div>
-            <div className="text-xs text-muted-foreground">Internal underwriting</div>
+            <div className="text-xs text-muted-foreground">
+              {authContext.currentOrganization?.name ?? "Internal underwriting"}
+            </div>
           </div>
 
           <nav className="px-2 pb-4 space-y-1">
