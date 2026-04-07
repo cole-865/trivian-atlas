@@ -4,6 +4,10 @@ import {
   assertDealInCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import {
+  getDealPersonForCurrentOrganization,
+  scopeQueryToOrganization,
+} from "@/lib/deals/childOrganizationScope";
 
 const ALLOWED_ROLES = new Set(["primary", "co"]);
 
@@ -90,28 +94,29 @@ export async function GET(
   }
 
   // Find the deal_person for this role
-  const { data: person, error: pErr } = await supabase
-    .from("deal_people")
-    .select("id")
-    .eq("deal_id", dealId)
-    .eq("role", role)
-    .maybeSingle();
+  const personResult = await getDealPersonForCurrentOrganization<{ id: string }>(
+    supabase,
+    dealId,
+    role,
+    "id"
+  );
 
-  if (pErr) {
+  if (personResult.error) {
     return NextResponse.json(
-      { error: "Failed to load deal_people", details: pErr.message },
+      { error: "Failed to load deal_people", details: personResult.error.message },
       { status: 500 }
     );
   }
 
-  if (!person?.id) {
+  if (!personResult.data?.id) {
     return NextResponse.json({ ok: true, incomes: [] }, { status: 200 });
   }
 
-  const { data, error } = await supabase
-    .from("income_profiles")
-    .select(SELECT_FIELDS)
-    .eq("deal_person_id", person.id)
+  const { data, error } = await scopeQueryToOrganization(
+    supabase.from("income_profiles").select(SELECT_FIELDS),
+    scopedDeal.organizationId
+  )
+    .eq("deal_person_id", personResult.data.id)
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -158,21 +163,21 @@ export async function POST(
   }
 
   // Find the deal_person for this role
-  const { data: person, error: pErr } = await supabase
-    .from("deal_people")
-    .select("id")
-    .eq("deal_id", dealId)
-    .eq("role", role)
-    .maybeSingle();
+  const personResult = await getDealPersonForCurrentOrganization<{ id: string }>(
+    supabase,
+    dealId,
+    role,
+    "id"
+  );
 
-  if (pErr) {
+  if (personResult.error) {
     return NextResponse.json(
-      { error: "Failed to load deal_people", details: pErr.message },
+      { error: "Failed to load deal_people", details: personResult.error.message },
       { status: 500 }
     );
   }
 
-  if (!person?.id) {
+  if (!personResult.data?.id) {
     return NextResponse.json({ error: "Person not found for role" }, { status: 404 });
   }
 
@@ -189,7 +194,8 @@ export async function POST(
   }
 
   const insertRow: any = {
-    deal_person_id: person.id,
+    organization_id: scopedDeal.organizationId,
+    deal_person_id: personResult.data.id,
     income_type: incomeType,
     applied_to_deal: true,
 

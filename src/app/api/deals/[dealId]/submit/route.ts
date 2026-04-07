@@ -5,6 +5,7 @@ import {
     getDealForCurrentOrganization,
     NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 const REQUIRED_DOC_TYPES = [
     "proof_of_income",
@@ -59,9 +60,10 @@ export async function POST(
     }
 
     // Load saved structure (this is the real source of truth, not vehicle_selection)
-    const { data: dealStructure, error: structureErr } = await supabase
-        .from("deal_structure")
-        .select(`
+    const { data: dealStructure, error: structureErr } = await scopeQueryToOrganization(
+        supabase
+            .from("deal_structure")
+            .select(`
       deal_id,
       vehicle_id,
       option_label,
@@ -73,7 +75,9 @@ export async function POST(
       amount_financed,
       apr,
       fits_program
-    `)
+    `),
+        organizationId
+    )
         .eq("deal_id", dealId)
         .maybeSingle();
 
@@ -126,9 +130,10 @@ export async function POST(
     }
 
     // Credit bureau present?
-    const { data: bureauDocs, error: bureauErr } = await supabase
-        .from("deal_documents")
-        .select("id, doc_type")
+    const { data: bureauDocs, error: bureauErr } = await scopeQueryToOrganization(
+        supabase.from("deal_documents").select("id, doc_type"),
+        organizationId
+    )
         .eq("deal_id", dealId)
         .eq("doc_type", "credit_bureau");
 
@@ -140,9 +145,10 @@ export async function POST(
     }
 
     // All docs for stip validation
-    const { data: docs, error: docsErr } = await supabase
-        .from("deal_documents")
-        .select("id, doc_type")
+    const { data: docs, error: docsErr } = await scopeQueryToOrganization(
+        supabase.from("deal_documents").select("id, doc_type"),
+        organizationId
+    )
         .eq("deal_id", dealId);
 
     if (docsErr) {

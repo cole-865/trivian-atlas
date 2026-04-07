@@ -5,6 +5,7 @@ import {
   assertDealInCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 function asLabel(v: unknown): "NONE" | "VSC" | "GAP" | "VSC+GAP" | null {
   const s = String(v ?? "").toUpperCase().trim();
@@ -44,9 +45,10 @@ export async function GET(
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });
   }
 
-  const { data, error } = await supabase
-    .from("deal_vehicle_selection")
-    .select("*")
+  const { data, error } = await scopeQueryToOrganization(
+    supabase.from("deal_vehicle_selection").select("*"),
+    scopedDeal.organizationId
+  )
     .eq("deal_id", dealId)
     .maybeSingle();
 
@@ -173,6 +175,7 @@ export async function POST(
   const nowIso = new Date().toISOString();
 
   const payload = {
+    organization_id: scopedDeal.organizationId,
     deal_id: dealId,
     vehicle_id,
     option_label,

@@ -4,6 +4,7 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 function round2(n: number) {
   const v = Number.isFinite(n) ? n : 0;
@@ -72,9 +73,10 @@ export async function POST(
   const householdIncome = !!deal?.household_income;
 
   // 1) Load deal people (primary + optional co)
-  const { data: people, error: peopleErr } = await supabase
-    .from("deal_people")
-    .select("id, role")
+  const { data: people, error: peopleErr } = await scopeQueryToOrganization(
+    supabase.from("deal_people").select("id, role"),
+    organizationId
+  )
     .eq("deal_id", dealId);
 
   if (peopleErr) {
@@ -97,11 +99,14 @@ export async function POST(
   // 2) Load income profiles for those people (multiple rows per person)
   const personIds = [primary.id, co?.id].filter(Boolean) as string[];
 
-  const { data: incomes, error: incErr } = await supabase
-    .from("income_profiles")
-    .select(
-      "id, deal_person_id, income_type, applied_to_deal, monthly_gross_calculated, monthly_gross_manual"
-    )
+  const { data: incomes, error: incErr } = await scopeQueryToOrganization(
+    supabase
+      .from("income_profiles")
+      .select(
+        "id, deal_person_id, income_type, applied_to_deal, monthly_gross_calculated, monthly_gross_manual"
+      ),
+    organizationId
+  )
     .in("deal_person_id", personIds);
 
   if (incErr) {

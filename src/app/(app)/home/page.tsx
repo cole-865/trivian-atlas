@@ -154,7 +154,8 @@ async function getRecentDeals() {
   const rows = data ?? [];
   const primaryNames = await loadPrimaryCustomerNames(
     supabase,
-    rows.map((deal) => String(deal.id))
+    rows.map((deal) => String(deal.id)),
+    organizationId
   );
 
   return rows.map((d) => ({

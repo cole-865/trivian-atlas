@@ -4,6 +4,7 @@ import {
   assertDealInCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 export async function GET(
   _req: Request,
@@ -32,9 +33,10 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "Deal not found" }, { status: 404 });
   }
 
-  const { data, error } = await supabase
-    .from("deal_people")
-    .select("*")
+  const { data, error } = await scopeQueryToOrganization(
+    supabase.from("deal_people").select("*"),
+    scopedDeal.organizationId
+  )
     .eq("deal_id", dealId)
     .order("created_at", { ascending: true });
 

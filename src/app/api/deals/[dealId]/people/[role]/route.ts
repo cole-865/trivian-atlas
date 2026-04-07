@@ -98,6 +98,7 @@ export async function PATCH(
   const residence_months = monthsSinceMoveIn(move_in_date);
 
   const payload = {
+    organization_id: scopedDeal.organizationId,
     deal_id: dealId,
     role,
 

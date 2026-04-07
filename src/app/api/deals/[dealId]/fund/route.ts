@@ -140,6 +140,7 @@ export async function GET(
         updated_at
       `
     )
+    .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .maybeSingle();
 
@@ -191,6 +192,7 @@ export async function GET(
         created_at
       `
     )
+    .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .order("created_at", { ascending: false });
 

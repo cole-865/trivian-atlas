@@ -4,6 +4,10 @@ import {
   assertDealInCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import {
+  getDealPersonForCurrentOrganization,
+  scopeQueryToOrganization,
+} from "@/lib/deals/childOrganizationScope";
 
 const ALLOWED_ROLES = new Set(["primary", "co"]);
 const ALLOWED_INCOME_TYPES = new Set(["w2", "self_employed", "fixed", "cash"]);
@@ -75,22 +79,27 @@ function normalizeIncome(row: any) {
 }
 
 async function getPersonIdForRole(supabase: any, dealId: string, role: string) {
-  const { data: person, error: pErr } = await supabase
-    .from("deal_people")
-    .select("id")
-    .eq("deal_id", dealId)
-    .eq("role", role)
-    .maybeSingle();
+  const personResult = await getDealPersonForCurrentOrganization<{ id: string }>(
+    supabase,
+    dealId,
+    role,
+    "id"
+  );
 
-  if (pErr) {
-    return { error: NextResponse.json({ error: "Failed to load deal_people", details: pErr.message }, { status: 500 }) };
+  if (personResult.error) {
+    return {
+      error: NextResponse.json(
+        { error: "Failed to load deal_people", details: personResult.error.message },
+        { status: 500 }
+      ),
+    };
   }
 
-  if (!person?.id) {
+  if (!personResult.data?.id) {
     return { error: NextResponse.json({ error: "Person not found for role" }, { status: 404 }) };
   }
 
-  return { personId: person.id as string };
+  return { personId: personResult.data.id as string };
 }
 
 export async function PATCH(
@@ -183,9 +192,10 @@ export async function PATCH(
 
   // if nothing to update, return current row
   if (Object.keys(patch).length === 0) {
-    const { data, error } = await supabase
-      .from("income_profiles")
-      .select(SELECT_FIELDS)
+    const { data, error } = await scopeQueryToOrganization(
+      supabase.from("income_profiles").select(SELECT_FIELDS),
+      scopedDeal.organizationId
+    )
       .eq("id", incomeId)
       .eq("deal_person_id", personId)
       .maybeSingle();
@@ -199,6 +209,7 @@ export async function PATCH(
   const { data, error } = await supabase
     .from("income_profiles")
     .update(patch)
+    .eq("organization_id", scopedDeal.organizationId)
     .eq("id", incomeId)
     .eq("deal_person_id", personId)
     .select(SELECT_FIELDS)
@@ -249,6 +260,7 @@ export async function DELETE(
   const { error } = await supabase
     .from("income_profiles")
     .delete()
+    .eq("organization_id", scopedDeal.organizationId)
     .eq("id", incomeId)
     .eq("deal_person_id", personId);
 

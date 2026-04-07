@@ -41,6 +41,7 @@ export default async function DealsPage({ searchParams }: Props) {
         supabase
           .from("deal_people")
           .select("deal_id")
+          .eq("organization_id", organizationId)
           .eq("role", "primary")
           .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
           .limit(50),
@@ -93,7 +94,8 @@ export default async function DealsPage({ searchParams }: Props) {
   const deals = data ?? [];
   const primaryNames = await loadPrimaryCustomerNames(
     supabase,
-    deals.map((deal) => String(deal.id))
+    deals.map((deal) => String(deal.id)),
+    organizationId
   );
 
   return (

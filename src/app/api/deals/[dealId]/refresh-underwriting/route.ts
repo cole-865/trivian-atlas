@@ -4,6 +4,7 @@ import {
     assertDealInCurrentOrganization,
     NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -76,9 +77,10 @@ export async function POST(
         );
     }
 
-    const { data: primaryPerson, error: personErr } = await supabase
-        .from("deal_people")
-        .select("id, residence_months")
+    const { data: primaryPerson, error: personErr } = await scopeQueryToOrganization(
+        supabase.from("deal_people").select("id, residence_months"),
+        scopedDeal.organizationId
+    )
         .eq("deal_id", dealId)
         .eq("role", "primary")
         .maybeSingle();

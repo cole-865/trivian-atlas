@@ -6,6 +6,7 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 const ALLOWED_TYPES = new Set([
   "credit_bureau",
@@ -103,11 +104,14 @@ export async function GET(
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });
   }
 
-  const { data, error } = await supabase
-    .from("deal_documents")
-    .select(
-      "id, deal_id, doc_type, storage_bucket, storage_path, original_name, mime_type, size_bytes, created_at"
-    )
+  const { data, error } = await scopeQueryToOrganization(
+    supabase
+      .from("deal_documents")
+      .select(
+        "id, deal_id, doc_type, storage_bucket, storage_path, original_name, mime_type, size_bytes, created_at"
+      ),
+    scopedDeal.organizationId
+  )
     .eq("deal_id", dealId)
     .order("created_at", { ascending: false });
 
@@ -223,9 +227,10 @@ export async function POST(
       );
     }
 
-    const { data: structure, error: structureErr } = await supabase
-      .from("deal_structure")
-      .select("vehicle_id")
+    const { data: structure, error: structureErr } = await scopeQueryToOrganization(
+      supabase.from("deal_structure").select("vehicle_id"),
+      authorizedDeal.organizationId
+    )
       .eq("deal_id", dealId)
       .maybeSingle();
 
@@ -291,6 +296,7 @@ export async function POST(
   const { data: docRow, error: insErr } = await supabase
     .from("deal_documents")
     .insert({
+      organization_id: authorizedDeal.organizationId,
       deal_id: dealId,
       doc_type: docType,
       storage_bucket: bucket,

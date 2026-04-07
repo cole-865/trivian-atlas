@@ -6,6 +6,7 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 export async function DELETE(
   _req: Request,
@@ -34,9 +35,12 @@ export async function DELETE(
   }
 
   // load doc row (include doc_type)
-  const { data: doc, error: loadErr } = await supabase
-    .from("deal_documents")
-    .select("id, deal_id, doc_type, storage_bucket, storage_path")
+  const { data: doc, error: loadErr } = await scopeQueryToOrganization(
+    supabase
+      .from("deal_documents")
+      .select("id, deal_id, doc_type, storage_bucket, storage_path"),
+    scopedDeal.organizationId
+  )
     .eq("id", documentId)
     .eq("deal_id", dealId)
     .maybeSingle();
@@ -65,9 +69,10 @@ export async function DELETE(
       );
     }
 
-    const { data: structure, error: structureErr } = await supabase
-      .from("deal_structure")
-      .select("vehicle_id")
+    const { data: structure, error: structureErr } = await scopeQueryToOrganization(
+      supabase.from("deal_structure").select("vehicle_id"),
+      scopedDeal.organizationId
+    )
       .eq("deal_id", dealId)
       .maybeSingle();
 
@@ -136,6 +141,7 @@ export async function DELETE(
   const { error: delErr } = await supabase
     .from("deal_documents")
     .delete()
+    .eq("organization_id", scopedDeal.organizationId)
     .eq("id", documentId)
     .eq("deal_id", dealId);
 

@@ -5,6 +5,7 @@ import {
     getDealForCurrentOrganization,
     NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -138,11 +139,58 @@ export async function GET(
     const { dealId } = await params;
     const supabase = await supabaseServer();
 
-    const { data: selection, error: selectionErr } = await supabase
-        .from("deal_vehicle_selection")
+    const { data: vehicleTermPolicies, error: vehicleTermPolicyError } = await supabase
+        .from("vehicle_term_policy")
         .select(
-            "deal_id, vehicle_id, option_label, include_vsc, include_gap, cash_down"
+            "id, sort_order, min_mileage, max_mileage, min_vehicle_age, max_vehicle_age, max_term_months, active, notes"
         )
+        .eq("active", true)
+        .order("sort_order", { ascending: true });
+
+    if (vehicleTermPolicyError) {
+        return NextResponse.json(
+            { error: "Failed to load vehicle term policy", details: vehicleTermPolicyError.message },
+            { status: 500 }
+        );
+    }
+
+    const { data: deal, error: dealErr, organizationId } =
+        await getDealForCurrentOrganization<{
+            id: string;
+            cash_down: number | null;
+            trade_payoff: number | null;
+            has_trade: boolean | null;
+        }>(supabase, dealId, "id, cash_down, trade_payoff, has_trade");
+
+    if (!organizationId) {
+        return NextResponse.json(
+            { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+            { status: 400 }
+        );
+    }
+
+    if (dealErr) {
+        return NextResponse.json(
+            { error: "Failed to load deal", details: dealErr.message },
+            { status: 500 }
+        );
+    }
+
+    if (!deal) {
+        return NextResponse.json(
+            { error: "Deal not found" },
+            { status: 404 }
+        );
+    }
+
+    const { data: selection, error: selectionErr } = await scopeQueryToOrganization(
+        supabase
+            .from("deal_vehicle_selection")
+            .select(
+                "deal_id, vehicle_id, option_label, include_vsc, include_gap, cash_down"
+            ),
+        organizationId
+    )
         .eq("deal_id", dealId)
         .maybeSingle();
 
@@ -185,50 +233,6 @@ export async function GET(
         return NextResponse.json(
             { error: "Saved vehicle option is invalid" },
             { status: 400 }
-        );
-    }
-
-    const { data: vehicleTermPolicies, error: vehicleTermPolicyError } = await supabase
-        .from("vehicle_term_policy")
-        .select(
-            "id, sort_order, min_mileage, max_mileage, min_vehicle_age, max_vehicle_age, max_term_months, active, notes"
-        )
-        .eq("active", true)
-        .order("sort_order", { ascending: true });
-
-    if (vehicleTermPolicyError) {
-        return NextResponse.json(
-            { error: "Failed to load vehicle term policy", details: vehicleTermPolicyError.message },
-            { status: 500 }
-        );
-    }
-
-    const { data: deal, error: dealErr, organizationId } =
-        await getDealForCurrentOrganization<{
-            id: string;
-            cash_down: number | null;
-            trade_payoff: number | null;
-            has_trade: boolean | null;
-        }>(supabase, dealId, "id, cash_down, trade_payoff, has_trade");
-
-    if (!organizationId) {
-        return NextResponse.json(
-            { error: NO_CURRENT_ORGANIZATION_MESSAGE },
-            { status: 400 }
-        );
-    }
-
-    if (dealErr) {
-        return NextResponse.json(
-            { error: "Failed to load deal", details: dealErr.message },
-            { status: 500 }
-        );
-    }
-
-    if (!deal) {
-        return NextResponse.json(
-            { error: "Deal not found" },
-            { status: 404 }
         );
     }
 
@@ -491,6 +495,7 @@ export async function GET(
 
     const { error: upsertErr } = await supabase.from("deal_structure").upsert(
         {
+            organization_id: organizationId,
             deal_id: dealId,
             vehicle_id: v.id,
             option_label: selectedOption,

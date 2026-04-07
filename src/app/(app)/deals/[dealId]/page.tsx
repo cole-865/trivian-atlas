@@ -11,7 +11,7 @@ export default async function DealPage({ params }: PageProps) {
   const { dealId } = await params;
   const supabase = await createClient();
 
-  const { data: deal, error } = await getDealForCurrentOrganization<{
+  const { data: deal, error, organizationId } = await getDealForCurrentOrganization<{
     id: string;
     customer_name: string | null;
     status: string | null;
@@ -39,7 +39,11 @@ export default async function DealPage({ params }: PageProps) {
     );
   }
 
-  const primaryNames = await loadPrimaryCustomerNames(supabase, [dealId]);
+  const primaryNames = await loadPrimaryCustomerNames(
+    supabase,
+    [dealId],
+    organizationId
+  );
   const customerName = primaryNames[dealId] ?? deal.customer_name ?? "(No name)";
   const updatedAt = deal.updated_at ?? deal.created_at;
 

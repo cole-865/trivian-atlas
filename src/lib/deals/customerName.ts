@@ -16,6 +16,15 @@ type SupabaseLike = {
         column: string,
         value: string
       ) => {
+        eq: (
+          column: string,
+          value: string
+        ) => {
+          in: (
+            column: string,
+            values: string[]
+          ) => QueryResult<PrimaryNameRow[]>;
+        };
         in: (
           column: string,
           values: string[]
@@ -40,7 +49,8 @@ export function buildCustomerName(firstName: unknown, lastName: unknown) {
 
 export async function loadPrimaryCustomerNames(
   supabase: unknown,
-  dealIds: string[]
+  dealIds: string[],
+  organizationId?: string | null
 ): Promise<Record<string, string>> {
   const client = supabase as SupabaseLike;
   const uniqueDealIds = Array.from(
@@ -51,11 +61,16 @@ export async function loadPrimaryCustomerNames(
     return {};
   }
 
-  const { data, error } = await client
+  let query = client
     .from("deal_people")
     .select("deal_id, first_name, last_name")
-    .eq("role", "primary")
-    .in("deal_id", uniqueDealIds);
+    .eq("role", "primary");
+
+  if (organizationId) {
+    query = query.eq("organization_id", organizationId);
+  }
+
+  const { data, error } = await query.in("deal_id", uniqueDealIds);
 
   if (error) {
     console.error("loadPrimaryCustomerNames error:", error);

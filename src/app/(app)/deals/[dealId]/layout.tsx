@@ -2,6 +2,7 @@ import { DealStepNav } from "@/components/DealStepNav";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep, type DealStep } from "@/lib/deals/canAccessStep";
 import { getDealForCurrentOrganization } from "@/lib/deals/organizationScope";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 export const dynamic = "force-dynamic";
 
@@ -29,20 +30,8 @@ export default async function DealLayout({
     });
   }
 
-  const { data: structure, error: structureError } = await supabase
-    .from("deal_structure")
-    .select("vehicle_id")
-    .eq("deal_id", dealId)
-    .maybeSingle();
-
-  if (structureError) {
-    console.error("[DealLayout deal_structure]", {
-      dealId,
-      message: structureError.message,
-    });
-  }
-
-  const { data: deal, error: dealError } = await getDealForCurrentOrganization<{
+  const { data: deal, error: dealError, organizationId } =
+    await getDealForCurrentOrganization<{
     submit_status: string | null;
     submitted_at: string | null;
   }>(supabase, dealId, "submit_status, submitted_at");
@@ -51,6 +40,22 @@ export default async function DealLayout({
     console.error("[DealLayout deals]", {
       dealId,
       message: dealError.message,
+    });
+  }
+
+  const { data: structure, error: structureError } = organizationId
+    ? await scopeQueryToOrganization(
+        supabase.from("deal_structure").select("vehicle_id"),
+        organizationId
+      )
+        .eq("deal_id", dealId)
+        .maybeSingle()
+    : { data: null, error: null };
+
+  if (structureError) {
+    console.error("[DealLayout deal_structure]", {
+      dealId,
+      message: structureError.message,
     });
   }
 
