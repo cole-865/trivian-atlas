@@ -9,6 +9,11 @@ import {
   scopeDealChildQueryToOrganization,
   scopeDealStageQueryToOrganization,
 } from "@/lib/deals/underwritingOrganizationScope";
+import {
+  loadActiveVehicleTermPolicies,
+  loadInventoryForOrganization,
+  loadLatestTrivianConfig,
+} from "@/lib/los/organizationScope";
 
 function round2(n: number) {
   return Number((n || 0).toFixed(2));
@@ -177,21 +182,6 @@ export async function GET(
   const { dealId } = await params;
   const supabase = await supabaseServer();
 
-  const { data: vehicleTermPolicies, error: vehicleTermPolicyError } = await supabase
-    .from("vehicle_term_policy")
-    .select(
-      "id, sort_order, min_mileage, max_mileage, min_vehicle_age, max_vehicle_age, max_term_months, active, notes"
-    )
-    .eq("active", true)
-    .order("sort_order", { ascending: true });
-
-  if (vehicleTermPolicyError) {
-    return NextResponse.json(
-      { error: "Failed to load vehicle term policy", details: vehicleTermPolicyError.message },
-      { status: 500 }
-    );
-  }
-
   const url = new URL(req.url);
   const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
   const offset = Math.max(Number(url.searchParams.get("offset") ?? 0), 0);
@@ -215,6 +205,16 @@ export async function GET(
     return NextResponse.json(
       { error: NO_CURRENT_ORGANIZATION_MESSAGE },
       { status: 400 }
+    );
+  }
+
+  const { data: vehicleTermPolicies, error: vehicleTermPolicyError } =
+    await loadActiveVehicleTermPolicies(supabase, organizationId);
+
+  if (vehicleTermPolicyError) {
+    return NextResponse.json(
+      { error: "Failed to load vehicle term policy", details: vehicleTermPolicyError.message },
+      { status: 500 }
     );
   }
 
@@ -285,14 +285,11 @@ export async function GET(
     );
   }
 
-  const { data: cfg, error: cfgErr } = await supabase
-    .from("trivian_config")
-    .select(
-      "apr, payment_cap_pct, tax_rate_main, tax_add_base, tax_add_rate, doc_fee, title_license, vsc_price, gap_price"
-    )
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: cfg, error: cfgErr } = await loadLatestTrivianConfig(
+    supabase,
+    organizationId,
+    "apr, payment_cap_pct, tax_rate_main, tax_add_base, tax_add_rate, doc_fee, title_license, vsc_price, gap_price"
+  );
 
   if (cfgErr) {
     return NextResponse.json(
@@ -301,13 +298,15 @@ export async function GET(
     );
   }
 
-  const { data: vehicles, error: invErr } = await supabase
-    .from("trivian_inventory")
-    .select(
-      "id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock, jd_power_retail_book, vehicle_category"
-    )
-    .order("date_in_stock", { ascending: true })
-    .range(offset, offset + limit - 1);
+  const { data: vehicles, error: invErr } = await loadInventoryForOrganization(
+    supabase,
+    organizationId,
+    "id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock, jd_power_retail_book, vehicle_category",
+    {
+      offset,
+      limit,
+    }
+  );
 
   if (invErr) {
     return NextResponse.json(

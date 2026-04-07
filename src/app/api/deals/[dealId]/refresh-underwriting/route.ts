@@ -8,6 +8,7 @@ import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import {
     scopeDealChildQueryToOrganization,
 } from "@/lib/deals/underwritingOrganizationScope";
+import { loadActiveUnderwritingTierPolicy } from "@/lib/los/organizationScope";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -224,17 +225,11 @@ export async function POST(
     const cappedMovement = Math.max(-2, Math.min(2, roundHalfStep(movement)));
     const tier = moveTier("C", Math.trunc(cappedMovement));
 
-    const { data: policy, error: policyErr } = await supabase
-        .from("underwriting_tier_policy")
-        .select(
-            "tier, max_vehicle_price, max_amount_financed, max_ltv, max_term_months, max_pti, min_cash_down, min_down_pct, apr"
-        )
-        .eq("tier", tier)
-        .eq("active", true)
-        .order("sort_order", { ascending: true })
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const { data: policy, error: policyErr } = await loadActiveUnderwritingTierPolicy(
+        supabase,
+        scopedDeal.organizationId,
+        tier
+    );
 
     if (policyErr) {
         return NextResponse.json(

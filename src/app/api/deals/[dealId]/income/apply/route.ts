@@ -6,6 +6,7 @@ import {
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { scopeDealChildQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
+import { loadLatestTrivianConfig } from "@/lib/los/organizationScope";
 
 function round2(n: number) {
   const v = Number.isFinite(n) ? n : 0;
@@ -148,12 +149,11 @@ export async function POST(
   ];
 
   // 4) Load config (payment cap pct). Default to 0.22 if missing.
-  const { data: cfg, error: cfgErr } = await supabase
-    .from("trivian_config")
-    .select("payment_cap_pct")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: cfg, error: cfgErr } = await loadLatestTrivianConfig(
+    supabase,
+    organizationId,
+    "payment_cap_pct"
+  );
 
   if (cfgErr) {
     return NextResponse.json(

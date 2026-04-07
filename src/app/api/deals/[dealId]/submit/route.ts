@@ -6,6 +6,7 @@ import {
     NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
+import { loadInventoryVehicleForOrganization } from "@/lib/los/organizationScope";
 
 const REQUIRED_DOC_TYPES = [
     "proof_of_income",
@@ -113,11 +114,12 @@ export async function POST(
     let inventoryRow: { id: string; status: string | null } | null = null;
 
     if (dealStructure?.vehicle_id) {
-        const { data: inv, error: inventoryErr } = await supabase
-            .from("trivian_inventory")
-            .select("id, status")
-            .eq("id", dealStructure.vehicle_id)
-            .maybeSingle();
+        const { data: inv, error: inventoryErr } = await loadInventoryVehicleForOrganization(
+            supabase,
+            organizationId,
+            dealStructure.vehicle_id,
+            "id, status"
+        );
 
         if (inventoryErr) {
             return NextResponse.json(

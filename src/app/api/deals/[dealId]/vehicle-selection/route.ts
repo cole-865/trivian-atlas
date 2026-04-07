@@ -7,6 +7,7 @@ import {
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { scopeDealStageQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
+import { loadInventoryVehicleForOrganization } from "@/lib/los/organizationScope";
 
 function asLabel(v: unknown): "NONE" | "VSC" | "GAP" | "VSC+GAP" | null {
   const s = String(v ?? "").toUpperCase().trim();
@@ -171,6 +172,31 @@ export async function POST(
         reason: access.reason,
       },
       { status: 403 }
+    );
+  }
+
+  const { data: inventoryVehicle, error: inventoryVehicleErr } =
+    await loadInventoryVehicleForOrganization(
+      supabase,
+      scopedDeal.organizationId,
+      vehicle_id,
+      "id, status"
+    );
+
+  if (inventoryVehicleErr) {
+    return NextResponse.json(
+      {
+        error: "Failed to validate selected vehicle",
+        details: inventoryVehicleErr.message,
+      },
+      { status: 500 }
+    );
+  }
+
+  if (!inventoryVehicle) {
+    return NextResponse.json(
+      { error: "Selected vehicle was not found in the current organization inventory" },
+      { status: 404 }
     );
   }
 

@@ -105,7 +105,9 @@ function SectionCard({
   );
 }
 
-async function getDashboardMetrics(): Promise<DashboardMetrics> {
+async function getDashboardMetrics(
+  organizationId: string | null
+): Promise<DashboardMetrics> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("atlas_dashboard_metrics");
 
@@ -121,12 +123,27 @@ async function getDashboardMetrics(): Promise<DashboardMetrics> {
     };
   }
 
+  let vehiclesInventory = Number(data?.vehicles_inventory ?? 0);
+
+  if (organizationId) {
+    const inventoryResponse = await supabase
+      .from("trivian_inventory")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId);
+
+    if (inventoryResponse.error) {
+      console.error("inventory metrics error:", inventoryResponse.error);
+    } else {
+      vehiclesInventory = Number(inventoryResponse.count ?? 0);
+    }
+  }
+
   return {
     deals_created_30d: Number(data?.deals_created_30d ?? 0),
     deals_worked_30d: Number(data?.deals_worked_30d ?? 0),
     pending_approvals: Number(data?.pending_approvals ?? 0),
     risk_review_queue: Number(data?.risk_review_queue ?? 0),
-    vehicles_inventory: Number(data?.vehicles_inventory ?? 0),
+    vehicles_inventory: vehiclesInventory,
     credit_reports_processing: Number(data?.credit_reports_processing ?? 0),
   };
 }
@@ -184,7 +201,9 @@ function timeAgo(ts: string | null) {
 }
 
 export default async function HomePage() {
-  const metrics = await getDashboardMetrics();
+  const supabase = await createClient();
+  const organizationId = await getCurrentOrganizationIdForDeals(supabase);
+  const metrics = await getDashboardMetrics(organizationId);
   const recentDeals = await getRecentDeals();
 
   return (
