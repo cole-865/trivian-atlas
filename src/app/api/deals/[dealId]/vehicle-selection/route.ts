@@ -74,6 +74,8 @@ export async function POST(
   const option_label = asLabel(body?.option_label);
   const include_vsc = !!body?.include_vsc;
   const include_gap = !!body?.include_gap;
+  const term_months = numOrNull(body?.term_months);
+  const monthly_payment = numOrNull(body?.monthly_payment);
 
   if (!vehicle_id) {
     return NextResponse.json({ error: "vehicle_id is required" }, { status: 400 });
@@ -81,10 +83,50 @@ export async function POST(
   if (!option_label) {
     return NextResponse.json({ error: "option_label is invalid" }, { status: 400 });
   }
+  if (term_months == null) {
+    return NextResponse.json({ error: "term_months is required" }, { status: 400 });
+  }
+  if (monthly_payment == null) {
+    return NextResponse.json({ error: "monthly_payment is required" }, { status: 400 });
+  }
 
   const cash_down = numOrNull(body?.cash_down);
 
   const supabase = await supabaseServer();
+  const { data: underwritingResult, error: underwritingErr } = await supabase
+    .from("underwriting_results")
+    .select("decision")
+    .eq("deal_id", dealId)
+    .eq("stage", "bureau_precheck")
+    .maybeSingle();
+
+  if (underwritingErr) {
+    return NextResponse.json(
+      { error: "Failed to load underwriting result", details: underwritingErr.message },
+      { status: 500 }
+    );
+  }
+
+  const access = await canAccessStep({
+    supabase,
+    step: "vehicle",
+    deal: {},
+    underwriting: {
+      decision: underwritingResult?.decision ?? null,
+    },
+  });
+
+  if (!access.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "STEP_BLOCKED",
+        redirectTo: access.redirectTo ?? "income",
+        reason: access.reason,
+      },
+      { status: 403 }
+    );
+  }
 
   const nowIso = new Date().toISOString();
 
@@ -94,6 +136,8 @@ export async function POST(
     option_label,
     include_vsc,
     include_gap,
+    term_months,
+    monthly_payment,
     cash_down,
     updated_at: nowIso,
   };

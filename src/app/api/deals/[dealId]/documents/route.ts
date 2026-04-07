@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { canAccessStep } from "@/lib/deals/canAccessStep";
 
 const ALLOWED_TYPES = new Set([
   "credit_bureau",
@@ -13,6 +14,18 @@ const ALLOWED_TYPES = new Set([
 
 const BUCKET_DEAL_DOCS = "deal-docs";
 const BUCKET_CREDIT_BUREAU_RAW = "credit_reports_raw";
+
+type DealDocumentRow = {
+  id: string;
+  deal_id: string;
+  doc_type: string;
+  storage_bucket: string;
+  storage_path: string;
+  original_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  created_at: string;
+};
 
 const GENERAL_ALLOWED_MIME_TYPES = new Set([
   "application/pdf",
@@ -81,10 +94,10 @@ export async function GET(
     );
   }
 
-  const latest: Record<string, any> = {};
-  const grouped: Record<string, any[]> = {};
+  const latest: Record<string, DealDocumentRow | null | undefined> = {};
+  const grouped: Record<string, DealDocumentRow[]> = {};
 
-  for (const row of data ?? []) {
+  for (const row of (data ?? []) as DealDocumentRow[]) {
     if (!latest[row.doc_type]) latest[row.doc_type] = row;
     if (!grouped[row.doc_type]) grouped[row.doc_type] = [];
     grouped[row.doc_type].push(row);
@@ -152,6 +165,56 @@ export async function POST(
 
   if (!uploadedBy) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  if (docType !== "credit_bureau") {
+    const { data: deal, error: dealErr } = await supabase
+      .from("deals")
+      .select("submit_status, submitted_at")
+      .eq("id", dealId)
+      .maybeSingle();
+
+    if (dealErr) {
+      return NextResponse.json(
+        { error: "Failed to load deal", details: dealErr.message },
+        { status: 500 }
+      );
+    }
+
+    const { data: structure, error: structureErr } = await supabase
+      .from("deal_structure")
+      .select("vehicle_id")
+      .eq("deal_id", dealId)
+      .maybeSingle();
+
+    if (structureErr) {
+      return NextResponse.json(
+        { error: "Failed to load deal structure", details: structureErr.message },
+        { status: 500 }
+      );
+    }
+
+    const access = await canAccessStep({
+      supabase,
+      step: "submit",
+      deal: {
+        selected_vehicle_id: structure?.vehicle_id ?? null,
+        submit_status: deal?.submit_status ?? null,
+        submitted_at: deal?.submitted_at ?? null,
+      },
+    });
+
+    if (!access.allowed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "STEP_BLOCKED",
+          redirectTo: access.redirectTo ?? "vehicle",
+          reason: access.reason,
+        },
+        { status: 403 }
+      );
+    }
   }
 
   const ts = Date.now();

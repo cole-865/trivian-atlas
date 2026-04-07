@@ -35,6 +35,7 @@ type DealDocument = {
 type FundResponse = {
   ok: boolean;
   error?: string;
+  details?: string;
   reason?: string;
   redirectTo?: DealStep;
   deal: {

@@ -21,8 +21,9 @@ type SupabaseLike = {
   };
 };
 
-export async function getStepEnforcementEnabled(supabase: SupabaseLike) {
-  const { data, error } = await supabase
+export async function getStepEnforcementEnabled(supabase: unknown) {
+  const client = supabase as SupabaseLike;
+  const { data, error } = await client
     .from("app_settings")
     .select("value_json")
     .eq("key", STEP_ENFORCEMENT_SETTING_KEY)
@@ -36,10 +37,11 @@ export async function getStepEnforcementEnabled(supabase: SupabaseLike) {
 }
 
 export async function setStepEnforcementEnabled(
-  supabase: SupabaseLike,
+  supabase: unknown,
   enabled: boolean
 ) {
-  return supabase.from("app_settings").upsert(
+  const client = supabase as SupabaseLike;
+  return client.from("app_settings").upsert(
     {
       key: STEP_ENFORCEMENT_SETTING_KEY,
       value_json: enabled,

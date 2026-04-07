@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
+import { canAccessStep } from "@/lib/deals/canAccessStep";
 
 export async function GET(
   _req: Request,
@@ -133,6 +134,40 @@ export async function PATCH(
 
   const body = await req.json();
   const supabase = await supabaseServer();
+  const { data: underwritingResult, error: underwritingErr } = await supabase
+    .from("underwriting_results")
+    .select("decision")
+    .eq("deal_id", dealId)
+    .eq("stage", "bureau_precheck")
+    .maybeSingle();
+
+  if (underwritingErr) {
+    return NextResponse.json(
+      { error: "Failed to load underwriting result", details: underwritingErr.message },
+      { status: 500 }
+    );
+  }
+
+  const access = await canAccessStep({
+    supabase,
+    step: "vehicle",
+    deal: {},
+    underwriting: {
+      decision: underwritingResult?.decision ?? null,
+    },
+  });
+
+  if (!access.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "STEP_BLOCKED",
+        redirectTo: access.redirectTo ?? "income",
+        reason: access.reason,
+      },
+      { status: 403 }
+    );
+  }
 
   const { data, error } = await supabase
     .from("deals")

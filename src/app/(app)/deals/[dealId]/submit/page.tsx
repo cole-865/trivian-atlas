@@ -31,6 +31,10 @@ type DealStructure = {
 
 type DealStructureResponse = {
   ok: boolean;
+  details?: string;
+  error?: string;
+  reason?: string;
+  redirectTo?: DealStep;
   deal_id: string;
   structure: {
     selection: Selection;
@@ -69,6 +73,8 @@ type DealDocument = {
 
 type DocumentsResponse = {
   ok: boolean;
+  details?: string;
+  error?: string;
   documents: {
     credit_bureau: DealDocument | null;
     proof_of_income: DealDocument[];
@@ -200,7 +206,7 @@ export default function DealSubmitPage() {
 
       const j: DealStructureResponse | DealStructureErrorResponse = await r.json().catch(() => ({
         ok: false,
-        deal_id,
+        deal_id: dealId,
         structure: null,
       }));
 
@@ -441,6 +447,11 @@ export default function DealSubmitPage() {
       const j = await r.json().catch(() => ({}));
 
       if (!r.ok) {
+        if (j?.error === "STEP_BLOCKED" && j?.redirectTo) {
+          router.replace(`/deals/${dealId}/${j.redirectTo}`);
+          return;
+        }
+
         throw new Error(j?.details || j?.error || "Upload failed");
       }
 

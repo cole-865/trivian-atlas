@@ -14,6 +14,8 @@ type DealLike = {
   status?: string | null;
   household_income?: number | null;
   selected_vehicle_id?: string | null;
+  submit_status?: string | null;
+  submitted_at?: string | null;
 };
 
 type UnderwritingLike = {
@@ -69,6 +71,7 @@ export async function canAccessStep({
 
   const hasVehicle = hasText(deal.selected_vehicle_id);
   const hasDecision = hasText(underwriting?.decision);
+  const hasSubmitted = deal.submit_status === "submitted" || hasText(deal.submitted_at);
 
   switch (step) {
     case "customer":
@@ -108,6 +111,14 @@ export async function canAccessStep({
       return { allowed: true };
 
     case "fund":
+      if (!hasSubmitted) {
+        return {
+          allowed: false,
+          redirectTo: "submit",
+          reason: "Complete the submit step before opening funding.",
+        };
+      }
+
       if (!hasDecision) {
         return {
           allowed: false,

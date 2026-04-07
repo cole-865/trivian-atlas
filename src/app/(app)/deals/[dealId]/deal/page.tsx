@@ -10,6 +10,8 @@ type DealQuery = {
   cashDown: string | null;
   vsc: string | null;
   gap: string | null;
+  termMonths: string | null;
+  monthlyPayment: string | null;
 };
 
 type Selection = {
@@ -18,6 +20,8 @@ type Selection = {
   option_label: "NONE" | "VSC" | "GAP" | "VSC+GAP";
   include_vsc: boolean;
   include_gap: boolean;
+  term_months: number;
+  monthly_payment: number;
   cash_down: number | null;
   created_at?: string;
   updated_at?: string;
@@ -167,6 +171,8 @@ export default function DealDealPage() {
       cashDown: sp.get("cashDown"),
       vsc: sp.get("vsc"),
       gap: sp.get("gap"),
+      termMonths: sp.get("termMonths"),
+      monthlyPayment: sp.get("monthlyPayment"),
     }),
     [sp]
   );
@@ -232,6 +238,8 @@ export default function DealDealPage() {
         option_label: (query.option ?? "").toUpperCase(),
         include_vsc: parseBool(query.vsc),
         include_gap: parseBool(query.gap),
+        term_months: parseNumOrNull(query.termMonths),
+        monthly_payment: parseNumOrNull(query.monthlyPayment),
         cash_down: parseNumOrNull(query.cashDown),
       };
 

@@ -138,6 +138,8 @@ export async function GET(
     deal: {
       status: deal.workflow_status,
       selected_vehicle_id: structure?.vehicle_id ?? null,
+      submit_status: deal.submit_status,
+      submitted_at: deal.submitted_at,
     },
     underwriting: {
       decision: underwritingResult?.decision ?? null,

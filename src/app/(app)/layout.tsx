@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
+import { stopImpersonationAction } from "@/lib/auth/impersonationActions";
+import { getAuthContext, type AuthContext } from "@/lib/auth/userRole";
 
 function NavLink({ href, label }: { href: string; label: string }) {
   return (
@@ -25,15 +27,30 @@ async function DealSearch() {
   );
 }
 
-async function UserPill() {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getUser();
+function displayUserLabel(args: {
+  fullName?: string | null;
+  email?: string | null;
+  fallback: string;
+}) {
+  return args.fullName || args.email || args.fallback;
+}
 
-  const email = data.user?.email ?? "Signed in";
+function UserPill({ authContext }: { authContext: AuthContext }) {
+  const effectiveLabel = displayUserLabel({
+    fullName: authContext.effectiveProfile?.fullName ?? null,
+    email:
+      authContext.effectiveProfile?.email ??
+      authContext.realProfile?.email ??
+      authContext.realUser?.email ??
+      null,
+    fallback: "Signed in",
+  });
 
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden sm:block text-xs text-muted-foreground">{email}</div>
+      <div className="hidden sm:block text-xs text-muted-foreground">
+        {effectiveLabel}
+      </div>
 
       <Link
         href="/settings"
@@ -59,6 +76,13 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const supabase = await createClient();
+  const authContext = await getAuthContext(supabase);
+  const showImpersonationBanner =
+    authContext.isImpersonating &&
+    authContext.impersonatedProfile &&
+    authContext.realUser;
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <div className="flex">
@@ -75,17 +99,51 @@ export default async function AppLayout({
             <NavLink href="/messages" label="Messages" />
             <NavLink href="/deals" label="Deals" />
             <NavLink href="/settings" label="Settings" />
+            {authContext.realRole === "dev" ? (
+              <NavLink href="/dev-tools" label="DEV TOOLS" />
+            ) : null}
           </nav>
         </aside>
 
         {/* Main */}
         <div className="flex-1">
+          {showImpersonationBanner && authContext.impersonatedProfile && authContext.realUser ? (
+            <div className="border-b border-amber-300 bg-amber-100">
+              <div className="flex items-center justify-between gap-4 px-6 py-3 text-sm">
+                <div className="text-amber-950">
+                  Acting as{" "}
+                  <span className="font-semibold">
+                    {authContext.impersonatedProfile.fullName ||
+                      authContext.impersonatedProfile.email ||
+                      authContext.impersonatedProfile.role}
+                  </span>
+                  . Real user is{" "}
+                  <span className="font-semibold">
+                    {authContext.realProfile?.fullName ||
+                      authContext.realProfile?.email ||
+                      authContext.realUser.email}
+                  </span>
+                  .
+                </div>
+
+                <form action={stopImpersonationAction}>
+                  <button
+                    type="submit"
+                    className="rounded-xl border border-amber-400 bg-white px-3 py-2 text-sm hover:bg-amber-50"
+                  >
+                    Stop impersonating
+                  </button>
+                </form>
+              </div>
+            </div>
+          ) : null}
+
           {/* Top bar */}
           <div className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
             <div className="w-full px-6 py-4">
               <div className="flex items-center justify-between gap-3">
                 <DealSearch />
-                <UserPill />
+                <UserPill authContext={authContext} />
               </div>
             </div>
           </div>

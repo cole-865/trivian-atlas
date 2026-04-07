@@ -471,8 +471,15 @@ export default function DealVehiclePage() {
         }),
       });
 
+      const json: VehicleOptionsResponse = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        throw new Error("Failed to save deal inputs");
+        if (json?.error === "STEP_BLOCKED" && json?.redirectTo) {
+          router.replace(`/deals/${dealId}/${json.redirectTo}`);
+          return;
+        }
+
+        throw new Error(json?.error || json?.details || "Failed to save deal inputs");
       }
 
       setCashDownApplied(cashDown);
@@ -491,6 +498,8 @@ export default function DealVehiclePage() {
     qs.set("option", sel.option.label);
     qs.set("vsc", String(sel.option.include_vsc));
     qs.set("gap", String(sel.option.include_gap));
+    qs.set("termMonths", String(sel.option.term_months ?? ""));
+    qs.set("monthlyPayment", String(sel.option.monthly_payment ?? ""));
 
     if (cashDownApplied != null) {
       qs.set("cashDown", String(cashDownApplied));
