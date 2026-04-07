@@ -1,13 +1,13 @@
 import { revalidatePath } from "next/cache";
 import { hasPermission } from "@/lib/auth/permissions";
-import { getUserRole } from "@/lib/auth/userRole";
+import { getCurrentUserRole } from "@/lib/auth/userRole";
 import {
   getStepEnforcementEnabled,
   setStepEnforcementEnabled,
 } from "@/lib/settings/appSettings";
 import { createClient } from "@/utils/supabase/server";
 
-function canManageStepEnforcement(role: ReturnType<typeof getUserRole>) {
+function canManageStepEnforcement(role: Awaited<ReturnType<typeof getCurrentUserRole>>) {
   return !!role && (
     hasPermission(role, "edit_settings") ||
     hasPermission(role, "access_debug_tools")
@@ -18,11 +18,9 @@ async function updateStepEnforcementSetting(formData: FormData) {
   "use server";
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const role = await getCurrentUserRole(supabase);
 
-  if (!canManageStepEnforcement(getUserRole(user))) {
+  if (!canManageStepEnforcement(role)) {
     return;
   }
 
@@ -38,11 +36,7 @@ async function updateStepEnforcementSetting(formData: FormData) {
 
 export default async function SettingsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const role = getUserRole(user);
+  const role = await getCurrentUserRole(supabase);
   const showStepEnforcementToggle = canManageStepEnforcement(role);
   const stepEnforcementEnabled = showStepEnforcementToggle
     ? await getStepEnforcementEnabled(supabase)

@@ -2,6 +2,7 @@
 
 import React, { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import type { DealStep } from "@/lib/deals/canAccessStep";
 
 type VehicleCategory = "all" | "car" | "suv" | "truck" | "van";
 
@@ -89,6 +90,8 @@ type VehicleOptionsResponse = {
   rows?: ApiRow[];
   error?: string;
   details?: string;
+  reason?: string;
+  redirectTo?: DealStep;
 };
 
 function asString(value: string | string[] | undefined): string {
@@ -268,6 +271,11 @@ export default function DealVehiclePage() {
       }
 
       if (!res.ok) {
+        if (json?.error === "STEP_BLOCKED" && json?.redirectTo) {
+          router.replace(`/deals/${dealId}/${json.redirectTo}`);
+          return;
+        }
+
         throw new Error(json?.error || json?.details || text || "Failed to load vehicles");
       }
 

@@ -1,56 +1,57 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { canAccessStep } from "@/lib/deals/canAccessStep";
 
 type DealDocument = {
-    id: string;
-    deal_id: string;
-    doc_type: string;
-    storage_bucket: string;
-    storage_path: string;
-    original_name: string | null;
-    mime_type: string | null;
-    size_bytes: number | null;
-    created_at: string;
+  id: string;
+  deal_id: string;
+  doc_type: string;
+  storage_bucket: string;
+  storage_path: string;
+  original_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  created_at: string;
 };
 
 const REQUIRED_DOC_TYPES = [
-    "proof_of_income",
-    "proof_of_residence",
-    "driver_license",
+  "proof_of_income",
+  "proof_of_residence",
+  "driver_license",
 ] as const;
 
 function emptyGroupedDocuments() {
-    return {
-        credit_bureau: null as DealDocument | null,
-        proof_of_income: [] as DealDocument[],
-        proof_of_residence: [] as DealDocument[],
-        driver_license: [] as DealDocument[],
-        insurance: [] as DealDocument[],
-        references: [] as DealDocument[],
-        other: [] as DealDocument[],
-    };
+  return {
+    credit_bureau: null as DealDocument | null,
+    proof_of_income: [] as DealDocument[],
+    proof_of_residence: [] as DealDocument[],
+    driver_license: [] as DealDocument[],
+    insurance: [] as DealDocument[],
+    references: [] as DealDocument[],
+    other: [] as DealDocument[],
+  };
 }
 
 export async function GET(
-    _req: Request,
-    { params }: { params: Promise<{ dealId: string }> }
+  _req: Request,
+  { params }: { params: Promise<{ dealId: string }> }
 ) {
-    const { dealId } = await params;
-    const supabase = await supabaseServer();
+  const { dealId } = await params;
+  const supabase = await supabaseServer();
 
-    const {
-        data: { user },
-        error: authErr,
-    } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser();
 
-    if (authErr || !user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (authErr || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    const { data: deal, error: dealErr } = await supabase
-        .from("deals")
-        .select(
-            `
+  const { data: deal, error: dealErr } = await supabase
+    .from("deals")
+    .select(
+      `
         id,
         workflow_status,
         submit_status,
@@ -59,25 +60,39 @@ export async function GET(
         submitted_at,
         funded_at
       `
-        )
-        .eq("id", dealId)
-        .maybeSingle();
+    )
+    .eq("id", dealId)
+    .maybeSingle();
 
-    if (dealErr) {
-        return NextResponse.json(
-            { error: "Failed to load deal", details: dealErr.message },
-            { status: 500 }
-        );
-    }
+  if (dealErr) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: dealErr.message },
+      { status: 500 }
+    );
+  }
 
-    if (!deal?.id) {
-        return NextResponse.json({ error: "Deal not found" }, { status: 404 });
-    }
+  if (!deal?.id) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
-    const { data: structure, error: structureErr } = await supabase
-        .from("deal_structure")
-        .select(
-            `
+  const { data: underwritingResult, error: underwritingErr } = await supabase
+    .from("underwriting_results")
+    .select("decision")
+    .eq("deal_id", dealId)
+    .eq("stage", "bureau_precheck")
+    .maybeSingle();
+
+  if (underwritingErr) {
+    return NextResponse.json(
+      { error: "Failed to load underwriting result", details: underwritingErr.message },
+      { status: 500 }
+    );
+  }
+
+  const { data: structure, error: structureErr } = await supabase
+    .from("deal_structure")
+    .select(
+      `
         deal_id,
         vehicle_id,
         option_label,
@@ -106,21 +121,45 @@ export async function GET(
         created_at,
         updated_at
       `
-        )
-        .eq("deal_id", dealId)
-        .maybeSingle();
+    )
+    .eq("deal_id", dealId)
+    .maybeSingle();
 
-    if (structureErr) {
-        return NextResponse.json(
-            { error: "Failed to load deal structure", details: structureErr.message },
-            { status: 500 }
-        );
-    }
+  if (structureErr) {
+    return NextResponse.json(
+      { error: "Failed to load deal structure", details: structureErr.message },
+      { status: 500 }
+    );
+  }
 
-    const { data: docs, error: docsErr } = await supabase
-        .from("deal_documents")
-        .select(
-            `
+  const access = await canAccessStep({
+    supabase,
+    step: "fund",
+    deal: {
+      status: deal.workflow_status,
+      selected_vehicle_id: structure?.vehicle_id ?? null,
+    },
+    underwriting: {
+      decision: underwritingResult?.decision ?? null,
+    },
+  });
+
+  if (!access.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "STEP_BLOCKED",
+        redirectTo: access.redirectTo ?? "submit",
+        reason: access.reason,
+      },
+      { status: 403 }
+    );
+  }
+
+  const { data: docs, error: docsErr } = await supabase
+    .from("deal_documents")
+    .select(
+      `
         id,
         deal_id,
         doc_type,
@@ -131,67 +170,67 @@ export async function GET(
         size_bytes,
         created_at
       `
-        )
-        .eq("deal_id", dealId)
-        .order("created_at", { ascending: false });
+    )
+    .eq("deal_id", dealId)
+    .order("created_at", { ascending: false });
 
-    if (docsErr) {
-        return NextResponse.json(
-            { error: "Failed to load documents", details: docsErr.message },
-            { status: 500 }
-        );
+  if (docsErr) {
+    return NextResponse.json(
+      { error: "Failed to load documents", details: docsErr.message },
+      { status: 500 }
+    );
+  }
+
+  const grouped = emptyGroupedDocuments();
+
+  for (const doc of (docs ?? []) as DealDocument[]) {
+    if (doc.doc_type === "credit_bureau") {
+      if (!grouped.credit_bureau) grouped.credit_bureau = doc;
+      continue;
     }
 
-    const grouped = emptyGroupedDocuments();
-
-    for (const doc of (docs ?? []) as DealDocument[]) {
-        if (doc.doc_type === "credit_bureau") {
-            if (!grouped.credit_bureau) grouped.credit_bureau = doc;
-            continue;
-        }
-
-        if (doc.doc_type === "proof_of_income") {
-            grouped.proof_of_income.push(doc);
-            continue;
-        }
-
-        if (doc.doc_type === "proof_of_residence") {
-            grouped.proof_of_residence.push(doc);
-            continue;
-        }
-
-        if (doc.doc_type === "driver_license") {
-            grouped.driver_license.push(doc);
-            continue;
-        }
-
-        if (doc.doc_type === "insurance") {
-            grouped.insurance.push(doc);
-            continue;
-        }
-
-        if (doc.doc_type === "references") {
-            grouped.references.push(doc);
-            continue;
-        }
-
-        grouped.other.push(doc);
+    if (doc.doc_type === "proof_of_income") {
+      grouped.proof_of_income.push(doc);
+      continue;
     }
 
-    const uploadedTypes = new Set((docs ?? []).map((d) => d.doc_type));
-    const missingRequiredDocs = REQUIRED_DOC_TYPES.filter((t) => !uploadedTypes.has(t));
+    if (doc.doc_type === "proof_of_residence") {
+      grouped.proof_of_residence.push(doc);
+      continue;
+    }
 
-    const checklist = {
-        submitted: deal.submit_status === "submitted" || !!deal.submitted_at,
-        credit_bureau: !!grouped.credit_bureau,
-        required_stips: missingRequiredDocs.length === 0,
-    };
+    if (doc.doc_type === "driver_license") {
+      grouped.driver_license.push(doc);
+      continue;
+    }
 
-    return NextResponse.json({
-        ok: true,
-        deal,
-        selection: structure ?? null,
-        documents: grouped,
-        checklist,
-    });
+    if (doc.doc_type === "insurance") {
+      grouped.insurance.push(doc);
+      continue;
+    }
+
+    if (doc.doc_type === "references") {
+      grouped.references.push(doc);
+      continue;
+    }
+
+    grouped.other.push(doc);
+  }
+
+  const uploadedTypes = new Set((docs ?? []).map((d) => d.doc_type));
+  const missingRequiredDocs = REQUIRED_DOC_TYPES.filter((t) => !uploadedTypes.has(t));
+
+  const checklist = {
+    submitted: deal.submit_status === "submitted" || !!deal.submitted_at,
+    credit_bureau: !!grouped.credit_bureau,
+    required_stips: missingRequiredDocs.length === 0,
+  };
+
+  return NextResponse.json({
+    ok: true,
+    deal,
+    selection: structure ?? null,
+    documents: grouped,
+    checklist,
+  });
 }

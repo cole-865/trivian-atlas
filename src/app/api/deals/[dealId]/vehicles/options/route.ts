@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { canAccessStep } from "@/lib/deals/canAccessStep";
 
 function round2(n: number) {
   return Number((n || 0).toFixed(2));
@@ -190,7 +191,7 @@ export async function GET(
 
   const { data: deal, error: dealErr } = await supabase
     .from("deals")
-    .select("id, cash_down, trade_value, trade_payoff, has_trade")
+    .select("id, cash_down, trade_value, trade_payoff, has_trade, household_income")
     .eq("id", dealId)
     .single();
 
@@ -204,7 +205,7 @@ export async function GET(
   const { data: uwResult, error: uwErr } = await supabase
     .from("underwriting_results")
     .select(
-      "tier, max_pti, max_term_months, min_cash_down, min_down_pct, max_amount_financed, max_vehicle_price, max_ltv, apr"
+      "decision, tier, max_pti, max_term_months, min_cash_down, min_down_pct, max_amount_financed, max_vehicle_price, max_ltv, apr"
     )
     .eq("deal_id", dealId)
     .eq("stage", "bureau_precheck")
@@ -214,6 +215,29 @@ export async function GET(
     return NextResponse.json(
       { error: "Failed to load underwriting results", details: uwErr.message },
       { status: 500 }
+    );
+  }
+
+  const access = await canAccessStep({
+    supabase,
+    step: "vehicle",
+    deal: {
+      household_income: deal?.household_income ?? null,
+    },
+    underwriting: {
+      decision: uwResult?.decision ?? null,
+    },
+  });
+
+  if (!access.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "STEP_BLOCKED",
+        redirectTo: access.redirectTo ?? "income",
+        reason: access.reason,
+      },
+      { status: 403 }
     );
   }
 

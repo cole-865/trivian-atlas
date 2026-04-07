@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { canAccessStep } from "@/lib/deals/canAccessStep";
 
 function asLabel(v: unknown): "NONE" | "VSC" | "GAP" | "VSC+GAP" | null {
   const s = String(v ?? "").toUpperCase().trim();
@@ -30,6 +31,26 @@ export async function GET(
     return NextResponse.json(
       { error: "Failed to load selection", details: error.message },
       { status: 500 }
+    );
+  }
+
+  const access = await canAccessStep({
+    supabase,
+    step: "deal",
+    deal: {
+      selected_vehicle_id: data?.vehicle_id ?? null,
+    },
+  });
+
+  if (!access.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "STEP_BLOCKED",
+        redirectTo: access.redirectTo ?? "vehicle",
+        reason: access.reason,
+      },
+      { status: 403 }
     );
   }
 

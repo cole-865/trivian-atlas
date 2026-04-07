@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { canAccessStep } from "@/lib/deals/canAccessStep";
 
 const REQUIRED_DOC_TYPES = [
     "proof_of_income",
@@ -68,6 +69,27 @@ export async function POST(
         return NextResponse.json(
             { error: "Failed to load deal structure", details: structureErr.message },
             { status: 500 }
+        );
+    }
+
+    const access = await canAccessStep({
+        supabase,
+        step: "submit",
+        deal: {
+            status: deal.workflow_status,
+            selected_vehicle_id: dealStructure?.vehicle_id ?? null,
+        },
+    });
+
+    if (!access.allowed) {
+        return NextResponse.json(
+            {
+                ok: false,
+                error: "STEP_BLOCKED",
+                redirectTo: access.redirectTo ?? "vehicle",
+                reason: access.reason,
+            },
+            { status: 403 }
         );
     }
 

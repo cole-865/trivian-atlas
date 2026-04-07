@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import type { DealStep } from "@/lib/deals/canAccessStep";
 
 function asString(value: string | string[] | undefined): string {
   if (!value) return "";
@@ -33,6 +34,9 @@ type DealDocument = {
 
 type FundResponse = {
   ok: boolean;
+  error?: string;
+  reason?: string;
+  redirectTo?: DealStep;
   deal: {
     id: string;
     workflow_status: string | null;
@@ -67,6 +71,8 @@ type FundErrorResponse = {
   checklist: null;
   details?: string;
   error?: string;
+  reason?: string;
+  redirectTo?: DealStep;
 };
 
 function money(n: number | null | undefined) {
@@ -87,6 +93,7 @@ function formatDate(ts: string | null | undefined) {
 
 export default function DealFundPage() {
   const params = useParams();
+  const router = useRouter();
   const dealId = asString(params?.dealId);
 
   const [loading, setLoading] = useState(true);
@@ -116,6 +123,11 @@ export default function DealFundPage() {
         }));
 
         if (!r.ok) {
+          if (response.error === "STEP_BLOCKED" && response.redirectTo) {
+            router.replace(`/deals/${dealId}/${response.redirectTo}`);
+            return;
+          }
+
           throw new Error(response.details || response.error || "Failed to load fund page");
         }
 
@@ -136,7 +148,7 @@ export default function DealFundPage() {
     return () => {
       cancelled = true;
     };
-  }, [dealId]);
+  }, [dealId, router]);
 
   const requiredDocCounts = useMemo(() => {
     return {

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import type { DealStep } from "@/lib/deals/canAccessStep";
 
 function asString(value: string | string[] | undefined): string {
   if (!value) return "";
@@ -50,6 +51,8 @@ type DealStructureErrorResponse = {
   structure: null;
   details?: string;
   error?: string;
+  reason?: string;
+  redirectTo?: DealStep;
 };
 
 type DealDocument = {
@@ -202,6 +205,11 @@ export default function DealSubmitPage() {
       }));
 
       if (!r.ok) {
+        if (j.error === "STEP_BLOCKED" && j.redirectTo) {
+          router.replace(`/deals/${dealId}/${j.redirectTo}`);
+          return;
+        }
+
         throw new Error(j.details || j.error || "Failed to load structure");
       }
 
@@ -254,7 +262,7 @@ export default function DealSubmitPage() {
     return () => {
       cancelled = true;
     };
-  }, [dealId]);
+  }, [dealId, router]);
 
   async function refreshDocuments() {
     if (!dealId) return;
@@ -387,6 +395,11 @@ export default function DealSubmitPage() {
       const j = await r.json().catch(() => ({}));
 
       if (!r.ok) {
+        if (j?.error === "STEP_BLOCKED" && j?.redirectTo) {
+          router.replace(`/deals/${dealId}/${j.redirectTo}`);
+          return;
+        }
+
         const blockerText =
           Array.isArray(j?.blockers) && j.blockers.length > 0
             ? ` ${j.blockers.join(" • ")}`

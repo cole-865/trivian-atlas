@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import type { DealStep } from "@/lib/deals/canAccessStep";
 
 type DealQuery = {
   vehicleId: string | null;
@@ -101,6 +102,8 @@ type DealStructureResponse = {
 type ApiErrorResponse = {
   error?: string;
   details?: string;
+  reason?: string;
+  redirectTo?: DealStep;
 };
 
 function asString(value: string | string[] | undefined): string {
@@ -185,6 +188,11 @@ export default function DealDealPage() {
     const j = await r.json();
 
     if (!r.ok) {
+      if (j?.error === "STEP_BLOCKED" && j?.redirectTo) {
+        router.replace(`/deals/${dealId}/${j.redirectTo}`);
+        return null;
+      }
+
       throw new Error(j?.details || j?.error || "Failed to load selection");
     }
 
@@ -200,6 +208,11 @@ export default function DealDealPage() {
     const j: DealStructureResponse & ApiErrorResponse = await r.json();
 
     if (!r.ok) {
+      if (j?.error === "STEP_BLOCKED" && j?.redirectTo) {
+        router.replace(`/deals/${dealId}/${j.redirectTo}`);
+        return;
+      }
+
       throw new Error(j.details || j.error || "Failed to load deal structure");
     }
 
