@@ -9,28 +9,14 @@ type QueryResult<T> = PromiseLike<{
   error: unknown;
 }>;
 
+type DealPeopleNameQuery = {
+  eq: (column: string, value: string) => DealPeopleNameQuery;
+  in: (column: string, values: string[]) => QueryResult<PrimaryNameRow[]>;
+};
+
 type SupabaseLike = {
   from: (table: string) => {
-    select: (columns: string) => {
-      eq: (
-        column: string,
-        value: string
-      ) => {
-        eq: (
-          column: string,
-          value: string
-        ) => {
-          in: (
-            column: string,
-            values: string[]
-          ) => QueryResult<PrimaryNameRow[]>;
-        };
-        in: (
-          column: string,
-          values: string[]
-        ) => QueryResult<PrimaryNameRow[]>;
-      };
-    };
+    select: (columns: string) => DealPeopleNameQuery;
   };
 };
 

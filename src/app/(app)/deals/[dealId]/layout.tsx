@@ -3,6 +3,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep, type DealStep } from "@/lib/deals/canAccessStep";
 import { getDealForCurrentOrganization } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
+import { scopeDealStageQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
 
 export const dynamic = "force-dynamic";
 
@@ -16,20 +17,6 @@ export default async function DealLayout({
   const { dealId } = await params;
   const supabase = await supabaseServer();
 
-  const { data: uwResult, error: uwError } = await supabase
-    .from("underwriting_results")
-    .select("tier, decision")
-    .eq("deal_id", dealId)
-    .eq("stage", "bureau_precheck")
-    .maybeSingle();
-
-  if (uwError) {
-    console.error("[DealLayout underwriting_results]", {
-      dealId,
-      message: uwError.message,
-    });
-  }
-
   const { data: deal, error: dealError, organizationId } =
     await getDealForCurrentOrganization<{
     submit_status: string | null;
@@ -40,6 +27,22 @@ export default async function DealLayout({
     console.error("[DealLayout deals]", {
       dealId,
       message: dealError.message,
+    });
+  }
+
+  const { data: uwResult, error: uwError } = organizationId
+    ? await scopeDealStageQueryToOrganization(
+        supabase.from("underwriting_results").select("tier, decision"),
+        organizationId,
+        dealId,
+        "bureau_precheck"
+      ).maybeSingle()
+    : { data: null, error: null };
+
+  if (uwError) {
+    console.error("[DealLayout underwriting_results]", {
+      dealId,
+      message: uwError.message,
     });
   }
 

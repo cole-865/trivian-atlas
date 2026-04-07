@@ -96,6 +96,7 @@ export async function GET(
   const { data: underwritingResult, error: underwritingErr } = await supabase
     .from("underwriting_results")
     .select("decision")
+    .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .eq("stage", "bureau_precheck")
     .maybeSingle();

@@ -5,6 +5,10 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import {
+  scopeDealChildQueryToOrganization,
+  scopeDealStageQueryToOrganization,
+} from "@/lib/deals/underwritingOrganizationScope";
 
 function round2(n: number) {
   return Number((n || 0).toFixed(2));
@@ -221,14 +225,17 @@ export async function GET(
     );
   }
 
-  const { data: uwResult, error: uwErr } = await supabase
-    .from("underwriting_results")
-    .select(
-      "decision, tier, max_pti, max_term_months, min_cash_down, min_down_pct, max_amount_financed, max_vehicle_price, max_ltv, apr"
-    )
-    .eq("deal_id", dealId)
-    .eq("stage", "bureau_precheck")
-    .maybeSingle();
+  const { data: uwResult, error: uwErr } =
+    await scopeDealStageQueryToOrganization(
+      supabase
+        .from("underwriting_results")
+        .select(
+          "decision, tier, max_pti, max_term_months, min_cash_down, min_down_pct, max_amount_financed, max_vehicle_price, max_ltv, apr"
+        ),
+      organizationId,
+      dealId,
+      "bureau_precheck"
+    ).maybeSingle();
 
   if (uwErr) {
     return NextResponse.json(
@@ -260,11 +267,16 @@ export async function GET(
     );
   }
 
-  const { data: uwInputs, error: uwInputsErr } = await supabase
-    .from("underwriting_inputs")
-    .select("gross_monthly_income, interest_rate_apr, term_months, max_payment_pct, vsc_price, gap_price")
-    .eq("deal_id", dealId)
-    .maybeSingle();
+  const { data: uwInputs, error: uwInputsErr } =
+    await scopeDealChildQueryToOrganization(
+      supabase
+        .from("underwriting_inputs")
+        .select(
+          "gross_monthly_income, interest_rate_apr, term_months, max_payment_pct, vsc_price, gap_price"
+        ),
+      organizationId,
+      dealId
+    ).maybeSingle();
 
   if (uwInputsErr) {
     return NextResponse.json(

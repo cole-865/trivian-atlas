@@ -4,7 +4,6 @@ import {
   assertDealInCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ dealId: string }> }
@@ -43,12 +42,14 @@ export async function GET(
       .select(
         "id, deal_id, latest_job_id, bureau, raw_bucket, raw_path, redacted_bucket, redacted_path, redacted_text, created_at, updated_at"
       )
+      .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
       .maybeSingle(),
 
     supabase
       .from("bureau_summary")
       .select("*")
+      .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -57,18 +58,21 @@ export async function GET(
     supabase
       .from("bureau_tradelines")
       .select("*")
+      .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
       .order("created_at", { ascending: true }),
 
     supabase
       .from("bureau_public_records")
       .select("*")
+      .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
       .order("created_at", { ascending: true }),
 
     supabase
       .from("bureau_messages")
       .select("*")
+      .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
       .order("created_at", { ascending: true }),
   ]);

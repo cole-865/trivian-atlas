@@ -6,6 +6,7 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
+import { scopeDealStageQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
 
 function asLabel(v: unknown): "NONE" | "VSC" | "GAP" | "VSC+GAP" | null {
   const s = String(v ?? "").toUpperCase().trim();
@@ -137,12 +138,13 @@ export async function POST(
   if (!scopedDeal.data) {
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });
   }
-  const { data: underwritingResult, error: underwritingErr } = await supabase
-    .from("underwriting_results")
-    .select("decision")
-    .eq("deal_id", dealId)
-    .eq("stage", "bureau_precheck")
-    .maybeSingle();
+  const { data: underwritingResult, error: underwritingErr } =
+    await scopeDealStageQueryToOrganization(
+      supabase.from("underwriting_results").select("decision"),
+      scopedDeal.organizationId,
+      dealId,
+      "bureau_precheck"
+    ).maybeSingle();
 
   if (underwritingErr) {
     return NextResponse.json(

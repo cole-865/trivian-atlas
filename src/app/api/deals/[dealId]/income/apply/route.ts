@@ -5,6 +5,7 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
+import { scopeDealChildQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
 
 function round2(n: number) {
   const v = Number.isFinite(n) ? n : 0;
@@ -170,6 +171,7 @@ export async function POST(
   const nowIso = new Date().toISOString();
 
   const uwPayload: Record<string, unknown> = {
+    organization_id: organizationId,
     deal_id: dealId,
     gross_monthly_income: grossMonthlyIncome,
     other_monthly_income: 0,
@@ -177,11 +179,12 @@ export async function POST(
     updated_at: nowIso,
   };
 
-  const { data: existing, error: existingErr } = await supabase
-    .from("underwriting_inputs")
-    .select("id")
-    .eq("deal_id", dealId)
-    .maybeSingle();
+  const { data: existing, error: existingErr } =
+    await scopeDealChildQueryToOrganization(
+      supabase.from("underwriting_inputs").select("id"),
+      organizationId,
+      dealId
+    ).maybeSingle();
 
   if (existingErr) {
     return NextResponse.json(
@@ -196,6 +199,7 @@ export async function POST(
     const { data, error } = await supabase
       .from("underwriting_inputs")
       .update(uwPayload)
+      .eq("organization_id", organizationId)
       .eq("id", existing.id)
       .select("*")
       .single();

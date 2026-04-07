@@ -6,7 +6,6 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
-import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 export async function GET(
   _req: Request,
@@ -54,10 +53,10 @@ export async function GET(
     primaryNames[dealId] ?? deal.customer_name ?? null;
 
   // 2) People
-  const { data: people, error: peopleErr } = await scopeQueryToOrganization(
-    supabase.from("deal_people").select("*"),
-    organizationId
-  )
+  const { data: people, error: peopleErr } = await supabase
+    .from("deal_people")
+    .select("id, deal_id, role, first_name, last_name, created_at")
+    .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .order("created_at", { ascending: true });
 
@@ -71,10 +70,10 @@ export async function GET(
   const personIds = (people ?? []).map((p) => p.id);
 
   // 3) Income
-  const { data: income_profiles, error: incomeErr } = await scopeQueryToOrganization(
-    supabase.from("income_profiles").select("*"),
-    organizationId
-  )
+  const { data: income_profiles, error: incomeErr } = await supabase
+    .from("income_profiles")
+    .select("*")
+    .eq("organization_id", organizationId)
     .in(
       "deal_person_id",
       personIds.length
@@ -90,10 +89,12 @@ export async function GET(
   }
 
   // 4) Documents
-  const { data: documents, error: docsErr } = await scopeQueryToOrganization(
-    supabase.from("deal_documents").select("*"),
-    organizationId
-  )
+  const { data: documents, error: docsErr } = await supabase
+    .from("deal_documents")
+    .select(
+      "id, deal_id, doc_type, storage_bucket, storage_path, original_name, mime_type, size_bytes, created_at"
+    )
+    .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .order("created_at", { ascending: false });
 
@@ -105,10 +106,10 @@ export async function GET(
   }
 
   // 5) Vehicle options are now derived from the saved structure snapshot.
-  const { data: dealStructure, error: voErr } = await scopeQueryToOrganization(
-    supabase.from("deal_structure").select("*"),
-    organizationId
-  )
+  const { data: dealStructure, error: voErr } = await supabase
+    .from("deal_structure")
+    .select("id, deal_id, vehicle_id, created_at, updated_at")
+    .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .maybeSingle();
 
@@ -120,10 +121,12 @@ export async function GET(
   }
 
   // 6) Vehicle selection
-  const { data: vehicle_selection, error: vsErr } = await scopeQueryToOrganization(
-    supabase.from("deal_vehicle_selection").select("*"),
-    organizationId
-  )
+  const { data: vehicle_selection, error: vsErr } = await supabase
+    .from("deal_vehicle_selection")
+    .select(
+      "id, deal_id, vehicle_id, option_label, include_vsc, include_gap, term_months, monthly_payment, cash_down, created_at, updated_at"
+    )
+    .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .maybeSingle();
 
@@ -183,6 +186,7 @@ export async function PATCH(
   const { data: underwritingResult, error: underwritingErr } = await supabase
     .from("underwriting_results")
     .select("decision")
+    .eq("organization_id", scopedDeal.organizationId)
     .eq("deal_id", dealId)
     .eq("stage", "bureau_precheck")
     .maybeSingle();

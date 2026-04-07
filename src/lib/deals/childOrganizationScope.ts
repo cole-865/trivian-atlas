@@ -24,11 +24,11 @@ function asSupabaseClient(supabase: unknown) {
   return supabase as SupabaseLike;
 }
 
-export function scopeQueryToOrganization<T extends { eq: (column: string, value: string) => T }>(
+export function scopeQueryToOrganization<T extends { eq: (column: string, value: string) => unknown }>(
   query: T,
   organizationId: string
 ) {
-  return query.eq("organization_id", organizationId);
+  return query.eq("organization_id", organizationId) as T;
 }
 
 export async function getDealPersonForCurrentOrganization<

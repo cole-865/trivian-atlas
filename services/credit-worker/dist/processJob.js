@@ -21,6 +21,20 @@ import { textToPdfBuffer } from "./textToPdf.js";
 import { parseEquifaxReport } from "./parseEquifax.js";
 import { underwriteDeal } from "./underwriteDeal.js";
 const REDACTED_BUCKET = process.env.REDACTED_BUCKET || "credit_reports_redacted";
+async function getDealOrganizationId(dealId) {
+    const { data, error } = await supabase
+        .from("deals")
+        .select("organization_id")
+        .eq("id", dealId)
+        .maybeSingle();
+    if (error)
+        throw error;
+    const organizationId = data?.organization_id ?? null;
+    if (!organizationId) {
+        throw new Error(`Deal ${dealId} is missing organization_id`);
+    }
+    return organizationId;
+}
 function dedupeExtractedReportText(text) {
     const t = (text || "").trim();
     if (!t)
@@ -93,10 +107,11 @@ async function updateJobFailed(jobId, err) {
     }
 }
 async function upsertCreditReport(args) {
-    const { dealId, jobId, bureau, rawBucket, rawPath, redactedBucket, redactedPath, redactedText, } = args;
+    const { organizationId, dealId, jobId, bureau, rawBucket, rawPath, redactedBucket, redactedPath, redactedText, } = args;
     // Since upload route deletes previous credit_reports by deal_id,
     // one row per deal is fine here.
     const payload = {
+        organization_id: organizationId,
         deal_id: dealId,
         bureau,
         raw_bucket: rawBucket,
@@ -117,27 +132,31 @@ async function upsertCreditReport(args) {
     return data;
 }
 async function replaceBureauDetails(args) {
-    const { bureauSummaryId, dealId, tradelines, publicRecords, messages } = args;
+    const { organizationId, bureauSummaryId, dealId, tradelines, publicRecords, messages } = args;
     const { error: delTradelinesErr } = await supabase
         .from("bureau_tradelines")
         .delete()
+        .eq("organization_id", organizationId)
         .eq("bureau_summary_id", bureauSummaryId);
     if (delTradelinesErr)
         throw delTradelinesErr;
     const { error: delPublicErr } = await supabase
         .from("bureau_public_records")
         .delete()
+        .eq("organization_id", organizationId)
         .eq("bureau_summary_id", bureauSummaryId);
     if (delPublicErr)
         throw delPublicErr;
     const { error: delMessagesErr } = await supabase
         .from("bureau_messages")
         .delete()
+        .eq("organization_id", organizationId)
         .eq("bureau_summary_id", bureauSummaryId);
     if (delMessagesErr)
         throw delMessagesErr;
     if (tradelines.length > 0) {
         const rows = tradelines.map((t) => ({
+            organization_id: organizationId,
             bureau_summary_id: bureauSummaryId,
             deal_id: dealId,
             creditor_name: t.creditor_name,
@@ -171,6 +190,7 @@ async function replaceBureauDetails(args) {
     }
     if (publicRecords.length > 0) {
         const rows = publicRecords.map((r) => ({
+            organization_id: organizationId,
             bureau_summary_id: bureauSummaryId,
             deal_id: dealId,
             court_name: r.court_name,
@@ -192,6 +212,7 @@ async function replaceBureauDetails(args) {
     }
     if (messages.length > 0) {
         const rows = messages.map((m) => ({
+            organization_id: organizationId,
             bureau_summary_id: bureauSummaryId,
             deal_id: dealId,
             message_type: m.message_type,
@@ -205,9 +226,10 @@ async function replaceBureauDetails(args) {
     }
 }
 async function upsertBureauSummary(args) {
-    const { dealId, creditReportId, jobId, parsed } = args;
+    const { organizationId, dealId, creditReportId, jobId, parsed } = args;
     const s = parsed.summary;
     const payload = {
+        organization_id: organizationId,
         deal_id: dealId,
         credit_report_id: creditReportId,
         job_id: jobId,
@@ -246,43 +268,10 @@ async function upsertBureauSummary(args) {
         throw error;
     return data;
 }
-async function getUnderwritingInputs(dealId, vehicleId) {
-    const { data: primaryPerson, error: personError } = await supabase
-        .from("deal_people")
-        .select("*")
-        .eq("deal_id", dealId)
-        .eq("role", "primary")
-        .single();
-    if (personError)
-        throw personError;
-    const { data: incomeProfile, error: incomeError } = await supabase
-        .from("income_profiles")
-        .select("*")
-        .eq("deal_person_id", primaryPerson.id)
-        .eq("applied_to_deal", true)
-        .single();
-    if (incomeError)
-        throw incomeError;
-    let vehicle = null;
-    if (vehicleId) {
-        const { data: vehicleRow, error: vehicleError } = await supabase
-            .from("trivian_inventory")
-            .select("*")
-            .eq("id", vehicleId)
-            .single();
-        if (vehicleError)
-            throw vehicleError;
-        vehicle = vehicleRow;
-    }
-    return {
-        primaryPerson,
-        incomeProfile,
-        vehicle,
-    };
-}
 export async function processJob(job) {
     const jobId = job?.id;
     const dealId = job?.deal_id;
+    const jobOrganizationId = job?.organization_id ?? null;
     const rawBucket = job?.raw_bucket;
     const rawPath = job?.raw_path;
     console.log("[credit-worker] NEW PARSE/UPSERT BUILD ACTIVE", {
@@ -297,6 +286,15 @@ export async function processJob(job) {
         throw new Error(`Job ${jobId} missing deal_id`);
     if (!rawBucket || !rawPath)
         throw new Error(`Job ${jobId} missing raw_bucket/raw_path`);
+    const organizationId = jobOrganizationId ?? (await getDealOrganizationId(dealId));
+    if (!jobOrganizationId) {
+        const { error: stampJobError } = await supabase
+            .from("credit_report_jobs")
+            .update({ organization_id: organizationId })
+            .eq("id", jobId);
+        if (stampJobError)
+            throw stampJobError;
+    }
     const redactedPath = buildRedactedPath(rawPath, jobId);
     console.log("[credit-worker] processJob start", {
         jobId,
@@ -364,6 +362,7 @@ export async function processJob(job) {
             bureau,
         });
         const creditReport = await upsertCreditReport({
+            organizationId,
             dealId,
             jobId,
             bureau,
@@ -374,12 +373,14 @@ export async function processJob(job) {
             redactedText,
         });
         const bureauSummary = await upsertBureauSummary({
+            organizationId,
             dealId,
             creditReportId: creditReport.id,
             jobId,
             parsed: parsedBureau,
         });
         await replaceBureauDetails({
+            organizationId,
             bureauSummaryId: bureauSummary.id,
             dealId,
             tradelines: parsedBureau.tradelines,
@@ -389,6 +390,7 @@ export async function processJob(job) {
         const { data: primaryPerson, error: personError } = await supabase
             .from("deal_people")
             .select("*")
+            .eq("organization_id", organizationId)
             .eq("deal_id", dealId)
             .eq("role", "primary")
             .single();
@@ -409,6 +411,7 @@ export async function processJob(job) {
         await supabase
             .from("underwriting_results")
             .upsert({
+            organization_id: organizationId,
             deal_id: dealId,
             user_id: job.uploaded_by ?? null,
             stage: "bureau_precheck",

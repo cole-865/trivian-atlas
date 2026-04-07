@@ -321,15 +321,21 @@ export async function POST(
   }
 
   if (docType === "credit_bureau") {
-    await supabase.from("credit_reports").delete().eq("deal_id", dealId);
+    await supabase
+      .from("credit_reports")
+      .delete()
+      .eq("organization_id", authorizedDeal.organizationId)
+      .eq("deal_id", dealId);
 
     await supabase
       .from("credit_report_jobs")
       .update({ status: "failed", error_message: "Superseded by newer upload" })
+      .eq("organization_id", authorizedDeal.organizationId)
       .eq("deal_id", dealId)
       .in("status", ["queued", "uploaded", "parsing", "redacting", "scoring"]);
 
     const { error: jobErr } = await supabase.from("credit_report_jobs").insert({
+      organization_id: authorizedDeal.organizationId,
       deal_id: dealId,
       uploaded_by: uploadedBy,
       bureau: "unknown",

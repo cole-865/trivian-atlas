@@ -5,6 +5,9 @@ import {
     NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
+import {
+    scopeDealChildQueryToOrganization,
+} from "@/lib/deals/underwritingOrganizationScope";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -53,12 +56,15 @@ export async function POST(
         return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    const { data: bureauSummary, error: bureauErr } = await supabase
-        .from("bureau_summary")
-        .select(
-            "score, repo_count, months_since_repo, paid_auto_trades, open_auto_trades"
-        )
-        .eq("deal_id", dealId)
+    const { data: bureauSummary, error: bureauErr } = await scopeDealChildQueryToOrganization(
+        supabase
+            .from("bureau_summary")
+            .select(
+                "score, repo_count, months_since_repo, paid_auto_trades, open_auto_trades"
+            ),
+        scopedDeal.organizationId,
+        dealId
+    )
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -114,6 +120,7 @@ export async function POST(
 
     if ((score ?? 999) < 420) {
         const payload = {
+            organization_id: scopedDeal.organizationId,
             deal_id: dealId,
             stage: "bureau_precheck",
             score_total: 0,
@@ -150,6 +157,7 @@ export async function POST(
 
     if (repoCount > 1 && monthsSinceRepo !== null && monthsSinceRepo < 12) {
         const payload = {
+            organization_id: scopedDeal.organizationId,
             deal_id: dealId,
             stage: "bureau_precheck",
             score_total: 0,
@@ -243,6 +251,7 @@ export async function POST(
     }
 
     const payload = {
+        organization_id: scopedDeal.organizationId,
         deal_id: dealId,
         stage: "bureau_precheck",
         score_total: cappedMovement,
