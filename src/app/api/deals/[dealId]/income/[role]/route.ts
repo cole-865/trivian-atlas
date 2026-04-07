@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import {
+  assertDealInCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 const ALLOWED_ROLES = new Set(["primary", "co"]);
 
@@ -65,6 +69,25 @@ export async function GET(
   }
 
   const supabase = await supabaseServer();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
   // Find the deal_person for this role
   const { data: person, error: pErr } = await supabase
@@ -114,6 +137,25 @@ export async function POST(
   }
 
   const supabase = await supabaseServer();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
   // Find the deal_person for this role
   const { data: person, error: pErr } = await supabase

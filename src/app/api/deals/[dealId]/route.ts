@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+  getDealForCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 export async function GET(
   _req: Request,
@@ -16,11 +20,22 @@ export async function GET(
   const supabase = await supabaseServer();
 
   // 1) Deal
-  const { data: deal, error: dealErr } = await supabase
-    .from("deals")
-    .select("*")
-    .eq("id", dealId)
-    .single();
+  const {
+    data: deal,
+    error: dealErr,
+    organizationId,
+  } = await getDealForCurrentOrganization<Record<string, unknown>>(
+    supabase,
+    dealId,
+    "*"
+  );
+
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
 
   if (dealErr || !deal) {
     return NextResponse.json(
@@ -134,6 +149,26 @@ export async function PATCH(
 
   const body = await req.json();
   const supabase = await supabaseServer();
+  const scopedDeal = await getDealForCurrentOrganization(supabase, dealId, "id");
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
+
   const { data: underwritingResult, error: underwritingErr } = await supabase
     .from("underwriting_results")
     .select("decision")
@@ -179,6 +214,7 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     })
     .eq("id", dealId)
+    .eq("organization_id", scopedDeal.organizationId)
     .select()
     .single();
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
 import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
+import { getDealForCurrentOrganization } from "@/lib/deals/organizationScope";
 
 type PageProps = {
   params: Promise<{ dealId: string }>;
@@ -10,11 +11,17 @@ export default async function DealPage({ params }: PageProps) {
   const { dealId } = await params;
   const supabase = await createClient();
 
-  const { data: deal, error } = await supabase
-    .from("deals")
-    .select("id, customer_name, status, created_at, updated_at")
-    .eq("id", dealId)
-    .single();
+  const { data: deal, error } = await getDealForCurrentOrganization<{
+    id: string;
+    customer_name: string | null;
+    status: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+  }>(
+    supabase,
+    dealId,
+    "id, customer_name, status, created_at, updated_at"
+  );
 
   if (error || !deal) {
     return (
@@ -34,15 +41,14 @@ export default async function DealPage({ params }: PageProps) {
 
   const primaryNames = await loadPrimaryCustomerNames(supabase, [dealId]);
   const customerName = primaryNames[dealId] ?? deal.customer_name ?? "(No name)";
+  const updatedAt = deal.updated_at ?? deal.created_at;
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xl font-semibold">{customerName}</div>
-          <div className="text-xs text-muted-foreground">
-            Deal ID: {deal.id}
-          </div>
+          <div className="text-xs text-muted-foreground">Deal ID: {deal.id}</div>
         </div>
 
         <Link
@@ -62,7 +68,7 @@ export default async function DealPage({ params }: PageProps) {
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <div className="text-sm text-muted-foreground">Last updated</div>
           <div className="mt-2 text-sm">
-            {(deal.updated_at ?? deal.created_at) ? new Date(deal.updated_at ?? deal.created_at).toLocaleString() : "—"}
+            {updatedAt ? new Date(updatedAt).toLocaleString() : "-"}
           </div>
         </div>
       </div>

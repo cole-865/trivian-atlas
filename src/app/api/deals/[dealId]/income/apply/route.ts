@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import {
+  getDealForCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 function round2(n: number) {
   const v = Number.isFinite(n) ? n : 0;
@@ -45,11 +49,18 @@ export async function POST(
   const supabase = await supabaseServer();
 
   // 0) Load deal (we need household_income)
-  const { data: deal, error: dealErr } = await supabase
-    .from("deals")
-    .select("id, household_income")
-    .eq("id", dealId)
-    .single();
+  const { data: deal, error: dealErr, organizationId } =
+    await getDealForCurrentOrganization<{
+      id: string;
+      household_income: boolean | null;
+    }>(supabase, dealId, "id, household_income");
+
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
 
   if (dealErr) {
     return NextResponse.json(

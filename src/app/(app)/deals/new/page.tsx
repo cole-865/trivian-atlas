@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
+import {
+  getCurrentOrganizationIdForDeals,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 async function createDeal(formData: FormData) {
   "use server";
@@ -12,9 +16,16 @@ async function createDeal(formData: FormData) {
   }
 
   const supabase = await createClient();
+  const organizationId = await getCurrentOrganizationIdForDeals(supabase);
+
+  if (!organizationId) {
+    const msg = encodeURIComponent(NO_CURRENT_ORGANIZATION_MESSAGE);
+    redirect(`/deals/new?error=${msg}`);
+  }
 
   const { data, error } = await supabase.rpc("create_deal_with_seed_data", {
     p_customer_name: customer_name,
+    p_organization_id: organizationId,
   });
 
   if (error || !data?.length) {

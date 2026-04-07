@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+  getDealForCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 type DealDocument = {
   id: string;
@@ -48,9 +52,18 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: deal, error: dealErr } = await supabase
-    .from("deals")
-    .select(
+  const { data: deal, error: dealErr, organizationId } =
+    await getDealForCurrentOrganization<{
+      id: string;
+      workflow_status: string | null;
+      submit_status: string | null;
+      funding_notes: string | null;
+      internal_notes: string | null;
+      submitted_at: string | null;
+      funded_at: string | null;
+    }>(
+      supabase,
+      dealId,
       `
         id,
         workflow_status,
@@ -60,9 +73,14 @@ export async function GET(
         submitted_at,
         funded_at
       `
-    )
-    .eq("id", dealId)
-    .maybeSingle();
+    );
+
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
 
   if (dealErr) {
     return NextResponse.json(

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import {
+  assertDealInCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 export async function POST(
   req: Request,
@@ -25,12 +29,32 @@ export async function POST(
   }
 
   const supabase = await createClient();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
   // If you want, add other fields here too later (phone, email, address, etc.)
   const { error } = await supabase
     .from("deals")
     .update({ customer_name })
-    .eq("id", dealId);
+    .eq("id", dealId)
+    .eq("organization_id", scopedDeal.organizationId);
 
   if (error) {
     return NextResponse.json(

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+  assertDealInCurrentOrganization,
+  getDealForCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 export async function DELETE(
   _req: Request,
@@ -8,6 +13,25 @@ export async function DELETE(
 ) {
   const { dealId, documentId } = await params;
   const supabase = await supabaseServer();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
   // load doc row (include doc_type)
   const { data: doc, error: loadErr } = await supabase
@@ -29,11 +53,10 @@ export async function DELETE(
   }
 
   if (doc.doc_type !== "credit_bureau") {
-    const { data: deal, error: dealErr } = await supabase
-      .from("deals")
-      .select("submit_status, submitted_at")
-      .eq("id", dealId)
-      .maybeSingle();
+    const { data: deal, error: dealErr } = await getDealForCurrentOrganization<{
+      submit_status: string | null;
+      submitted_at: string | null;
+    }>(supabase, dealId, "submit_status, submitted_at");
 
     if (dealErr) {
       return NextResponse.json(

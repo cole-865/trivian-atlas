@@ -1,6 +1,7 @@
 import { DealStepNav } from "@/components/DealStepNav";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep, type DealStep } from "@/lib/deals/canAccessStep";
+import { getDealForCurrentOrganization } from "@/lib/deals/organizationScope";
 
 export const dynamic = "force-dynamic";
 
@@ -41,11 +42,10 @@ export default async function DealLayout({
     });
   }
 
-  const { data: deal, error: dealError } = await supabase
-    .from("deals")
-    .select("submit_status, submitted_at")
-    .eq("id", dealId)
-    .maybeSingle();
+  const { data: deal, error: dealError } = await getDealForCurrentOrganization<{
+    submit_status: string | null;
+    submitted_at: string | null;
+  }>(supabase, dealId, "submit_status, submitted_at");
 
   if (dealError) {
     console.error("[DealLayout deals]", {

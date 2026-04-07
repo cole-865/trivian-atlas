@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+  assertDealInCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 function asLabel(v: unknown): "NONE" | "VSC" | "GAP" | "VSC+GAP" | null {
   const s = String(v ?? "").toUpperCase().trim();
@@ -20,6 +24,25 @@ export async function GET(
 ) {
   const { dealId } = await params;
   const supabase = await supabaseServer();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
   const { data, error } = await supabase
     .from("deal_vehicle_selection")
@@ -93,6 +116,25 @@ export async function POST(
   const cash_down = numOrNull(body?.cash_down);
 
   const supabase = await supabaseServer();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
   const { data: underwritingResult, error: underwritingErr } = await supabase
     .from("underwriting_results")
     .select("decision")

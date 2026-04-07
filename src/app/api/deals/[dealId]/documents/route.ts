@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+  assertDealInCurrentOrganization,
+  getDealForCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 const ALLOWED_TYPES = new Set([
   "credit_bureau",
@@ -78,6 +83,25 @@ export async function GET(
 ) {
   const { dealId } = await params;
   const supabase = await supabaseServer();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
   const { data, error } = await supabase
     .from("deal_documents")
@@ -123,6 +147,25 @@ export async function POST(
 ) {
   const { dealId } = await params;
   const supabase = await supabaseServer();
+  const authorizedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!authorizedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (authorizedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: authorizedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!authorizedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
 
   let form: FormData;
   try {
@@ -168,11 +211,10 @@ export async function POST(
   }
 
   if (docType !== "credit_bureau") {
-    const { data: deal, error: dealErr } = await supabase
-      .from("deals")
-      .select("submit_status, submitted_at")
-      .eq("id", dealId)
-      .maybeSingle();
+    const { data: deal, error: dealErr } = await getDealForCurrentOrganization<{
+      submit_status: string | null;
+      submitted_at: string | null;
+    }>(supabase, dealId, "submit_status, submitted_at");
 
     if (dealErr) {
       return NextResponse.json(

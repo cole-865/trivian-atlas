@@ -1,5 +1,6 @@
 import IncomeStepClient from "./IncomeStepClient";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getDealForCurrentOrganization } from "@/lib/deals/organizationScope";
 
 export default async function IncomePage({
   params,
@@ -9,11 +10,10 @@ export default async function IncomePage({
   const { dealId } = await params;
   const supabase = await supabaseServer();
 
-  const { data: deal } = await supabase
-    .from("deals")
-    .select("id, household_income")
-    .eq("id", dealId)
-    .maybeSingle();
+  const { data: deal } = await getDealForCurrentOrganization<{
+    id: string;
+    household_income: boolean | null;
+  }>(supabase, dealId, "id, household_income");
 
   return (
     <IncomeStepClient

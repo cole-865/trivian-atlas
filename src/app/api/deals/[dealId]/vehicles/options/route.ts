@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+  getDealForCurrentOrganization,
+  NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 function round2(n: number) {
   return Number((n || 0).toFixed(2));
@@ -189,11 +193,26 @@ export async function GET(
   const offset = Math.max(Number(url.searchParams.get("offset") ?? 0), 0);
   const cashDownOverride = url.searchParams.get("cashDown");
 
-  const { data: deal, error: dealErr } = await supabase
-    .from("deals")
-    .select("id, cash_down, trade_value, trade_payoff, has_trade, household_income")
-    .eq("id", dealId)
-    .single();
+  const { data: deal, error: dealErr, organizationId } =
+    await getDealForCurrentOrganization<{
+      id: string;
+      cash_down: number | null;
+      trade_value: number | null;
+      trade_payoff: number | null;
+      has_trade: boolean | null;
+      household_income: boolean | null;
+    }>(
+      supabase,
+      dealId,
+      "id, cash_down, trade_value, trade_payoff, has_trade, household_income"
+    );
+
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
 
   if (dealErr) {
     return NextResponse.json(

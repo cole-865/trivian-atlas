@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+    getDealForCurrentOrganization,
+    NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 const REQUIRED_DOC_TYPES = [
     "proof_of_income",
@@ -29,11 +33,19 @@ export async function POST(
     const internalNotes = String(body.internal_notes ?? "").trim();
 
     // Load deal
-    const { data: deal, error: dealErr } = await supabase
-        .from("deals")
-        .select("id, workflow_status, current_step")
-        .eq("id", dealId)
-        .maybeSingle();
+    const { data: deal, error: dealErr, organizationId } =
+        await getDealForCurrentOrganization<{
+            id: string;
+            workflow_status: string | null;
+            current_step: number | null;
+        }>(supabase, dealId, "id, workflow_status, current_step");
+
+    if (!organizationId) {
+        return NextResponse.json(
+            { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+            { status: 400 }
+        );
+    }
 
     if (dealErr) {
         return NextResponse.json(
@@ -187,7 +199,8 @@ export async function POST(
             current_step: 6,
             updated_at: now,
         })
-        .eq("id", dealId);
+        .eq("id", dealId)
+        .eq("organization_id", organizationId);
 
     if (updateErr) {
         return NextResponse.json(

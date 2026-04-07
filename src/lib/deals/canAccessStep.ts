@@ -12,7 +12,7 @@ export type DealStep =
 
 type DealLike = {
   status?: string | null;
-  household_income?: number | null;
+  household_income?: boolean | number | null;
   selected_vehicle_id?: string | null;
   submit_status?: string | null;
   submitted_at?: string | null;

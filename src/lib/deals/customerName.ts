@@ -4,6 +4,11 @@ type PrimaryNameRow = {
   last_name: unknown;
 };
 
+type QueryResult<T> = PromiseLike<{
+  data: T | null;
+  error: unknown;
+}>;
+
 type SupabaseLike = {
   from: (table: string) => {
     select: (columns: string) => {
@@ -14,10 +19,7 @@ type SupabaseLike = {
         in: (
           column: string,
           values: string[]
-        ) => Promise<{
-          data: PrimaryNameRow[] | null;
-          error: unknown;
-        }>;
+        ) => QueryResult<PrimaryNameRow[]>;
       };
     };
   };
@@ -37,9 +39,10 @@ export function buildCustomerName(firstName: unknown, lastName: unknown) {
 }
 
 export async function loadPrimaryCustomerNames(
-  supabase: SupabaseLike,
+  supabase: unknown,
   dealIds: string[]
 ): Promise<Record<string, string>> {
+  const client = supabase as SupabaseLike;
   const uniqueDealIds = Array.from(
     new Set((dealIds ?? []).map((dealId) => String(dealId)).filter(Boolean))
   );
@@ -48,7 +51,7 @@ export async function loadPrimaryCustomerNames(
     return {};
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("deal_people")
     .select("deal_id, first_name, last_name")
     .eq("role", "primary")

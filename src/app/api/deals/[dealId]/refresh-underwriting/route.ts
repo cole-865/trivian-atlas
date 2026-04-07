@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import {
+    assertDealInCurrentOrganization,
+    NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -28,6 +32,25 @@ export async function POST(
 ) {
     const { dealId } = await params;
     const supabase = await supabaseServer();
+    const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+    if (!scopedDeal.organizationId) {
+        return NextResponse.json(
+            { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+            { status: 400 }
+        );
+    }
+
+    if (scopedDeal.error) {
+        return NextResponse.json(
+            { error: "Failed to load deal", details: scopedDeal.error.message },
+            { status: 500 }
+        );
+    }
+
+    if (!scopedDeal.data) {
+        return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+    }
 
     const { data: bureauSummary, error: bureauErr } = await supabase
         .from("bureau_summary")

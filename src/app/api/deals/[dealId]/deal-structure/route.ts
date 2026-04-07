@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
+import {
+    getDealForCurrentOrganization,
+    NO_CURRENT_ORGANIZATION_MESSAGE,
+} from "@/lib/deals/organizationScope";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -199,16 +203,32 @@ export async function GET(
         );
     }
 
-    const { data: deal, error: dealErr } = await supabase
-        .from("deals")
-        .select("id, cash_down, trade_payoff, has_trade")
-        .eq("id", dealId)
-        .single();
+    const { data: deal, error: dealErr, organizationId } =
+        await getDealForCurrentOrganization<{
+            id: string;
+            cash_down: number | null;
+            trade_payoff: number | null;
+            has_trade: boolean | null;
+        }>(supabase, dealId, "id, cash_down, trade_payoff, has_trade");
+
+    if (!organizationId) {
+        return NextResponse.json(
+            { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+            { status: 400 }
+        );
+    }
 
     if (dealErr) {
         return NextResponse.json(
             { error: "Failed to load deal", details: dealErr.message },
             { status: 500 }
+        );
+    }
+
+    if (!deal) {
+        return NextResponse.json(
+            { error: "Deal not found" },
+            { status: 404 }
         );
     }
 

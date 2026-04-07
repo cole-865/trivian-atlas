@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
 import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
+import { getCurrentOrganizationIdForDeals } from "@/lib/deals/organizationScope";
 
 type DashboardMetrics = {
   deals_created_30d: number;
@@ -132,10 +133,16 @@ async function getDashboardMetrics(): Promise<DashboardMetrics> {
 
 async function getRecentDeals() {
   const supabase = await createClient();
+  const organizationId = await getCurrentOrganizationIdForDeals(supabase);
+
+  if (!organizationId) {
+    return [];
+  }
 
   const { data, error } = await supabase
     .from("deals")
     .select("id, customer_name, status, updated_at, created_at")
+    .eq("organization_id", organizationId)
     .order("updated_at", { ascending: false })
     .limit(10);
 
