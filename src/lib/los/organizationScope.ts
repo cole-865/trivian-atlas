@@ -114,6 +114,7 @@ export async function loadInventoryVehicleForOrganization(
     client.from("trivian_inventory").select(columns),
     organizationId
   )
+    .eq("status", "IN INVENTORY")
     .eq("id", vehicleId)
     .maybeSingle();
 }
@@ -135,6 +136,7 @@ export async function loadInventoryForOrganization(
     client.from("trivian_inventory").select(columns),
     organizationId
   )
+    .eq("status", "IN INVENTORY")
     .order("date_in_stock", { ascending: true })
     .range(offset, offset + limit - 1);
 }

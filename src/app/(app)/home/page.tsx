@@ -129,7 +129,8 @@ async function getDashboardMetrics(
     const inventoryResponse = await supabase
       .from("trivian_inventory")
       .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId);
+      .eq("organization_id", organizationId)
+      .eq("status", "IN INVENTORY");
 
     if (inventoryResponse.error) {
       console.error("inventory metrics error:", inventoryResponse.error);
