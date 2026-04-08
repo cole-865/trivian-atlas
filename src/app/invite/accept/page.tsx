@@ -72,7 +72,9 @@ export default async function AcceptInvitePage({
     );
   }
 
-  const loginHref = `/login?email=${encodeURIComponent(validation.invite.email)}&redirect=${encodeURIComponent(`/invite/accept?token=${token}`)}`;
+  const redirectTarget = `/invite/accept?token=${token}`;
+  const loginHref = `/login?mode=login&email=${encodeURIComponent(validation.invite.email)}&redirect=${encodeURIComponent(redirectTarget)}`;
+  const signupHref = `/login?mode=signup&email=${encodeURIComponent(validation.invite.email)}&redirect=${encodeURIComponent(redirectTarget)}`;
 
   return (
     <div className="mx-auto max-w-2xl p-6">
@@ -117,7 +119,13 @@ export default async function AcceptInvitePage({
                 href={loginHref}
                 className="rounded-xl bg-black px-4 py-2 text-sm text-white hover:opacity-90"
               >
-                Continue to login
+                Log in
+              </Link>
+              <Link
+                href={signupHref}
+                className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Create account
               </Link>
             </div>
           </div>

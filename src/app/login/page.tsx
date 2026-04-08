@@ -15,10 +15,13 @@ export default function LoginPage() {
 
   const inviteEmail = searchParams.get("email") ?? "";
   const pageNotice = searchParams.get("notice");
+  const requestedMode = searchParams.get("mode");
 
   const [email, setEmail] = useState(inviteEmail);
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup">(
+    requestedMode === "signup" ? "signup" : "login"
+  );
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(pageNotice);
 
@@ -36,14 +39,25 @@ export default function LoginPage() {
         if (error) throw error;
         window.location.href = redirectTo;
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo:
+              typeof window !== "undefined"
+                ? `${window.location.origin}${redirectTo}`
+                : undefined,
+          },
         });
         if (error) throw error;
 
+        if (data.session) {
+          window.location.href = redirectTo;
+          return;
+        }
+
         setMsg(
-          "Account created. If email confirmation is enabled, confirm your email, then log in to continue."
+          "Account created. Check your email to confirm the account, then come back and log in to accept the invite."
         );
         setMode("login");
       }
@@ -63,6 +77,12 @@ export default function LoginPage() {
             ? "Log in to continue."
             : "Create an account with the email address that was invited."}
         </p>
+
+        {inviteEmail ? (
+          <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            Invite email: <span className="font-medium">{inviteEmail}</span>
+          </div>
+        ) : null}
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>

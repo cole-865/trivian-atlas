@@ -13,6 +13,7 @@ import {
   revokeOrganizationInviteAction,
   updateOrganizationMembershipAction,
 } from "@/lib/auth/organizationManagementActions";
+import { isEmailDeliveryConfigured } from "@/lib/email/mailer";
 import { getAuthContext, getCurrentUserRole } from "@/lib/auth/userRole";
 import { OrganizationSwitcher } from "@/components/OrganizationSwitcher";
 import {
@@ -102,6 +103,7 @@ export default async function SettingsPage({
     : true;
   const switchableOrganizations = await getSwitchableOrganizations(authContext);
   const adminAccessAvailable = hasAdminAccess();
+  const emailDeliveryConfigured = isEmailDeliveryConfigured();
   const showInactiveUsers = getSearchParam(resolvedSearchParams, "showInactive") === "1";
   const canManageUsers = canManageCurrentOrganization(authContext);
   const managementData =
@@ -119,6 +121,12 @@ export default async function SettingsPage({
         <FlashBanner
           tone="error"
           message="Account management requires SUPABASE_SERVICE_ROLE_KEY. User/invite administration is unavailable until it is configured."
+        />
+      ) : null}
+      {canManageUsers && adminAccessAvailable && !emailDeliveryConfigured ? (
+        <FlashBanner
+          tone="error"
+          message="Account invitations are being created, but email delivery is not configured yet. Set RESEND_API_KEY and EMAIL_FROM to send invite emails automatically."
         />
       ) : null}
 

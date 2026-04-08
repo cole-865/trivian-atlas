@@ -81,7 +81,7 @@ export async function createOrganizationAction(formData: FormData) {
     redirectWithMessage("/dev-tools", "error", "Missing platform user context.");
   }
 
-  await createOrganization({
+  const result = await createOrganization({
     ...parsed.data,
     createdByUserId: authContext.realUser.id,
   });
@@ -89,7 +89,13 @@ export async function createOrganizationAction(formData: FormData) {
   revalidatePath("/", "layout");
   revalidatePath("/settings");
   revalidatePath("/dev-tools");
-  redirectWithMessage("/dev-tools", "notice", "Account created and switched.");
+  redirectWithMessage(
+    "/dev-tools",
+    "notice",
+    result.initialInvite.emailDelivery.sent
+      ? "Account created, switched, and initial admin invite email sent."
+      : `Account created and switched. Initial admin invite was created, but email was not sent. Share this link: ${result.initialInvite.acceptUrl}${result.initialInvite.emailDelivery.reason ? ` (${result.initialInvite.emailDelivery.reason})` : ""}`
+  );
 }
 
 export async function setOrganizationActiveStateAction(formData: FormData) {
@@ -150,7 +156,13 @@ export async function createOrganizationInviteAction(formData: FormData) {
   });
 
   revalidatePath("/settings");
-  redirectWithMessage("/settings", "notice", `Invitation created. Share this link: ${invite.acceptUrl}`);
+  redirectWithMessage(
+    "/settings",
+    "notice",
+    invite.emailDelivery.sent
+      ? "Invitation email sent."
+      : `Invitation created, but email was not sent. Share this link: ${invite.acceptUrl}${invite.emailDelivery.reason ? ` (${invite.emailDelivery.reason})` : ""}`
+  );
 }
 
 export async function resendOrganizationInviteAction(formData: FormData) {
@@ -172,7 +184,13 @@ export async function resendOrganizationInviteAction(formData: FormData) {
     authContext.realUser.id
   );
   revalidatePath("/settings");
-  redirectWithMessage("/settings", "notice", `Invitation resent. Share this link: ${invite.acceptUrl}`);
+  redirectWithMessage(
+    "/settings",
+    "notice",
+    invite.emailDelivery.sent
+      ? "Invitation email resent."
+      : `Invitation refreshed, but email was not sent. Share this link: ${invite.acceptUrl}${invite.emailDelivery.reason ? ` (${invite.emailDelivery.reason})` : ""}`
+  );
 }
 
 export async function revokeOrganizationInviteAction(formData: FormData) {

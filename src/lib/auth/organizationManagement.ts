@@ -2,6 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import type { AuthContext } from "@/lib/auth/userRole";
 import type { UserRole } from "@/lib/auth/permissions";
 import { setStoredCurrentOrganizationId } from "@/lib/auth/organizationContext";
+import { sendOrganizationInviteEmail } from "@/lib/email/notifications";
 import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -118,12 +119,33 @@ type CreateOrganizationInput = {
   createdByUserId: string;
 };
 
+export type CreateOrganizationResult = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  };
+  initialInvite: OrganizationInviteResult;
+};
+
 type CreateInviteInput = {
   organizationId: string;
   email: string;
   fullName: string;
   role: OrgManagedRole;
   invitedByUserId: string;
+};
+
+export type OrganizationInviteResult = {
+  id: string;
+  acceptUrl: string;
+  emailDelivery: {
+    sent: boolean;
+    reason: string | null;
+  };
 };
 
 function normalizeEmail(email: string) {
@@ -440,7 +462,7 @@ async function findInviteByEmail(organizationId: string, email: string) {
   return (data as InvitationRow | null) ?? null;
 }
 
-async function upsertInvite(input: CreateInviteInput) {
+async function upsertInvite(input: CreateInviteInput): Promise<OrganizationInviteResult> {
   const admin = createAdminClient();
   const existingInvite = await findInviteByEmail(input.organizationId, input.email);
   const token = createInviteToken();
@@ -490,9 +512,26 @@ async function upsertInvite(input: CreateInviteInput) {
     throw new Error("Invitation save did not return a row.");
   }
 
-  return {
+  const inviteResult = {
     id: row.id,
     acceptUrl: buildInviteUrl(token),
+  };
+
+  const emailDelivery = await sendOrganizationInviteEmail({
+    organizationId: input.organizationId,
+    inviteeEmail: normalizeEmail(input.email),
+    inviteeFullName: input.fullName.trim() || null,
+    invitedByUserId: input.invitedByUserId,
+    role: input.role,
+    acceptUrl: inviteResult.acceptUrl,
+  }).catch((error) => ({
+    sent: false,
+    reason: error instanceof Error ? error.message : "Unable to send the invitation email.",
+  }));
+
+  return {
+    ...inviteResult,
+    emailDelivery,
   };
 }
 
@@ -700,7 +739,9 @@ async function cloneOrganizationDefaults(sourceOrganizationId: string, targetOrg
   }
 }
 
-export async function createOrganization(input: CreateOrganizationInput) {
+export async function createOrganization(
+  input: CreateOrganizationInput
+): Promise<CreateOrganizationResult> {
   const admin = createAdminClient();
   const normalizedSlug = slugifyOrganizationName(input.slug || input.name);
 
@@ -775,7 +816,7 @@ export async function createOrganization(input: CreateOrganizationInput) {
     throw new Error(`Failed to add platform dev organization membership: ${membershipError.message}`);
   }
 
-  await createOrganizationInvite({
+  const initialInvite = await createOrganizationInvite({
     organizationId: organization.id,
     email: input.initialAdminEmail,
     fullName: input.initialAdminName,
@@ -785,7 +826,10 @@ export async function createOrganization(input: CreateOrganizationInput) {
 
   await setStoredCurrentOrganizationId(organization.id);
 
-  return organization;
+  return {
+    organization,
+    initialInvite,
+  };
 }
 
 export async function setOrganizationActiveState(args: {

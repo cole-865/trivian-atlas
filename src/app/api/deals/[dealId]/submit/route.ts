@@ -7,6 +7,7 @@ import {
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { loadInventoryVehicleForOrganization } from "@/lib/los/organizationScope";
+import { sendDealApprovalRequestEmail } from "@/lib/email/notifications";
 
 const REQUIRED_DOC_TYPES = [
     "proof_of_income",
@@ -38,9 +39,10 @@ export async function POST(
     const { data: deal, error: dealErr, organizationId } =
         await getDealForCurrentOrganization<{
             id: string;
+            customer_name: string | null;
             workflow_status: string | null;
             current_step: number | null;
-        }>(supabase, dealId, "id, workflow_status, current_step");
+        }>(supabase, dealId, "id, customer_name, workflow_status, current_step");
 
     if (!organizationId) {
         return NextResponse.json(
@@ -215,6 +217,21 @@ export async function POST(
             { error: "Failed to submit deal", details: updateErr.message },
             { status: 500 }
         );
+    }
+
+    try {
+        const emailResult = await sendDealApprovalRequestEmail({
+            organizationId,
+            dealId,
+            customerName: deal.customer_name,
+            submittedByUserId: user.id,
+        });
+
+        if (!emailResult.sent && emailResult.reason) {
+            console.warn("deal approval email not sent:", emailResult.reason);
+        }
+    } catch (error) {
+        console.error("deal approval email failed:", error);
     }
 
     return NextResponse.json({

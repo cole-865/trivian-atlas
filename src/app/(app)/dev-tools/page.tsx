@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth/organizationManagementActions";
 import { getAuthContext, type UserProfile } from "@/lib/auth/userRole";
 import { CreateOrganizationForm } from "@/components/CreateOrganizationForm";
+import { isEmailDeliveryConfigured } from "@/lib/email/mailer";
 
 type OrganizationUserRow = {
   user_id: string;
@@ -86,6 +87,7 @@ export default async function DevToolsPage({
   const currentOrganizationId = authContext.currentOrganizationId;
   const switchableOrganizations = await getSwitchableOrganizations(authContext);
   const adminAccessAvailable = hasAdminAccess();
+  const emailDeliveryConfigured = isEmailDeliveryConfigured();
 
   if (!currentOrganizationId) {
     return (
@@ -96,6 +98,11 @@ export default async function DevToolsPage({
           <FlashBanner
             tone="error"
             message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation and cross-account admin tools are unavailable until it is configured."
+          />
+        ) : !emailDeliveryConfigured ? (
+          <FlashBanner
+            tone="error"
+            message="Account creation still works, but initial admin invites will not send until RESEND_API_KEY and EMAIL_FROM are configured."
           />
         ) : null}
 
@@ -186,6 +193,11 @@ export default async function DevToolsPage({
           <FlashBanner
             tone="error"
             message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation still needs that key even though the page can render."
+          />
+        ) : !emailDeliveryConfigured ? (
+          <FlashBanner
+            tone="error"
+            message="Account creation still works, but initial admin invites will not send until RESEND_API_KEY and EMAIL_FROM are configured."
           />
         ) : null}
 
