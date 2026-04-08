@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
 import { stopImpersonationAction } from "@/lib/auth/impersonationActions";
 import { getAuthContext, type AuthContext } from "@/lib/auth/userRole";
+import { getSwitchableOrganizations } from "@/lib/auth/organizationManagement";
+import { OrganizationSwitcher } from "@/components/OrganizationSwitcher";
 
 function NavLink({ href, label }: { href: string; label: string }) {
   return (
@@ -59,7 +61,7 @@ function UserPill({ authContext }: { authContext: AuthContext }) {
         Settings
       </Link>
 
-      <form action="/logout" method="post">
+      <form action="/api/logout" method="post">
         <button
           type="submit"
           className="rounded-xl bg-black px-3 py-2 text-sm text-white hover:opacity-90"
@@ -78,6 +80,7 @@ export default async function AppLayout({
 }) {
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
+  const switchableOrganizations = await getSwitchableOrganizations(authContext);
   const showImpersonationBanner =
     authContext.isImpersonating &&
     authContext.impersonatedProfile &&
@@ -145,7 +148,16 @@ export default async function AppLayout({
             <div className="w-full px-6 py-4">
               <div className="flex items-center justify-between gap-3">
                 <DealSearch />
-                <UserPill authContext={authContext} />
+                <div className="flex items-center gap-3">
+                  {switchableOrganizations.length ? (
+                    <OrganizationSwitcher
+                      organizations={switchableOrganizations}
+                      currentOrganizationId={authContext.currentOrganizationId}
+                      compact
+                    />
+                  ) : null}
+                  <UserPill authContext={authContext} />
+                </div>
               </div>
             </div>
           </div>

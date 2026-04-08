@@ -1,7 +1,20 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-import { stopImpersonationAction, startImpersonationAction } from "@/lib/auth/impersonationActions";
+import { hasAdminAccess } from "@/lib/supabase/admin";
+import {
+  stopImpersonationAction,
+  startImpersonationAction,
+} from "@/lib/auth/impersonationActions";
+import {
+  canCreateOrganizations,
+  getSwitchableOrganizations,
+} from "@/lib/auth/organizationManagement";
+import {
+  createOrganizationAction,
+  setOrganizationActiveStateAction,
+} from "@/lib/auth/organizationManagementActions";
 import { getAuthContext, type UserProfile } from "@/lib/auth/userRole";
+import { CreateOrganizationForm } from "@/components/CreateOrganizationForm";
 
 type OrganizationUserRow = {
   user_id: string;
@@ -20,6 +33,33 @@ type StaffProfileListRow = StaffProfileRow & {
   role: UserProfile["role"];
 };
 
+function getSearchParam(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function FlashBanner({
+  tone,
+  message,
+}: {
+  tone: "notice" | "error";
+  message: string;
+}) {
+  const className =
+    tone === "error"
+      ? "border-red-200 bg-red-50 text-red-900"
+      : "border-emerald-200 bg-emerald-50 text-emerald-900";
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 text-sm ${className}`}>
+      {message}
+    </div>
+  );
+}
+
 function displayProfileName(profile: {
   fullName?: string | null;
   email?: string | null;
@@ -28,7 +68,12 @@ function displayProfileName(profile: {
   return profile.fullName || profile.email || profile.role || "Unknown user";
 }
 
-export default async function DevToolsPage() {
+export default async function DevToolsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedSearchParams = await searchParams;
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
 
@@ -36,14 +81,44 @@ export default async function DevToolsPage() {
     redirect("/settings");
   }
 
+  const notice = getSearchParam(resolvedSearchParams, "notice");
+  const errorMessage = getSearchParam(resolvedSearchParams, "error");
   const currentOrganizationId = authContext.currentOrganizationId;
+  const switchableOrganizations = await getSwitchableOrganizations(authContext);
+  const adminAccessAvailable = hasAdminAccess();
 
   if (!currentOrganizationId) {
     return (
-      <div className="rounded-2xl border bg-white p-6 shadow-sm">
+      <div className="grid gap-6">
+        {notice ? <FlashBanner tone="notice" message={notice} /> : null}
+        {errorMessage ? <FlashBanner tone="error" message={errorMessage} /> : null}
+        {!adminAccessAvailable ? (
+          <FlashBanner
+            tone="error"
+            message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation and cross-account admin tools are unavailable until it is configured."
+          />
+        ) : null}
+
+        <div className="rounded-2xl border bg-white p-6 shadow-sm">
         <div className="text-xl font-semibold">Dev Tools</div>
         <div className="mt-2 text-sm text-muted-foreground">
-          Select or seed an organization before using organization-scoped impersonation tools.
+            Select or create an account before using account-scoped dev tools.
+        </div>
+
+          {canCreateOrganizations(authContext) && adminAccessAvailable ? (
+            <div className="mt-6 rounded-2xl border border-gray-200 p-4">
+              <div className="text-base font-semibold">Create account</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                New dealership accounts clone defaults from 865-autos and seed an initial admin invite.
+              </div>
+
+              <CreateOrganizationForm action={createOrganizationAction} />
+
+              <div className="mt-4 text-xs text-muted-foreground">
+                Platform dev can switch into any account. {switchableOrganizations.length} accounts are visible in the top-right switcher.
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -98,18 +173,74 @@ export default async function DevToolsPage() {
 
   return (
     <div className="grid gap-6">
+      {notice ? <FlashBanner tone="notice" message={notice} /> : null}
+      {errorMessage ? <FlashBanner tone="error" message={errorMessage} /> : null}
+
       <div className="rounded-2xl border bg-white p-6 shadow-sm">
         <div className="text-xl font-semibold">Dev Tools</div>
         <div className="mt-2 text-sm text-muted-foreground">
-          Internal testing tools for development and workflow verification.
+          Platform-only account creation and impersonation tools.
         </div>
 
+        {!adminAccessAvailable ? (
+          <FlashBanner
+            tone="error"
+            message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation still needs that key even though the page can render."
+          />
+        ) : null}
+
+        {canCreateOrganizations(authContext) && adminAccessAvailable ? (
+          <div className="mt-6 rounded-2xl border border-gray-200 p-4">
+            <div className="text-base font-semibold">Create account</div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Seed a dealership account from 865-autos defaults and issue the first admin invite.
+            </div>
+
+            <CreateOrganizationForm action={createOrganizationAction} />
+          </div>
+        ) : null}
+
         <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
-          Current organization:{" "}
+          Current account:{" "}
           <span className="font-medium">
-            {authContext.currentOrganization?.name ?? "Unknown organization"}
+            {authContext.currentOrganization?.name ?? "Unknown account"}
           </span>
         </div>
+
+        {canCreateOrganizations(authContext) && adminAccessAvailable ? (
+          <div className="mt-6 rounded-2xl border border-gray-200 bg-white">
+            <div className="border-b px-4 py-3 text-sm font-medium">Accounts</div>
+            <div className="divide-y">
+              {switchableOrganizations.map((account) => (
+                <div
+                  key={account.id}
+                  className="flex items-center justify-between gap-3 px-4 py-4 text-sm"
+                >
+                  <div>
+                    <div className="font-medium">{account.name}</div>
+                    <div className="text-muted-foreground">
+                      {account.slug} {account.isActive ? "" : "(inactive)"}
+                    </div>
+                  </div>
+                  <form action={setOrganizationActiveStateAction} className="flex items-center gap-2">
+                    <input type="hidden" name="organization_id" value={account.id} />
+                    <input
+                      type="hidden"
+                      name="is_active"
+                      value={account.isActive ? "false" : "true"}
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
+                    >
+                      {account.isActive ? "Deactivate account" : "Reactivate account"}
+                    </button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <div className="text-base font-semibold text-amber-950">User impersonation</div>
@@ -161,14 +292,14 @@ export default async function DevToolsPage() {
             </div>
 
             <div className="text-xs text-amber-900/70">
-              Only active users in the current organization appear here. Non-dev users cannot start
+              Only active users in the current account appear here. Non-dev users cannot start
               or stop impersonation.
             </div>
           </form>
 
           <div className="mt-4 rounded-2xl border border-gray-200 bg-white">
             <div className="border-b px-4 py-3 text-sm font-medium">
-              Active staff users in this organization
+              Active staff users in this account
             </div>
             <div className="divide-y">
               {activeStaff.map((staff) => (

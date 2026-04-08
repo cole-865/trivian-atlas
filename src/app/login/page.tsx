@@ -1,16 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const supabase = supabaseBrowser();
+  const searchParams = useSearchParams();
 
-  const [email, setEmail] = useState("");
+  const redirectTo = useMemo(() => {
+    const requested = searchParams.get("redirect");
+    return requested && requested.startsWith("/") ? requested : "/";
+  }, [searchParams]);
+
+  const inviteEmail = searchParams.get("email") ?? "";
+  const pageNotice = searchParams.get("notice");
+
+  const [email, setEmail] = useState(inviteEmail);
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(pageNotice);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,7 +34,7 @@ export default function LoginPage() {
           password,
         });
         if (error) throw error;
-        window.location.href = "/";
+        window.location.href = redirectTo;
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -32,11 +42,13 @@ export default function LoginPage() {
         });
         if (error) throw error;
 
-        setMsg("Account created. If email confirmation is enabled, check your inbox. Then log in.");
+        setMsg(
+          "Account created. If email confirmation is enabled, confirm your email, then log in to continue."
+        );
         setMode("login");
       }
-    } catch (err: any) {
-      setMsg(err.message ?? "Something went wrong");
+    } catch (err: unknown) {
+      setMsg(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -47,7 +59,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border p-6 shadow-sm">
         <h1 className="text-2xl font-semibold mb-2">Trivian Atlas</h1>
         <p className="text-sm text-gray-600 mb-6">
-          {mode === "login" ? "Log in to continue." : "Create an account."}
+          {mode === "login"
+            ? "Log in to continue."
+            : "Create an account with the email address that was invited."}
         </p>
 
         <form onSubmit={onSubmit} className="space-y-4">
@@ -74,13 +88,17 @@ export default function LoginPage() {
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                    e.currentTarget.form?.requestSubmit();
+                  e.currentTarget.form?.requestSubmit();
                 }
               }}
             />
           </div>
 
-          {msg && <div className="text-sm text-red-600">{msg}</div>}
+          {msg ? (
+            <div className={pageNotice ? "text-sm text-emerald-700" : "text-sm text-red-600"}>
+              {msg}
+            </div>
+          ) : null}
 
           <button
             className="w-full rounded-md bg-black text-white py-2 disabled:opacity-50"

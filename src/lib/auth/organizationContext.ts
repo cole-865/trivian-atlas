@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { UserRole } from "@/lib/auth/permissions";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const CURRENT_ORGANIZATION_COOKIE_NAME = "atlas_current_organization_id";
 
@@ -31,7 +32,25 @@ type SupabaseLike = {
   auth: {
     getUser: () => Promise<AuthUserResult>;
   };
-  from: (table: string) => any;
+  from: (table: string) => {
+    select: (columns: string) => QueryBuilder;
+  };
+};
+
+type QueryBuilder = {
+  eq: (column: string, value: unknown) => QueryBuilder;
+  in: (column: string, values: string[]) => QueryBuilder;
+  order: (
+    column: string,
+    options?: { ascending: boolean }
+  ) => Promise<{
+        data: unknown[] | null;
+        error: { message: string } | null;
+      }>;
+  maybeSingle: () => Promise<{
+    data: { role?: string; is_active?: boolean } | null;
+    error: { message: string } | null;
+  }>;
 };
 
 export type Organization = {
@@ -87,6 +106,52 @@ async function getAuthenticatedUser(
   }
 
   return user;
+}
+
+function isUserRole(value: unknown): value is UserRole {
+  return value === "sales" || value === "management" || value === "admin" || value === "dev";
+}
+
+async function getPlatformRoleForUser(
+  supabase: SupabaseLike,
+  userId: string
+): Promise<UserRole | null> {
+  const profileResponse = await supabase
+    .from("user_profiles")
+    .select("role, is_active")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileResponse.error) {
+    throw new Error(`Failed to load user profile role: ${profileResponse.error.message}`);
+  }
+
+  const profileRole = profileResponse.data?.role;
+  const profileActive = profileResponse.data?.is_active;
+
+  if (profileActive && isUserRole(profileRole)) {
+    return profileRole;
+  }
+
+  const user = await getAuthenticatedUser(supabase);
+  const metadataRole = user?.app_metadata?.role ?? user?.user_metadata?.role;
+
+  return isUserRole(metadataRole) ? metadataRole : null;
+}
+
+async function getOrganizationByIdForContext(organizationId: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("organizations")
+    .select("id, name, slug, is_active, created_at, updated_at")
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load organization: ${error.message}`);
+  }
+
+  return (data as OrganizationRow | null) ?? null;
 }
 
 export async function getStoredCurrentOrganizationId() {
@@ -227,7 +292,26 @@ export async function getCurrentOrganization(
   }
 ): Promise<Organization | null> {
   const membership = await getCurrentOrganizationMembership(supabase, options);
-  return membership?.organization ?? null;
+  if (membership?.organization) {
+    return membership.organization;
+  }
+
+  const client = supabase as SupabaseLike;
+  const userId = options?.userId ?? (await getAuthenticatedUser(client))?.id ?? null;
+  const preferredOrganizationId =
+    options?.preferredOrganizationId ?? (await getStoredCurrentOrganizationId());
+
+  if (!userId || !preferredOrganizationId) {
+    return null;
+  }
+
+  const platformRole = await getPlatformRoleForUser(client, userId);
+  if (platformRole !== "dev") {
+    return null;
+  }
+
+  const organizationRow = await getOrganizationByIdForContext(preferredOrganizationId);
+  return organizationRow ? mapOrganization(organizationRow) : null;
 }
 
 export async function getCurrentOrganizationId(
@@ -238,7 +322,12 @@ export async function getCurrentOrganizationId(
   }
 ): Promise<string | null> {
   const membership = await getCurrentOrganizationMembership(supabase, options);
-  return membership?.organizationId ?? null;
+  if (membership?.organizationId) {
+    return membership.organizationId;
+  }
+
+  const organization = await getCurrentOrganization(supabase, options);
+  return organization?.id ?? null;
 }
 
 export async function getCurrentOrganizationRole(

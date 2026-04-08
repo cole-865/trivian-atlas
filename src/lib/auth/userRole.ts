@@ -5,7 +5,6 @@ import {
   getCurrentOrganization,
   getCurrentOrganizationId,
   getCurrentOrganizationMembership,
-  getCurrentOrganizationRole,
   getOrganizationMembershipsForUser,
   type Organization,
   type OrganizationMembership,
@@ -15,7 +14,6 @@ export {
   getCurrentOrganization,
   getCurrentOrganizationId,
   getCurrentOrganizationMembership,
-  getCurrentOrganizationRole,
 } from "@/lib/auth/organizationContext";
 
 const USER_ROLES = ["sales", "management", "admin", "dev"] as const;
@@ -166,13 +164,6 @@ export async function getRealUserRole(
   }
 
   const profile = await getUserProfileById(client, user.id);
-  const organizationRole = await getCurrentOrganizationRole(client, {
-    userId: user.id,
-  });
-
-  if (organizationRole) {
-    return organizationRole;
-  }
 
   if (profile) {
     return profile.isActive ? profile.role : null;
@@ -220,7 +211,6 @@ export async function getAuthContext(
   });
   const realOrganizationRole = realOrganizationMembership?.role ?? null;
   const realRole =
-    realOrganizationRole ??
     (realProfile ? (realProfile.isActive ? realProfile.role : null) : null) ??
     getRoleFromMetadata(realUser);
   const currentOrganization =
@@ -320,7 +310,8 @@ export async function getAuthContext(
   const effectiveOrganizationRole = effectiveOrganizationMembership?.role ?? null;
   const effectiveRole =
     effectiveOrganizationRole ??
-    (impersonatedProfile.isActive ? impersonatedProfile.role : null);
+    (impersonatedProfile.isActive ? impersonatedProfile.role : null) ??
+    realRole;
 
   return {
     realUser,
