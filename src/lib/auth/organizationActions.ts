@@ -6,6 +6,7 @@ import {
   clearStoredCurrentOrganizationId,
   setStoredCurrentOrganizationId,
 } from "@/lib/auth/organizationContext";
+import { getOrganizationSwitchDecision } from "@/lib/auth/accessRules";
 import { getAuthContext } from "@/lib/auth/userRole";
 import { getSwitchableOrganizations } from "@/lib/auth/organizationManagement";
 
@@ -15,7 +16,12 @@ export async function setCurrentOrganizationAction(formData: FormData) {
   const authContext = await getAuthContext(supabase);
   const switchableOrganizations = await getSwitchableOrganizations(authContext);
 
-  if (!organizationId) {
+  const decision = getOrganizationSwitchDecision({
+    requestedOrganizationId: organizationId,
+    switchableOrganizationIds: switchableOrganizations.map((organization) => organization.id),
+  });
+
+  if (decision === "clear") {
     await clearStoredCurrentOrganizationId();
     revalidatePath("/", "layout");
     revalidatePath("/settings");
@@ -23,11 +29,7 @@ export async function setCurrentOrganizationAction(formData: FormData) {
     return;
   }
 
-  const allowedOrganization = switchableOrganizations.find(
-    (organization) => organization.id === organizationId
-  );
-
-  if (!allowedOrganization) {
+  if (decision === "reject") {
     return;
   }
 

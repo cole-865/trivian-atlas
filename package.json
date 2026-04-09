@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.tests.json && node --test --test-concurrency=1 --experimental-test-isolation=none .test-dist/tests/*.test.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

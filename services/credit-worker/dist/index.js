@@ -141,7 +141,8 @@ async function startRealtimeListener() {
         });
         // Always attempt to claim on INSERT.
         // If status != queued, claimJob() will no-op safely.
-        handleJobAttempt(job?.id);
+        if (job?.id)
+            handleJobAttempt(job.id);
     })
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "credit_report_jobs" }, (payload) => {
         const job = payload.new;
@@ -153,8 +154,8 @@ async function startRealtimeListener() {
         });
         // Only attempt claim when it becomes queued (reduces chatter)
         const becameQueued = job?.status === "queued" && old?.status !== "queued";
-        if (becameQueued)
-            handleJobAttempt(job?.id);
+        if (becameQueued && job?.id)
+            handleJobAttempt(job.id);
     })
         .subscribe((status) => {
         console.log("[credit-worker] realtime subscription status:", status);

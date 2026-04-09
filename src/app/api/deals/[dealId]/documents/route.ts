@@ -6,6 +6,7 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { purgeCreditReportArtifacts } from "@/lib/deals/creditReportArtifacts";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
 const ALLOWED_TYPES = new Set([
@@ -321,11 +322,10 @@ export async function POST(
   }
 
   if (docType === "credit_bureau") {
-    await supabase
-      .from("credit_reports")
-      .delete()
-      .eq("organization_id", authorizedDeal.organizationId)
-      .eq("deal_id", dealId);
+    await purgeCreditReportArtifacts(supabase, {
+      organizationId: authorizedDeal.organizationId,
+      dealId,
+    });
 
     await supabase
       .from("credit_report_jobs")
@@ -346,7 +346,11 @@ export async function POST(
 
     if (jobErr) {
       await supabase.storage.from(bucket).remove([storagePath]);
-      await supabase.from("deal_documents").delete().eq("id", docRow.id);
+      await supabase
+        .from("deal_documents")
+        .delete()
+        .eq("organization_id", authorizedDeal.organizationId)
+        .eq("id", docRow.id);
 
       return NextResponse.json(
         { error: "Failed to queue processing job", details: jobErr.message },

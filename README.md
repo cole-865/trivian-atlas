@@ -1,36 +1,115 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Trivian Atlas
 
-## Getting Started
+Trivian Atlas is a multi-tenant loan origination and underwriting system for independent dealerships.
 
-First, run the development server:
+## Stack
+
+- Next.js App Router
+- TypeScript
+- Supabase Auth
+- Supabase Postgres
+- Supabase RLS
+- Sidecar credit worker for bureau parsing and underwriting staging
+
+## Workspaces
+
+- Web app: `C:\dev\trivian-atlas`
+- Credit worker: `C:\dev\trivian-atlas\services\credit-worker`
+
+## Environment
+
+### Web app
+
+Required for normal app startup:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Required for organization management, invites, impersonation support, and platform admin flows:
+
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Optional but recommended for invite delivery:
+
+- `NEXT_PUBLIC_SITE_URL`
+- `RESEND_API_KEY`
+- `EMAIL_FROM`
+
+### Credit worker
+
+Expected in `services/credit-worker/.env`:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `REDACTED_BUCKET` (optional, defaults to `credit_reports_redacted`)
+
+## Local Development
+
+### Install dependencies
+
+```bash
+npm install
+cd services/credit-worker
+npm install
+```
+
+### Start the web app
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app runs at `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Start the credit worker
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cd services/credit-worker
+npm run build
+npm start
+```
 
-## Learn More
+The worker listens for `credit_report_jobs` changes and processes bureau uploads into redacted artifacts, parsed bureau tables, and `underwriting_results`.
 
-To learn more about Next.js, take a look at the following resources:
+## Project Checks
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Run these before finishing implementation work:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run lint
+npm run typecheck
+npm test
+```
 
-## Deploy on Vercel
+Additional app verification:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+If `npm run build` fails with `EPERM` while removing files in `.next`, stop any running `node` or `next dev` process first and retry. This repo currently hits that on Windows when build artifacts are locked.
+
+## Multi-Tenant Rules
+
+- All business data must remain organization-scoped.
+- Current organization is resolved through the existing org context and cookie helpers.
+- Platform dev is a global role, not a normal org-managed role.
+- Org-managed UI roles must stay limited to `sales`, `management`, and `admin`.
+- Removing a user from an organization means deactivating membership, not deleting the auth user.
+- Invitation tokens must be hashed at rest and expire after 7 days.
+
+## Primary Flows In Repo
+
+- Organization switcher in the global app chrome
+- Platform dev organization creation seeded from `865-autos`
+- Org-scoped user and invite management in Settings
+- Invite acceptance flow at `/invite/accept`
+- Platform-only impersonation tools
+- Deal creation, editing, document upload, bureau processing, and underwriting refresh
+
+## Docs
+
+- Architecture: `docs/atlas-architecture.md`
+- Tenant audit: `docs/tenant-boundary-audit.md`
+- Supabase migration guidance: `docs/supabase/multi-tenant-next-targets.md`
+- Org management SQL: `docs/supabase/organization-management.sql`

@@ -1,12 +1,18 @@
 import { randomBytes, createHash } from "node:crypto";
 import type { AuthContext } from "@/lib/auth/userRole";
 import type { UserRole } from "@/lib/auth/permissions";
+import {
+  ORG_MANAGED_ROLES,
+  canCreateOrganizationsForRole,
+  canManageCurrentOrganizationForRole,
+  getInviteAcceptanceBlockReason,
+  isPlatformDevRole,
+} from "@/lib/auth/accessRules";
 import { setStoredCurrentOrganizationId } from "@/lib/auth/organizationContext";
 import { sendOrganizationInviteEmail } from "@/lib/email/notifications";
 import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database.types";
-
-export const ORG_MANAGED_ROLES = ["sales", "management", "admin"] as const;
+export { ORG_MANAGED_ROLES } from "@/lib/auth/accessRules";
 
 export type OrgManagedRole = (typeof ORG_MANAGED_ROLES)[number];
 export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
@@ -300,17 +306,19 @@ export function slugifyOrganizationName(name: string) {
 }
 
 export function isPlatformDev(authContext: AuthContext) {
-  return authContext.realRole === "dev";
+  return isPlatformDevRole(authContext.realRole);
 }
 
 export function canManageCurrentOrganization(authContext: AuthContext) {
-  return !!authContext.currentOrganizationId && (
-    isPlatformDev(authContext) || authContext.effectiveOrganizationRole === "admin"
-  );
+  return canManageCurrentOrganizationForRole({
+    currentOrganizationId: authContext.currentOrganizationId,
+    realRole: authContext.realRole,
+    effectiveOrganizationRole: authContext.effectiveOrganizationRole,
+  });
 }
 
 export function canCreateOrganizations(authContext: AuthContext) {
-  return isPlatformDev(authContext);
+  return canCreateOrganizationsForRole(authContext.realRole);
 }
 
 export async function getSwitchableOrganizations(
@@ -925,23 +933,16 @@ export async function acceptOrganizationInvite(args: {
     throw new Error("Invitation not found.");
   }
 
-  if (validation.invite.status === "revoked") {
-    throw new Error("This invitation has been revoked.");
-  }
-
-  if (validation.invite.status === "accepted") {
-    throw new Error("This invitation has already been accepted.");
-  }
-
-  if (validation.isExpired) {
-    throw new Error("This invitation has expired.");
-  }
-
   const authUser = await getAuthUserById(args.userId);
-  const authEmail = normalizeEmail(authUser?.email ?? "");
+  const blockReason = getInviteAcceptanceBlockReason({
+    status: validation.invite.status,
+    isExpired: validation.isExpired,
+    inviteEmail: validation.invite.email,
+    authenticatedEmail: authUser?.email ?? null,
+  });
 
-  if (!authEmail || authEmail !== normalizeEmail(validation.invite.email)) {
-    throw new Error("You must sign in with the invited email address to accept this invitation.");
+  if (blockReason) {
+    throw new Error(blockReason);
   }
 
   const admin = createAdminClient();

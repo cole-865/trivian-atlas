@@ -6,8 +6,8 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { purgeCreditReportArtifacts } from "@/lib/deals/creditReportArtifacts";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
-import { scopeDealChildQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
 
 export async function DELETE(
   _req: Request,
@@ -109,31 +109,11 @@ export async function DELETE(
 
   // If deleting a bureau doc, also delete the long-term record + jobs (+ redacted file if present)
   if (doc.doc_type === "credit_bureau") {
-    // remove redacted pdf if your worker created one
-    const { data: reportRow } = await scopeDealChildQueryToOrganization(
-      supabase
-        .from("credit_reports")
-        .select("redacted_bucket, redacted_path"),
-      scopedDeal.organizationId,
-      dealId
-    ).maybeSingle();
-
-    if (reportRow?.redacted_bucket && reportRow?.redacted_path) {
-      await supabase.storage
-        .from(reportRow.redacted_bucket)
-        .remove([reportRow.redacted_path]);
-    }
-
-    await supabase
-      .from("credit_reports")
-      .delete()
-      .eq("organization_id", scopedDeal.organizationId)
-      .eq("deal_id", dealId);
-    await supabase
-      .from("credit_report_jobs")
-      .delete()
-      .eq("organization_id", scopedDeal.organizationId)
-      .eq("deal_id", dealId);
+    await purgeCreditReportArtifacts(supabase, {
+      organizationId: scopedDeal.organizationId,
+      dealId,
+      deleteJobs: true,
+    });
   }
 
   // remove from storage (raw or app doc)

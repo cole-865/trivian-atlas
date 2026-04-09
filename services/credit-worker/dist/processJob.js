@@ -16,9 +16,10 @@
 //   - bureau_messages
 import pdf from "pdf-parse";
 import { supabase } from "./supabase.js";
+import { buildRedactedPath, dedupeExtractedReportText, detectBureauFromText, resolveJobOrganization, } from "./jobRules.js";
 import { scrubPII } from "./scrub.js";
 import { textToPdfBuffer } from "./textToPdf.js";
-import { parseEquifaxReport } from "./parseEquifax.js";
+import { parseEquifaxReport, } from "./parseEquifax.js";
 import { underwriteDeal } from "./underwriteDeal.js";
 const REDACTED_BUCKET = process.env.REDACTED_BUCKET || "credit_reports_redacted";
 async function getDealOrganizationId(dealId) {
@@ -34,39 +35,6 @@ async function getDealOrganizationId(dealId) {
         throw new Error(`Deal ${dealId} is missing organization_id`);
     }
     return organizationId;
-}
-function dedupeExtractedReportText(text) {
-    const t = (text || "").trim();
-    if (!t)
-        return t;
-    const eqHeader = "Equifax-Style Report Generated";
-    const first = t.indexOf(eqHeader);
-    if (first !== -1) {
-        const second = t.indexOf(eqHeader, first + eqHeader.length);
-        if (second !== -1)
-            return t.slice(0, second).trim();
-    }
-    const mid = Math.floor(t.length / 2);
-    const a = t.slice(0, mid).trim();
-    const b = t.slice(mid).trim();
-    if (a.length > 2000) {
-        const probe = a.slice(0, 2000);
-        if (b.startsWith(probe))
-            return a;
-    }
-    return t;
-}
-function buildRedactedPath(rawPath, jobId) {
-    return rawPath.replace(/\.pdf$/i, "") + `.${jobId}.redacted.pdf`;
-}
-function detectBureauFromText(text) {
-    if (/Equifax-Style Report Generated from Equifax v6 Data/i.test(text)) {
-        return "equifax";
-    }
-    if (/FICO Auto v\d+/i.test(text) && /IDENTITY SCAN ALERT/i.test(text)) {
-        return "equifax";
-    }
-    return "unknown";
 }
 async function updateJobStatus(jobId, status, extras = {}) {
     const payload = {
@@ -286,8 +254,14 @@ export async function processJob(job) {
         throw new Error(`Job ${jobId} missing deal_id`);
     if (!rawBucket || !rawPath)
         throw new Error(`Job ${jobId} missing raw_bucket/raw_path`);
-    const organizationId = jobOrganizationId ?? (await getDealOrganizationId(dealId));
-    if (!jobOrganizationId) {
+    const resolvedDealOrganizationId = jobOrganizationId
+        ? jobOrganizationId
+        : await getDealOrganizationId(dealId);
+    const { organizationId, shouldStampJob } = resolveJobOrganization({
+        jobOrganizationId,
+        dealOrganizationId: resolvedDealOrganizationId,
+    });
+    if (shouldStampJob) {
         const { error: stampJobError } = await supabase
             .from("credit_report_jobs")
             .update({ organization_id: organizationId })

@@ -6,6 +6,7 @@ import {
   clearImpersonatedUserId,
   setImpersonatedUserId,
 } from "@/lib/auth/impersonation";
+import { getImpersonationDecision } from "@/lib/auth/accessRules";
 import { getCurrentOrganizationMembership } from "@/lib/auth/organizationContext";
 import { getAuthContext } from "@/lib/auth/userRole";
 
@@ -49,7 +50,7 @@ export async function startImpersonationAction(formData: FormData) {
   }
 
   const target = data as StaffProfileRow | null;
-  if (!target?.id || !target.is_active) {
+  if (!target?.id) {
     return;
   }
 
@@ -58,10 +59,23 @@ export async function startImpersonationAction(formData: FormData) {
     preferredOrganizationId: authContext.currentOrganizationId,
   });
 
-  if (
-    !targetMembership ||
-    targetMembership.organizationId !== authContext.currentOrganizationId
-  ) {
+  const decision = getImpersonationDecision({
+    realRole: authContext.realRole,
+    realUserId: authContext.realUser.id,
+    currentOrganizationId: authContext.currentOrganizationId,
+    targetUserId: target.id,
+    targetUserActive: target.is_active,
+    targetMembershipOrganizationId: targetMembership?.organizationId ?? null,
+  });
+
+  if (decision === "reject") {
+    return;
+  }
+
+  if (decision === "clear") {
+    await clearImpersonatedUserId();
+    revalidatePath("/", "layout");
+    revalidatePath("/settings");
     return;
   }
 
