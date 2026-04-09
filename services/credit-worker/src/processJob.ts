@@ -15,319 +15,74 @@
 //   - bureau_public_records
 //   - bureau_messages
 
-import pdf from "pdf-parse";
-import { supabase } from "./supabase.js";
+import {
+  type CreditReportJobRow,
+  type CreditWorkerGateway,
+  type ParsedBureauReport,
+} from "./gateway.js";
 import {
   buildRedactedPath,
   dedupeExtractedReportText,
   detectBureauFromText,
   resolveJobOrganization,
 } from "./jobRules.js";
-import { scrubPII } from "./scrub.js";
-import { textToPdfBuffer } from "./textToPdf.js";
-import {
-  parseEquifaxReport,
-  type BureauMessageRow,
-  type BureauPublicRecordRow,
-  type BureauTradelineRow,
-} from "./parseEquifax.js";
-import { underwriteDeal } from "./underwriteDeal.js";
+import { parseEquifaxReport } from "./parseEquifax.js";
 
 const REDACTED_BUCKET = process.env.REDACTED_BUCKET || "credit_reports_redacted";
 
-type CreditReportJobRow = {
-  id: string;
-  deal_id: string;
-  organization_id?: string | null;
-  uploaded_by?: string | null;
-  raw_bucket: string;
-  raw_path: string;
+type ProcessJobDependencies = {
+  gateway?: CreditWorkerGateway;
+  parsePdfText?: (raw: Buffer) => Promise<string>;
+  parseBureau?: (text: string) => ParsedBureauReport;
+  scrubText?: (text: string) => string | Promise<string>;
+  renderRedactedPdf?: (text: string) => Promise<Buffer>;
+  underwrite?: (args: {
+    incomeMonthly: number;
+    score: number | null;
+    repoCount: number;
+    monthsSinceRepo: number | null;
+    paidAutoTrades: number;
+    openAutoTrades: number;
+    residenceMonths: number | null;
+    jobMonths: number | null;
+    cashDown: number;
+    vehiclePrice: number;
+  }) => Promise<import("./gateway.js").UnderwriteResult>;
 };
 
-async function getDealOrganizationId(dealId: string) {
-  const { data, error } = await supabase
-    .from("deals")
-    .select("organization_id")
-    .eq("id", dealId)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  const organizationId = data?.organization_id ?? null;
-  if (!organizationId) {
-    throw new Error(`Deal ${dealId} is missing organization_id`);
-  }
-
-  return organizationId;
-}
-
-async function updateJobStatus(
-  jobId: string,
-  status: "parsing" | "redacting" | "scoring" | "done" | "failed",
-  extras: Record<string, unknown> = {}
+export async function processJob(
+  job: CreditReportJobRow,
+  dependencies: ProcessJobDependencies = {}
 ) {
-  const payload = {
-    status,
-    ...extras,
-  };
-
-  const { error } = await supabase.from("credit_report_jobs").update(payload).eq("id", jobId);
-
-  if (error) throw error;
-}
-
-async function updateJobDone(
-  jobId: string,
-  extractedText: string,
-  redactedText: string,
-  bureau: string
-) {
-  const { error } = await supabase
-    .from("credit_report_jobs")
-    .update({
-      status: "done",
-      bureau,
-      extracted_text: extractedText,
-      redacted_text: redactedText,
-      processed_at: new Date().toISOString(),
-      error_message: null,
-    })
-    .eq("id", jobId);
-
-  if (error) throw error;
-}
-
-async function updateJobFailed(jobId: string, err: unknown) {
-  const message =
-    err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-
-  const { error } = await supabase
-    .from("credit_report_jobs")
-    .update({
-      status: "failed",
-      error_message: message,
-      processed_at: new Date().toISOString(),
-    })
-    .eq("id", jobId);
-
-  if (error) {
-    console.error("[credit-worker] failed to update job as failed:", jobId, error);
-  }
-}
-
-async function upsertCreditReport(args: {
-  organizationId: string;
-  dealId: string;
-  jobId: string;
-  bureau: string;
-  rawBucket: string;
-  rawPath: string;
-  redactedBucket: string;
-  redactedPath: string;
-  redactedText: string;
-}) {
-  const {
-    organizationId,
-    dealId,
-    jobId,
-    bureau,
-    rawBucket,
-    rawPath,
-    redactedBucket,
-    redactedPath,
-    redactedText,
-  } = args;
-
-  // Since upload route deletes previous credit_reports by deal_id,
-  // one row per deal is fine here.
-  const payload = {
-    organization_id: organizationId,
-    deal_id: dealId,
-    bureau,
-    raw_bucket: rawBucket,
-    raw_path: rawPath,
-    redacted_bucket: redactedBucket,
-    redacted_path: redactedPath,
-    redacted_text: redactedText,
-    latest_job_id: jobId,
-    updated_at: new Date().toISOString(),
-  };
-
-  const { data, error } = await supabase
-    .from("credit_reports")
-    .upsert(payload, { onConflict: "deal_id" })
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function replaceBureauDetails(args: {
-  organizationId: string;
-  bureauSummaryId: string;
-  dealId: string;
-  tradelines: BureauTradelineRow[];
-  publicRecords: BureauPublicRecordRow[];
-  messages: BureauMessageRow[];
-}) {
-  const { organizationId, bureauSummaryId, dealId, tradelines, publicRecords, messages } = args;
-
-  const { error: delTradelinesErr } = await supabase
-    .from("bureau_tradelines")
-    .delete()
-    .eq("organization_id", organizationId)
-    .eq("bureau_summary_id", bureauSummaryId);
-
-  if (delTradelinesErr) throw delTradelinesErr;
-
-  const { error: delPublicErr } = await supabase
-    .from("bureau_public_records")
-    .delete()
-    .eq("organization_id", organizationId)
-    .eq("bureau_summary_id", bureauSummaryId);
-
-  if (delPublicErr) throw delPublicErr;
-
-  const { error: delMessagesErr } = await supabase
-    .from("bureau_messages")
-    .delete()
-    .eq("organization_id", organizationId)
-    .eq("bureau_summary_id", bureauSummaryId);
-
-  if (delMessagesErr) throw delMessagesErr;
-
-  if (tradelines.length > 0) {
-    const rows = tradelines.map((t) => ({
-      organization_id: organizationId,
-      bureau_summary_id: bureauSummaryId,
-      deal_id: dealId,
-      creditor_name: t.creditor_name,
-      account_type: t.account_type,
-      account_status: t.account_status,
-      condition_code: t.condition_code,
-      amount: t.amount,
-      balance: t.balance,
-      credit_limit: t.credit_limit,
-      monthly_payment: t.monthly_payment,
-      past_due_amount: t.past_due_amount,
-      high_balance: t.high_balance,
-      opened_date: t.opened_date,
-      last_activity_date: t.last_activity_date,
-      last_payment_date: t.last_payment_date,
-      no_effect: t.no_effect,
-      good: t.good,
-      bad: t.bad,
-      auto_repo: t.auto_repo,
-      unpaid_collection: t.unpaid_collection,
-      unpaid_chargeoff: t.unpaid_chargeoff,
-      is_auto: t.is_auto,
-      is_revolving: t.is_revolving,
-      is_installment: t.is_installment,
-      raw_segment: t.raw_segment ?? {},
-      updated_at: new Date().toISOString(),
-    }));
-
-    const { error } = await supabase.from("bureau_tradelines").insert(rows);
-    if (error) throw error;
-  }
-
-  if (publicRecords.length > 0) {
-    const rows = publicRecords.map((r) => ({
-      organization_id: organizationId,
-      bureau_summary_id: bureauSummaryId,
-      deal_id: dealId,
-      court_name: r.court_name,
-      record_type: r.record_type,
-      plaintiff: r.plaintiff,
-      amount: r.amount,
-      status: r.status,
-      filed_date: r.filed_date,
-      resolved_date: r.resolved_date,
-      no_effect: r.no_effect,
-      good: r.good,
-      bad: r.bad,
-      raw_segment: r.raw_segment ?? {},
-      updated_at: new Date().toISOString(),
-    }));
-
-    const { error } = await supabase.from("bureau_public_records").insert(rows);
-    if (error) throw error;
-  }
-
-  if (messages.length > 0) {
-    const rows = messages.map((m) => ({
-      organization_id: organizationId,
-      bureau_summary_id: bureauSummaryId,
-      deal_id: dealId,
-      message_type: m.message_type,
-      code: m.code,
-      message_text: m.message_text,
-      severity: m.severity,
-    }));
-
-    const { error } = await supabase.from("bureau_messages").insert(rows);
-    if (error) throw error;
-  }
-}
-
-async function upsertBureauSummary(args: {
-  organizationId: string;
-  dealId: string;
-  creditReportId: string;
-  jobId: string;
-  parsed: ReturnType<typeof parseEquifaxReport>;
-}) {
-  const { organizationId, dealId, creditReportId, jobId, parsed } = args;
-  const s = parsed.summary;
-
-  const payload = {
-    organization_id: organizationId,
-    deal_id: dealId,
-    credit_report_id: creditReportId,
-    job_id: jobId,
-
-    bureau_source: s.bureau_source,
-    score: s.score,
-    total_tradelines: s.total_tradelines,
-    open_tradelines: s.open_tradelines,
-    open_auto_trade: s.open_auto_trade,
-    months_since_repo: s.months_since_repo,
-    months_since_bankruptcy: s.months_since_bankruptcy,
-    total_collections: s.total_collections,
-    total_chargeoffs: s.total_chargeoffs,
-    past_due_amount: s.past_due_amount,
-    utilization_pct: s.utilization_pct,
-    oldest_trade_months: s.oldest_trade_months,
-
-    autos_on_bureau: s.autos_on_bureau,
-    open_auto_trades: s.open_auto_trades,
-    paid_auto_trades: s.paid_auto_trades,
-    repo_count: s.repo_count,
-
-    risk_tier: s.risk_tier,
-    max_term_months: s.max_term_months,
-    min_cash_down: s.min_cash_down,
-    max_pti: s.max_pti,
-    hard_stop: s.hard_stop,
-    hard_stop_reason: s.hard_stop_reason,
-    stips: s.stips,
-    bureau_raw: s.bureau_raw,
-
-    updated_at: new Date().toISOString(),
-  };
-
-  const { data, error } = await supabase
-    .from("bureau_summary")
-    .upsert(payload, { onConflict: "credit_report_id" })
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-export async function processJob(job: CreditReportJobRow) {
+  const gateway =
+    dependencies.gateway ??
+    (await import("./gateway.js")).defaultCreditWorkerGateway;
+  const parsePdfText =
+    dependencies.parsePdfText ??
+    (async (raw: Buffer) => {
+      const { default: pdf } = await import("pdf-parse");
+      const parsedPdf = await pdf(raw);
+      return parsedPdf?.text ?? "";
+    });
+  const parseBureau = dependencies.parseBureau ?? parseEquifaxReport;
+  const scrubText =
+    dependencies.scrubText ??
+    (async (text: string) => {
+      const { scrubPII } = await import("./scrub.js");
+      return scrubPII(text);
+    });
+  const renderRedactedPdf =
+    dependencies.renderRedactedPdf ??
+    (async (text: string) => {
+      const { textToPdfBuffer } = await import("./textToPdf.js");
+      return textToPdfBuffer(text);
+    });
+  const underwrite =
+    dependencies.underwrite ??
+    (async (args) => {
+      const { underwriteDeal } = await import("./underwriteDeal.js");
+      return underwriteDeal(args);
+    });
   const jobId: string = job?.id;
   const dealId: string = job?.deal_id;
   const jobOrganizationId: string | null = job?.organization_id ?? null;
@@ -347,19 +102,14 @@ export async function processJob(job: CreditReportJobRow) {
 
   const resolvedDealOrganizationId = jobOrganizationId
     ? jobOrganizationId
-    : await getDealOrganizationId(dealId);
+    : await gateway.getDealOrganizationId(dealId);
   const { organizationId, shouldStampJob } = resolveJobOrganization({
     jobOrganizationId,
     dealOrganizationId: resolvedDealOrganizationId,
   });
 
   if (shouldStampJob) {
-    const { error: stampJobError } = await supabase
-      .from("credit_report_jobs")
-      .update({ organization_id: organizationId })
-      .eq("id", jobId);
-
-    if (stampJobError) throw stampJobError;
+    await gateway.stampJobOrganization(jobId, organizationId);
   }
 
   const redactedPath = buildRedactedPath(rawPath, jobId);
@@ -376,18 +126,13 @@ export async function processJob(job: CreditReportJobRow) {
   try {
     // 1) Download raw PDF
     console.log("[credit-worker] downloading raw", { rawBucket, rawPath });
-    const dl = await supabase.storage.from(rawBucket).download(rawPath);
-    if (dl.error) throw dl.error;
-    if (!dl.data) throw new Error("Storage download returned no data");
-
-    const rawBuf = Buffer.from(await dl.data.arrayBuffer());
+    const rawBuf = await gateway.downloadRawPdf(rawBucket, rawPath);
     console.log("[credit-worker] downloaded bytes:", rawBuf.length);
 
     // 2) Extract text
-    await updateJobStatus(jobId, "parsing");
+    await gateway.updateJobStatus(jobId, "parsing");
     console.log("[credit-worker] parsing pdf...");
-    const parsedPdf = await pdf(rawBuf);
-    const extractedText = dedupeExtractedReportText(parsedPdf?.text ?? "");
+    const extractedText = dedupeExtractedReportText(await parsePdfText(rawBuf));
     console.log("[credit-worker] extracted chars:", extractedText.length);
 
     if (!extractedText.trim()) {
@@ -398,22 +143,17 @@ export async function processJob(job: CreditReportJobRow) {
     const bureau = detectBureauFromText(extractedText);
     console.log("[credit-worker] detected bureau:", bureau);
 
-    let parsedBureau:
-      | ReturnType<typeof parseEquifaxReport>
-      | null = null;
-
-    if (bureau === "equifax") {
-      parsedBureau = parseEquifaxReport(extractedText);
-    } else {
+    if (bureau !== "equifax") {
       throw new Error("Unsupported bureau format: unable to detect supported parser");
     }
+    const parsedBureau = parseBureau(extractedText);
 
     // 4) Redact display text + upload redacted artifact
-    await updateJobStatus(jobId, "redacting", { bureau });
-    const redactedText = scrubPII(extractedText);
+    await gateway.updateJobStatus(jobId, "redacting", { bureau });
+    const redactedText = await scrubText(extractedText);
     console.log("[credit-worker] redacted chars:", redactedText.length);
 
-    const redactedPdfBuf = await textToPdfBuffer(redactedText);
+    const redactedPdfBuf = await renderRedactedPdf(redactedText);
     console.log("[credit-worker] redacted pdf bytes:", redactedPdfBuf.length);
 
     const body = new Uint8Array(redactedPdfBuf);
@@ -424,18 +164,11 @@ export async function processJob(job: CreditReportJobRow) {
       size: body.byteLength,
     });
 
-    const uploadRes = await supabase.storage
-      .from(REDACTED_BUCKET)
-      .upload(redactedPath, body, {
-        contentType: "application/pdf",
-        upsert: true,
-      });
-
-    console.log("[credit-worker] upload result", uploadRes);
-    if (uploadRes.error) throw uploadRes.error;
+    await gateway.uploadRedactedPdf(REDACTED_BUCKET, redactedPath, body);
+    console.log("[credit-worker] upload complete");
 
     // 5) Upsert report + bureau data
-    await updateJobStatus(jobId, "scoring", { bureau });
+    await gateway.updateJobStatus(jobId, "scoring", { bureau });
 
     console.log("[credit-worker] about to upsert credit_reports + bureau_summary", {
       jobId,
@@ -443,7 +176,7 @@ export async function processJob(job: CreditReportJobRow) {
       bureau,
     });
 
-    const creditReport = await upsertCreditReport({
+    const creditReport = await gateway.upsertCreditReport({
       organizationId,
       dealId,
       jobId,
@@ -455,7 +188,7 @@ export async function processJob(job: CreditReportJobRow) {
       redactedText,
     });
 
-    const bureauSummary = await upsertBureauSummary({
+    const bureauSummary = await gateway.upsertBureauSummary({
       organizationId,
       dealId,
       creditReportId: creditReport.id,
@@ -463,7 +196,7 @@ export async function processJob(job: CreditReportJobRow) {
       parsed: parsedBureau,
     });
 
-    await replaceBureauDetails({
+    await gateway.replaceBureauDetails({
       organizationId,
       bureauSummaryId: bureauSummary.id,
       dealId,
@@ -472,21 +205,13 @@ export async function processJob(job: CreditReportJobRow) {
       messages: parsedBureau.messages,
     });
 
-    const { data: primaryPerson, error: personError } = await supabase
-      .from("deal_people")
-      .select("*")
-      .eq("organization_id", organizationId)
-      .eq("deal_id", dealId)
-      .eq("role", "primary")
-      .single();
+    const primaryPerson = await gateway.loadPrimaryPerson(organizationId, dealId);
 
-    if (personError) throw personError;
-
-    const uw = await underwriteDeal({
+    const uw = await underwrite({
       incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
       score: bureauSummary.score,
       repoCount: Number(bureauSummary.repo_count ?? 0),
-      monthsSinceRepo: bureauSummary.months_since_repo,
+      monthsSinceRepo: bureauSummary.months_since_repo ?? null,
       paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
       openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
       residenceMonths: primaryPerson.residence_months,
@@ -495,36 +220,21 @@ export async function processJob(job: CreditReportJobRow) {
       vehiclePrice: 0,
     });
 
-    await supabase
-      .from("underwriting_results")
-      .upsert(
-        {
-          organization_id: organizationId,
-          deal_id: dealId,
-          user_id: job.uploaded_by ?? null,
-          stage: "bureau_precheck",
-          score_total: uw.scoreTotal,
-          decision: uw.decision,
-          notes: uw.notes,
-          tier: uw.tier,
-          max_term_months: uw.maxTermMonths,
-          min_cash_down: uw.minCashDown,
-          min_down_pct: uw.minDownPct,
-          max_pti: uw.maxPti,
-          max_amount_financed: uw.maxAmountFinanced,
-          max_vehicle_price: uw.maxVehiclePrice,
-          max_ltv: uw.maxLtv,
-          apr: uw.apr,
-          hard_stop: uw.hardStop,
-          hard_stop_reason: uw.hardStopReason,
-          score_factors: uw.scoreFactors,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "deal_id,stage" }
-      );
+    await gateway.upsertUnderwritingResult({
+      organizationId,
+      dealId,
+      uploadedBy: job.uploaded_by ?? null,
+      result: uw,
+    });
 
     // 6) Finalize job row
-    await updateJobDone(jobId, extractedText, redactedText, bureau);
+    await gateway.updateJobStatus(jobId, "done", {
+      bureau,
+      extracted_text: extractedText,
+      redacted_text: redactedText,
+      processed_at: new Date().toISOString(),
+      error_message: null,
+    });
 
     console.log("[credit-worker] processJob done", {
       jobId,
@@ -547,7 +257,7 @@ export async function processJob(job: CreditReportJobRow) {
     };
   } catch (err) {
     console.error("[credit-worker] processJob error:", jobId, err);
-    await updateJobFailed(jobId, err);
+    await gateway.markJobFailed(jobId, err);
     throw err;
   }
 }

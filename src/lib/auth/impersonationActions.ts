@@ -6,7 +6,7 @@ import {
   clearImpersonatedUserId,
   setImpersonatedUserId,
 } from "@/lib/auth/impersonation";
-import { getImpersonationDecision } from "@/lib/auth/accessRules";
+import { planImpersonationChange } from "@/lib/auth/actionPlans";
 import { getCurrentOrganizationMembership } from "@/lib/auth/organizationContext";
 import { getAuthContext } from "@/lib/auth/userRole";
 
@@ -59,7 +59,7 @@ export async function startImpersonationAction(formData: FormData) {
     preferredOrganizationId: authContext.currentOrganizationId,
   });
 
-  const decision = getImpersonationDecision({
+  const plan = planImpersonationChange({
     realRole: authContext.realRole,
     realUserId: authContext.realUser.id,
     currentOrganizationId: authContext.currentOrganizationId,
@@ -68,20 +68,26 @@ export async function startImpersonationAction(formData: FormData) {
     targetMembershipOrganizationId: targetMembership?.organizationId ?? null,
   });
 
-  if (decision === "reject") {
+  if (plan.cookieAction === "noop") {
     return;
   }
 
-  if (decision === "clear") {
+  if (plan.cookieAction === "clear") {
     await clearImpersonatedUserId();
-    revalidatePath("/", "layout");
-    revalidatePath("/settings");
+    for (const path of plan.revalidatePaths) {
+      revalidatePath(path, path === "/" ? "layout" : undefined);
+    }
     return;
   }
 
-  await setImpersonatedUserId(target.id);
-  revalidatePath("/", "layout");
-  revalidatePath("/settings");
+  if (!plan.impersonatedUserId) {
+    return;
+  }
+
+  await setImpersonatedUserId(plan.impersonatedUserId);
+  for (const path of plan.revalidatePaths) {
+    revalidatePath(path, path === "/" ? "layout" : undefined);
+  }
 }
 
 export async function stopImpersonationAction() {

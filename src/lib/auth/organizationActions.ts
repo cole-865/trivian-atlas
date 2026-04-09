@@ -6,7 +6,7 @@ import {
   clearStoredCurrentOrganizationId,
   setStoredCurrentOrganizationId,
 } from "@/lib/auth/organizationContext";
-import { getOrganizationSwitchDecision } from "@/lib/auth/accessRules";
+import { planOrganizationSwitch } from "@/lib/auth/actionPlans";
 import { getAuthContext } from "@/lib/auth/userRole";
 import { getSwitchableOrganizations } from "@/lib/auth/organizationManagement";
 
@@ -16,25 +16,25 @@ export async function setCurrentOrganizationAction(formData: FormData) {
   const authContext = await getAuthContext(supabase);
   const switchableOrganizations = await getSwitchableOrganizations(authContext);
 
-  const decision = getOrganizationSwitchDecision({
+  const plan = planOrganizationSwitch({
     requestedOrganizationId: organizationId,
     switchableOrganizationIds: switchableOrganizations.map((organization) => organization.id),
   });
 
-  if (decision === "clear") {
+  if (plan.cookieAction === "clear") {
     await clearStoredCurrentOrganizationId();
-    revalidatePath("/", "layout");
-    revalidatePath("/settings");
-    revalidatePath("/dev-tools");
+    for (const path of plan.revalidatePaths) {
+      revalidatePath(path, path === "/" ? "layout" : undefined);
+    }
     return;
   }
 
-  if (decision === "reject") {
+  if (plan.cookieAction === "noop" || !plan.organizationId) {
     return;
   }
 
-  await setStoredCurrentOrganizationId(organizationId);
-  revalidatePath("/", "layout");
-  revalidatePath("/settings");
-  revalidatePath("/dev-tools");
+  await setStoredCurrentOrganizationId(plan.organizationId);
+  for (const path of plan.revalidatePaths) {
+    revalidatePath(path, path === "/" ? "layout" : undefined);
+  }
 }

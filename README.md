@@ -81,6 +81,15 @@ npm run typecheck
 npm test
 ```
 
+Optional real-backend smoke tests against a disposable Supabase project:
+
+```bash
+$env:RUN_SUPABASE_INTEGRATION="1"
+npm run test:integration
+```
+
+Use this only against a disposable or explicitly approved environment. The integration harness creates and then cleans up temporary organizations, memberships, and invites.
+
 Additional app verification:
 
 ```bash
