@@ -93,6 +93,18 @@ type InventoryVehicle = {
     vehicle_category: "car" | "suv" | "truck" | "van" | null;
 };
 
+type TrivianConfigSnapshot = {
+    apr: number | null;
+    payment_cap_pct: number | null;
+    tax_rate_main: number | null;
+    tax_add_base: number | null;
+    tax_add_rate: number | null;
+    doc_fee: number | null;
+    title_license: number | null;
+    vsc_price: number | null;
+    gap_price: number | null;
+};
+
 type SelectedOption = "NONE" | "VSC" | "GAP" | "VSC+GAP";
 
 function getVehicleAgeYears(year: number | null | undefined) {
@@ -164,7 +176,7 @@ export async function GET(
     }
 
     const { data: vehicleTermPolicies, error: vehicleTermPolicyError } =
-        await loadActiveVehicleTermPolicies(supabase, organizationId);
+        await loadActiveVehicleTermPolicies<VehicleTermPolicy>(supabase, organizationId);
 
     if (vehicleTermPolicyError) {
         return NextResponse.json(
@@ -277,7 +289,7 @@ export async function GET(
         );
     }
 
-    const { data: cfg, error: cfgErr } = await loadLatestTrivianConfig(
+    const { data: cfg, error: cfgErr } = await loadLatestTrivianConfig<TrivianConfigSnapshot>(
         supabase,
         organizationId,
         "apr, payment_cap_pct, tax_rate_main, tax_add_base, tax_add_rate, doc_fee, title_license, vsc_price, gap_price"
@@ -290,7 +302,7 @@ export async function GET(
         );
     }
 
-    const { data: vehicle, error: vehicleErr } = await loadInventoryVehicleForOrganization(
+    const { data: vehicle, error: vehicleErr } = await loadInventoryVehicleForOrganization<InventoryVehicle>(
         supabase,
         organizationId,
         selection.vehicle_id,

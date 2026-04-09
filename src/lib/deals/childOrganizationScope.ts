@@ -20,15 +20,19 @@ type SupabaseLike = {
   };
 };
 
+type EqCapable = {
+  eq: (column: string, value: string) => unknown;
+};
+
 function asSupabaseClient(supabase: unknown) {
   return supabase as SupabaseLike;
 }
 
-export function scopeQueryToOrganization<T extends { eq: (column: string, value: string) => unknown }>(
+export function scopeQueryToOrganization<T>(
   query: T,
   organizationId: string
 ) {
-  return query.eq("organization_id", organizationId) as T;
+  return (query as EqCapable).eq("organization_id", organizationId) as T;
 }
 
 export async function getDealPersonForCurrentOrganization<

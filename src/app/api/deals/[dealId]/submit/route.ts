@@ -15,6 +15,11 @@ const REQUIRED_DOC_TYPES = [
     "driver_license",
 ] as const;
 
+type InventoryStatusRow = {
+    id: string;
+    status: string | null;
+};
+
 export async function POST(
     req: Request,
     { params }: { params: Promise<{ dealId: string }> }
@@ -116,7 +121,7 @@ export async function POST(
     let inventoryRow: { id: string; status: string | null } | null = null;
 
     if (dealStructure?.vehicle_id) {
-        const { data: inv, error: inventoryErr } = await loadInventoryVehicleForOrganization(
+        const { data: inv, error: inventoryErr } = await loadInventoryVehicleForOrganization<InventoryStatusRow>(
             supabase,
             organizationId,
             dealStructure.vehicle_id,
