@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   calcW2Income,
@@ -54,7 +54,7 @@ type IncomeRow = {
   ytd_start_date?: string | null;
   ytd_end_date?: string | null;
 
-  calc_flags?: any;
+  calc_flags?: Record<string, unknown> | null;
 
   created_at?: string;
   updated_at?: string;
@@ -124,12 +124,48 @@ function w2FormEqual(a: W2Form, b: W2Form) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function applyResultLooksOk(j: any) {
+type ApiErrorLike = {
+  details?: string;
+  error?: string;
+  message?: string;
+};
+
+type ApplyResult = {
+  ok?: boolean;
+  primary_applied?: number;
+  co_applied?: number;
+  gross_monthly_income?: number;
+  max_payment?: number;
+  max_payment_pct?: number;
+  totals?: {
+    primary_applied?: number;
+    co_applied?: number;
+    max_payment?: number;
+    gross_monthly_income?: number;
+    max_payment_pct?: number;
+  };
+} & ApiErrorLike &
+  Record<string, unknown>;
+
+type IncomeListResponse = {
+  incomes?: IncomeRow[];
+} & ApiErrorLike;
+
+type IncomeSingleResponse = {
+  income: IncomeRow;
+} & ApiErrorLike;
+
+function applyResultLooksOk(j: unknown) {
+  const value = j as ApplyResult | null;
   return (
-    j?.ok === true ||
-    typeof j?.totals?.max_payment === "number" ||
-    typeof j?.totals?.gross_monthly_income === "number"
+    value?.ok === true ||
+    typeof value?.totals?.max_payment === "number" ||
+    typeof value?.totals?.gross_monthly_income === "number"
   );
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 export default function IncomeStepClient({
@@ -166,7 +202,7 @@ export default function IncomeStepClient({
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [saveStateByRowId, setSaveStateByRowId] = useState<Record<string, SaveState>>({});
 
-  const [applyResult, setApplyResult] = useState<any>(null);
+  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
   const [applying, setApplying] = useState(false);
   const [appliedOk, setAppliedOk] = useState(false);
 
@@ -182,6 +218,8 @@ export default function IncomeStepClient({
   function getW2Form(rowId: string): W2Form {
     return w2ByRowId[rowId] ?? defaultW2Form;
   }
+
+  const getW2FormForEffect = useEffectEvent((rowId: string) => getW2Form(rowId));
 
   function setW2Form(rowId: string, next: W2Form) {
     setW2ByRowId((prev) => ({ ...prev, [rowId]: next }));
@@ -236,7 +274,7 @@ export default function IncomeStepClient({
     const r = await fetch(`/api/deals/${effectiveDealId}/income/${role}`, {
       cache: "no-store",
     });
-    const j = await r.json();
+    const j = (await r.json()) as IncomeListResponse;
     if (!r.ok) throw new Error(j?.details || j?.error || "Failed to load incomes");
     return (j.incomes ?? []) as IncomeRow[];
   }
@@ -261,8 +299,8 @@ export default function IncomeStepClient({
 
       firstLoadDoneRef.current = true;
       setAppliedOk(false);
-    } catch (e: any) {
-      setErr(e?.message || "Load failed");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Load failed"));
     } finally {
       setLoading(false);
     }
@@ -275,9 +313,11 @@ export default function IncomeStepClient({
   }, [effectiveDealId]);
 
   useEffect(() => {
+    const autosaveTimers = autosaveTimersRef.current;
+    const saveBadgeTimers = saveBadgeTimersRef.current;
     return () => {
-      Object.values(autosaveTimersRef.current).forEach((t) => t && clearTimeout(t));
-      Object.values(saveBadgeTimersRef.current).forEach((t) => t && clearTimeout(t));
+      Object.values(autosaveTimers).forEach((t) => t && clearTimeout(t));
+      Object.values(saveBadgeTimers).forEach((t) => t && clearTimeout(t));
       if (autoApplyTimerRef.current) clearTimeout(autoApplyTimerRef.current);
     };
   }, []);
@@ -293,15 +333,15 @@ export default function IncomeStepClient({
 
     try {
       const r = await fetch(`/api/deals/${effectiveDealId}/income/apply`, { method: "POST" });
-      const j = await r.json();
+      const j = (await r.json()) as ApplyResult;
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to update totals");
 
       setApplyResult(j);
       setAppliedOk(applyResultLooksOk(j));
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAppliedOk(false);
       if (!silent) {
-        setErr(e?.message || "Failed to update totals");
+        setErr(errorMessage(e, "Failed to update totals"));
       }
     } finally {
       setApplying(false);
@@ -320,12 +360,12 @@ export default function IncomeStepClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ household_income: next }),
       });
-      const j = await r.json();
+      const j = (await r.json()) as ApiErrorLike;
       if (!r.ok) {
         throw new Error(j?.details || j?.error || "Failed to update household income");
       }
-    } catch (e: any) {
-      setErr(e?.message || "Failed to update household income");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Failed to update household income"));
       setHouseholdIncome(!next);
     } finally {
       setSavingHI(false);
@@ -342,7 +382,7 @@ export default function IncomeStepClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ income_type }),
       });
-      const j = await r.json();
+      const j = (await r.json()) as IncomeSingleResponse;
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to add income");
 
       const created: IncomeRow = {
@@ -372,8 +412,8 @@ export default function IncomeStepClient({
         setW2ByRowId((prev) => ({ ...prev, [created.id]: seeded }));
         setLastSavedW2ByRowId((prev) => ({ ...prev, [created.id]: seeded }));
       }
-    } catch (e: any) {
-      setErr(e?.message || "Failed to add income");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Failed to add income"));
     }
   }
 
@@ -430,7 +470,7 @@ export default function IncomeStepClient({
         }),
       });
 
-      const j = await r.json();
+      const j = (await r.json()) as IncomeSingleResponse;
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to save income");
 
       if (saveSequenceRef.current[row.id] !== seq) return;
@@ -469,15 +509,19 @@ export default function IncomeStepClient({
           [row.id]: prev[row.id] === "saved" ? "idle" : prev[row.id],
         }));
       }, 1500);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (saveSequenceRef.current[row.id] !== seq) return;
 
       setSaveStateByRowId((prev) => ({ ...prev, [row.id]: "error" }));
-      if (!silent) setErr(e?.message || "Failed to save income");
+      if (!silent) setErr(errorMessage(e, "Failed to save income"));
     } finally {
       setSavingRowId((current) => (current === row.id ? null : current));
     }
   }
+
+  const saveIncomeForEffect = useEffectEvent((role: Role, row: IncomeRow) => {
+    void saveIncome(role, row, { silent: true });
+  });
 
   async function deleteIncome(role: Role, id: string) {
     setDeletingRowId(id);
@@ -488,7 +532,7 @@ export default function IncomeStepClient({
       const r = await fetch(`/api/deals/${effectiveDealId}/income/${role}/${id}`, {
         method: "DELETE",
       });
-      const j = await r.json();
+      const j = (await r.json()) as ApiErrorLike;
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to delete income");
 
       setIncomes((prev) => ({
@@ -523,8 +567,8 @@ export default function IncomeStepClient({
         clearTimeout(autosaveTimersRef.current[id]!);
         delete autosaveTimersRef.current[id];
       }
-    } catch (e: any) {
-      setErr(e?.message || "Failed to delete income");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Failed to delete income"));
     } finally {
       setDeletingRowId(null);
     }
@@ -556,7 +600,7 @@ export default function IncomeStepClient({
     for (const role of ["primary", "co"] as Role[]) {
       for (const row of incomes[role]) {
         const lastSavedRow = (lastSavedIncomes[role] ?? []).find((x) => x.id === row.id);
-        const currentW2 = getW2Form(row.id);
+        const currentW2 = getW2FormForEffect(row.id);
         const lastSavedW2 = lastSavedW2ByRowId[row.id] ?? defaultW2Form;
 
         const normalizedRow = { ...row, applied_to_deal: true };
@@ -570,7 +614,7 @@ export default function IncomeStepClient({
         }
 
         autosaveTimersRef.current[row.id] = setTimeout(() => {
-          void saveIncome(role, normalizedRow, { silent: true });
+          saveIncomeForEffect(role, normalizedRow);
         }, 900);
       }
     }
@@ -589,8 +633,10 @@ export default function IncomeStepClient({
     }, 500);
 
     return () => {
-      if (autoApplyTimerRef.current) clearTimeout(autoApplyTimerRef.current);
+      const autoApplyTimer = autoApplyTimerRef.current;
+      if (autoApplyTimer) clearTimeout(autoApplyTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasUnsavedIncomeChanges,
     householdIncome,
@@ -629,7 +675,7 @@ export default function IncomeStepClient({
 
   const activeRoleSaving = activeRows.some((r) => saveStateByRowId[r.id] === "saving");
 
-  const summary = applyResult?.totals ?? applyResult ?? {};
+  const summary: ApplyResult = (applyResult?.totals ?? applyResult ?? {}) as ApplyResult;
 
   return (
     <div className="grid gap-4">

@@ -63,11 +63,29 @@ type BureauSummary = {
   max_pti: number | null;
   hard_stop: boolean | null;
   hard_stop_reason: string | null;
-  stips: any;
-  bureau_raw: any;
+  stips: unknown;
+  bureau_raw: unknown;
   created_at: string;
   updated_at: string;
 } | null;
+
+type ApiErrorLike = {
+  details?: string;
+  error?: string;
+  message?: string;
+};
+
+type BureauStatusResponse = {
+  status?: BureauJobStatus;
+  error_message?: string | null;
+  created_at?: string | null;
+};
+
+type DocumentsResponse = {
+  documents?: {
+    credit_bureau?: DealDoc | null;
+  };
+} & ApiErrorLike;
 
 type BureauTradeline = {
   id: string;
@@ -186,10 +204,14 @@ export default function CustomerDocuments({
     if (!value) return fallback;
     if (typeof value === "string") return value;
     if (typeof value === "object") {
-      const v = value as any;
+      const v = value as ApiErrorLike;
       return v.details || v.error || v.message || JSON.stringify(v);
     }
     return String(value);
+  }
+
+  function errorMessage(error: unknown, fallback: string) {
+    return error instanceof Error ? error.message : fallback;
   }
 
   async function fetchBureauStatus() {
@@ -197,7 +219,7 @@ export default function CustomerDocuments({
 
     try {
       const r = await fetch(`/api/deals/${dealId}/credit-bureau-status`, { cache: "no-store" });
-      const j = await r.json();
+      const j = (await r.json()) as BureauStatusResponse;
 
       if (!r.ok) {
         setBureauStatus(null);
@@ -231,8 +253,8 @@ export default function CustomerDocuments({
       if (!r.ok) throw new Error(cleanErrorMessage(j, "Failed to refresh underwriting"));
 
       await refresh();
-    } catch (e: any) {
-      setErr(e?.message || "Failed to refresh underwriting");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Failed to refresh underwriting"));
     } finally {
       setBusyType(null);
     }
@@ -245,7 +267,7 @@ export default function CustomerDocuments({
 
     try {
       const r = await fetch(`/api/deals/${dealId}/documents`, { cache: "no-store" });
-      const j = await r.json();
+      const j = (await r.json()) as DocumentsResponse;
 
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to load documents");
 
@@ -256,8 +278,8 @@ export default function CustomerDocuments({
       setDocs(nextDocs);
       pushStatus(nextDocs);
       await fetchBureauStatus();
-    } catch (e: any) {
-      setErr(e?.message || "Failed to load documents");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Failed to load documents"));
       pushStatus({ credit_bureau: null });
       setDocs({ credit_bureau: null });
       setBureauStatus(null);
@@ -285,9 +307,9 @@ export default function CustomerDocuments({
       }
 
       setDetails(j as BureauDetailsResponse);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setDetails(null);
-      setDetailsError(e?.message || "Failed to load bureau details");
+      setDetailsError(errorMessage(e, "Failed to load bureau details"));
     } finally {
       setDetailsLoading(false);
     }
@@ -299,7 +321,7 @@ export default function CustomerDocuments({
   }, [docs.credit_bureau, bureauStatus]);
 
   useEffect(() => {
-    refresh();
+    void refresh();
 
     return () => {
       if (refreshTimer.current) {
@@ -307,6 +329,7 @@ export default function CustomerDocuments({
         refreshTimer.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
 
   useEffect(() => {
@@ -318,7 +341,7 @@ export default function CustomerDocuments({
     if (!shouldPoll) return;
 
     refreshTimer.current = window.setInterval(() => {
-      fetchBureauStatus();
+      void fetchBureauStatus();
     }, 2500);
 
     return () => {
@@ -327,6 +350,7 @@ export default function CustomerDocuments({
         refreshTimer.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldPoll]);
 
   function isPdf(file: File) {
@@ -361,8 +385,8 @@ export default function CustomerDocuments({
       }
 
       await refresh();
-    } catch (e: any) {
-      setErr(e?.message || "Upload failed");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Upload failed"));
     } finally {
       setBusyType(null);
     }
@@ -392,8 +416,8 @@ export default function CustomerDocuments({
       }
 
       await refresh();
-    } catch (e: any) {
-      setErr(e?.message || "Delete failed");
+    } catch (e: unknown) {
+      setErr(errorMessage(e, "Delete failed"));
     } finally {
       setBusyType(null);
     }
@@ -412,7 +436,7 @@ export default function CustomerDocuments({
     return `${x.toFixed(1)} ${units[i]}`;
   }
 
-  function label(_t: DocType) {
+  function label() {
     return "Credit Bureau (PDF)";
   }
 
@@ -477,7 +501,7 @@ export default function CustomerDocuments({
     return (
       <div style={card}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ fontWeight: 900 }}>{label(type)}</div>
+          <div style={{ fontWeight: 900 }}>{label()}</div>
           <div style={{ flex: 1 }} />
           {loading ? <span style={{ opacity: 0.7 }}>Loading…</span> : null}
           {busy ? <span style={{ opacity: 0.7 }}>Working…</span> : null}

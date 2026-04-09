@@ -19,10 +19,24 @@ import pdf from "pdf-parse";
 import { supabase } from "./supabase.js";
 import { scrubPII } from "./scrub.js";
 import { textToPdfBuffer } from "./textToPdf.js";
-import { parseEquifaxReport } from "./parseEquifax.js";
+import {
+  parseEquifaxReport,
+  type BureauMessageRow,
+  type BureauPublicRecordRow,
+  type BureauTradelineRow,
+} from "./parseEquifax.js";
 import { underwriteDeal } from "./underwriteDeal.js";
 
 const REDACTED_BUCKET = process.env.REDACTED_BUCKET || "credit_reports_redacted";
+
+type CreditReportJobRow = {
+  id: string;
+  deal_id: string;
+  organization_id?: string | null;
+  uploaded_by?: string | null;
+  raw_bucket: string;
+  raw_path: string;
+};
 
 async function getDealOrganizationId(dealId: string) {
   const { data, error } = await supabase
@@ -184,9 +198,9 @@ async function replaceBureauDetails(args: {
   organizationId: string;
   bureauSummaryId: string;
   dealId: string;
-  tradelines: any[];
-  publicRecords: any[];
-  messages: any[];
+  tradelines: BureauTradelineRow[];
+  publicRecords: BureauPublicRecordRow[];
+  messages: BureauMessageRow[];
 }) {
   const { organizationId, bureauSummaryId, dealId, tradelines, publicRecords, messages } = args;
 
@@ -344,7 +358,7 @@ async function upsertBureauSummary(args: {
   return data;
 }
 
-export async function processJob(job: any) {
+export async function processJob(job: CreditReportJobRow) {
   const jobId: string = job?.id;
   const dealId: string = job?.deal_id;
   const jobOrganizationId: string | null = job?.organization_id ?? null;

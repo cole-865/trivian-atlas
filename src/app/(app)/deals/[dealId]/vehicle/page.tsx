@@ -152,6 +152,7 @@ function optionSortValue(label: PayOption["label"]) {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getOptionReasonSummary(opt: PayOption) {
   if (opt.fits_cap) return null;
 
@@ -161,6 +162,7 @@ function getOptionReasonSummary(opt: PayOption) {
   return reasons.slice(0, 2).join(" • ");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getOptionReasonDetail(opt: PayOption) {
   if (opt.fits_cap) return null;
 

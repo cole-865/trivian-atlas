@@ -26,6 +26,20 @@ type PersonForm = {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+type ApiErrorLike = {
+  details?: string;
+  error?: string;
+  message?: string;
+};
+
+type PersonApiRow = PersonForm & {
+  role: Role;
+};
+
+type PeopleResponse = {
+  people?: PersonApiRow[];
+} & ApiErrorLike;
+
 const emptyForm = (): PersonForm => ({
   first_name: "",
   last_name: "",
@@ -70,14 +84,19 @@ function primaryResidenceOk(p: PersonForm) {
   return p.move_in_date.trim().length > 0;
 }
 
-function formatSaveError(j: any, fallback: string) {
+function formatSaveError(j: unknown, fallback: string) {
+  if (typeof j === "object" && j) {
+    const payload = j as ApiErrorLike;
+    return payload.details || payload.error || payload.message || fallback;
+  }
   return (
-    j?.details ||
-    j?.error ||
-    j?.message ||
     (typeof j === "string" ? j : null) ||
     fallback
   );
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function formsEqual(a: PersonForm, b: PersonForm) {
@@ -181,7 +200,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
 
       try {
         const r = await fetch(`/api/deals/${dealId}/people`, { method: "GET" });
-        const j = await r.json().catch(() => ({}));
+        const j = (await r.json().catch(() => ({}))) as PeopleResponse;
 
         if (!r.ok) throw new Error(formatSaveError(j, "Failed to load people"));
 
@@ -220,8 +239,8 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
           });
           firstLoadDoneRef.current = true;
         }
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Load error");
+      } catch (e: unknown) {
+        if (!cancelled) setError(errorMessage(e, "Load error"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -231,8 +250,10 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
 
     return () => {
       cancelled = true;
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-      if (saveBadgeTimerRef.current) clearTimeout(saveBadgeTimerRef.current);
+      const autosaveTimer = autosaveTimerRef.current;
+      const saveBadgeTimer = saveBadgeTimerRef.current;
+      if (autosaveTimer) clearTimeout(autosaveTimer);
+      if (saveBadgeTimer) clearTimeout(saveBadgeTimer);
     };
   }, [dealId]);
 
@@ -321,7 +342,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
           [role]: prev[role] === "saved" ? "idle" : prev[role],
         }));
       }, 1500);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (saveSequenceRef.current[role] !== seq) return;
 
       setSaveStateByRole((prev) => ({
@@ -330,7 +351,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
       }));
 
       if (!silent) {
-        setError(e?.message || "Save error");
+        setError(errorMessage(e, "Save error"));
       }
     }
   }
@@ -355,8 +376,10 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
     }, 900);
 
     return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      const autosaveTimer = autosaveTimerRef.current;
+      if (autosaveTimer) clearTimeout(autosaveTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [people, activeRole, loading, navBusy, lastSavedPeople]);
 
   function nextBlockerMessage() {

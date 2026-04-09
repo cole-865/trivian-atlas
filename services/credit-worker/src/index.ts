@@ -23,6 +23,11 @@ dotenv.config({ path: ".env" });
 import { supabase } from "./supabase.js";
 import { processJob } from "./processJob.js";
 
+type CreditReportJobRealtimeRow = {
+  id?: string | null;
+  status?: string | null;
+};
+
 const WORKER_ID = process.env.WORKER_ID || "credit-worker-1";
 const CATCHUP_LIMIT = Number(process.env.CATCHUP_LIMIT || "25");
 const CATCHUP_INTERVAL_MS = Number(process.env.CATCHUP_INTERVAL_MS || "5000");
@@ -164,7 +169,7 @@ async function startRealtimeListener() {
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "credit_report_jobs" },
       (payload) => {
-        const job: any = payload.new;
+        const job = payload.new as CreditReportJobRealtimeRow | null;
 
         console.log("[credit-worker] RT INSERT", {
           id: job?.id,
@@ -173,15 +178,15 @@ async function startRealtimeListener() {
 
         // Always attempt to claim on INSERT.
         // If status != queued, claimJob() will no-op safely.
-        handleJobAttempt(job?.id);
+        if (job?.id) handleJobAttempt(job.id);
       }
     )
     .on(
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "credit_report_jobs" },
       (payload) => {
-        const job: any = payload.new;
-        const old: any = payload.old;
+        const job = payload.new as CreditReportJobRealtimeRow | null;
+        const old = payload.old as CreditReportJobRealtimeRow | null;
 
         console.log("[credit-worker] RT UPDATE", {
           id: job?.id,
@@ -191,7 +196,7 @@ async function startRealtimeListener() {
 
         // Only attempt claim when it becomes queued (reduces chatter)
         const becameQueued = job?.status === "queued" && old?.status !== "queued";
-        if (becameQueued) handleJobAttempt(job?.id);
+        if (becameQueued && job?.id) handleJobAttempt(job.id);
       }
     )
     .subscribe((status) => {

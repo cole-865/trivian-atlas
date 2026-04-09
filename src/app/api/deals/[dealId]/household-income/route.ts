@@ -5,6 +5,10 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 
+type HouseholdIncomeBody = {
+  household_income?: unknown;
+};
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ dealId: string }> }
@@ -47,9 +51,9 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: any = {};
+  let body: HouseholdIncomeBody = {};
   try {
-    body = await req.json();
+    body = (await req.json()) as HouseholdIncomeBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }

@@ -11,13 +11,46 @@ import {
 
 const ALLOWED_ROLES = new Set(["primary", "co"]);
 
-function asIncomeType(v: any) {
+type JsonMap = Record<string, unknown>;
+
+type IncomeType = "w2" | "self_employed" | "fixed" | "cash";
+
+type IncomeProfileRow = {
+  id: string;
+  deal_person_id: string;
+  income_type: IncomeType;
+  applied_to_deal: boolean;
+  monthly_gross_manual: number | null;
+  monthly_gross_calculated: number | null;
+  manual_notes: string | null;
+  hire_date: string | null;
+  pay_frequency: string | null;
+  gross_per_pay: number | null;
+  gross_ytd: number | null;
+  pay_date: string | null;
+  pay_period_end: string | null;
+  ytd_start_date: string | null;
+  ytd_end_date: string | null;
+  calc_flags: JsonMap;
+  created_at: string;
+  updated_at: string;
+};
+
+type IncomeProfileInsert = Omit<IncomeProfileRow, "id" | "created_at" | "updated_at"> & {
+  organization_id: string;
+};
+
+type IncomePostBody = {
+  income_type?: unknown;
+};
+
+function asIncomeType(v: unknown): IncomeType | null {
   const s = String(v ?? "").toLowerCase();
-  if (["w2", "self_employed", "fixed", "cash"].includes(s)) return s as any;
+  if (s === "w2" || s === "self_employed" || s === "fixed" || s === "cash") return s;
   return null;
 }
 
-function numOrNull(v: any) {
+function numOrNull(v: unknown) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
   if (typeof v === "string") {
@@ -29,7 +62,7 @@ function numOrNull(v: any) {
   return Number.isFinite(n) ? n : null;
 }
 
-function normalizeIncome(row: any) {
+function normalizeIncome(row: IncomeProfileRow | null) {
   if (!row) return row;
   return {
     ...row,
@@ -126,7 +159,7 @@ export async function GET(
     );
   }
 
-  const normalized = (data ?? []).map(normalizeIncome);
+  const normalized = ((data ?? []) as unknown as IncomeProfileRow[]).map(normalizeIncome);
 
   return NextResponse.json({ ok: true, incomes: normalized });
 }
@@ -181,9 +214,9 @@ export async function POST(
     return NextResponse.json({ error: "Person not found for role" }, { status: 404 });
   }
 
-  let body: any = {};
+  let body: IncomePostBody = {};
   try {
-    body = await req.json();
+    body = (await req.json()) as IncomePostBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -193,7 +226,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid income_type" }, { status: 400 });
   }
 
-  const insertRow: any = {
+  const insertRow: IncomeProfileInsert = {
     organization_id: scopedDeal.organizationId,
     deal_person_id: personResult.data.id,
     income_type: incomeType,
@@ -231,5 +264,8 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ ok: true, income: normalizeIncome(data) });
+  return NextResponse.json({
+    ok: true,
+    income: normalizeIncome(data as unknown as IncomeProfileRow | null),
+  });
 }

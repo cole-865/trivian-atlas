@@ -39,7 +39,7 @@ export function parseMoney(input: string): number {
 export function calcTenureYM(start: Date, end: Date): { years: number; months: number } {
   if (end.getTime() < start.getTime()) return { years: 0, months: 0 };
 
-  let years = end.getFullYear() - start.getFullYear();
+  const years = end.getFullYear() - start.getFullYear();
   let months = end.getMonth() - start.getMonth();
 
   // Adjust months based on day-of-month

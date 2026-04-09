@@ -3,7 +3,30 @@ import { getCurrentOrganizationId } from "@/lib/auth/organizationContext";
 const STEP_ENFORCEMENT_SETTING_KEY = "step_enforcement_enabled";
 
 type SupabaseLike = {
-  from: (table: string) => any;
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        eq: (column: string, value: string) => {
+          maybeSingle: () => Promise<{
+            data: { value_json: unknown } | null;
+            error: { message: string } | null;
+          }>;
+        };
+        maybeSingle: () => Promise<{
+          data: { value_json: unknown } | null;
+          error: { message: string } | null;
+        }>;
+      };
+      maybeSingle: () => Promise<{
+        data: { value_json: unknown } | null;
+        error: { message: string } | null;
+      }>;
+    };
+    upsert: (
+      values: Record<string, unknown>,
+      options: { onConflict: string }
+    ) => Promise<{ error: { message: string } | null }>;
+  };
 };
 
 export async function getStepEnforcementEnabled(supabase: unknown) {

@@ -5,15 +5,19 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 
+type CustomerBody = {
+  customer_name?: unknown;
+};
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ dealId: string }> }
 ) {
   const { dealId } = await params;
 
-  let body: any;
+  let body: CustomerBody;
   try {
-    body = await req.json();
+    body = (await req.json()) as CustomerBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
