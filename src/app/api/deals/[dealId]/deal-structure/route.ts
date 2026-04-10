@@ -15,6 +15,9 @@ import {
     loadInventoryVehicleForOrganization,
     loadLatestTrivianConfig,
 } from "@/lib/los/organizationScope";
+import { getAuthContext } from "@/lib/auth/userRole";
+import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
+import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -164,9 +167,10 @@ export async function GET(
         await getDealForCurrentOrganization<{
             id: string;
             cash_down: number | null;
+            customer_name: string | null;
             trade_payoff: number | null;
             has_trade: boolean | null;
-        }>(supabase, dealId, "id, cash_down, trade_payoff, has_trade");
+        }>(supabase, dealId, "id, customer_name, cash_down, trade_payoff, has_trade");
 
     if (!organizationId) {
         return NextResponse.json(
@@ -552,9 +556,34 @@ export async function GET(
         );
     }
 
+    const authContext = await getAuthContext(supabase);
+    const overrideSnapshot = await loadDealOverrideSnapshot({
+        organizationId,
+        dealId,
+        customerName: deal.customer_name,
+        failReasons: failReasons,
+        liveStructure: buildOverrideStructureSnapshot({
+            vehicleId: v.id,
+            cashDown: effectiveDown,
+            amountFinanced: amountFinanced,
+            monthlyPayment: monthlyPmt,
+            termMonths: optionTermMonths,
+            ltv: retailBook > 0 ? ltv : null,
+            pti: null,
+        }),
+    });
+
     return NextResponse.json({
         ok: true,
         deal_id: dealId,
         structure: snapshot,
+        overrides: {
+            canApprove: !!authContext.currentOrganizationMembership?.canApproveDealOverrides,
+            currentFingerprint: overrideSnapshot.currentFingerprint,
+            rawBlockers: overrideSnapshot.rawBlockers,
+            effectiveBlockers: overrideSnapshot.effectiveBlockers,
+            blockerStates: overrideSnapshot.blockerStates,
+            requests: overrideSnapshot.requests,
+        },
     });
 }

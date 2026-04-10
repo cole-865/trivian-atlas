@@ -11,6 +11,7 @@ type AuthUserResult = {
 };
 
 type MembershipRow = {
+  can_approve_deal_overrides: boolean;
   organization_id: string;
   user_id: string;
   role: UserRole;
@@ -18,6 +19,10 @@ type MembershipRow = {
   created_at: string;
   updated_at: string;
 };
+
+function isMissingOverrideAuthorityColumnError(error: { message: string } | null | undefined) {
+  return !!error?.message.includes("can_approve_deal_overrides");
+}
 
 type OrganizationRow = {
   id: string;
@@ -63,6 +68,7 @@ export type Organization = {
 };
 
 export type OrganizationMembership = {
+  canApproveDealOverrides: boolean;
   organizationId: string;
   userId: string;
   role: UserRole;
@@ -186,10 +192,83 @@ export async function getOrganizationMembershipsForUser(
 
   const membershipResponse = await client
     .from("organization_users")
-    .select("organization_id, user_id, role, is_active, created_at, updated_at")
+    .select(
+      "organization_id, user_id, role, is_active, can_approve_deal_overrides, created_at, updated_at"
+    )
     .eq("user_id", resolvedUserId)
     .eq("is_active", true)
     .order("created_at", { ascending: true });
+
+  if (membershipResponse.error && isMissingOverrideAuthorityColumnError(membershipResponse.error)) {
+    const fallbackResponse = await client
+      .from("organization_users")
+      .select("organization_id, user_id, role, is_active, created_at, updated_at")
+      .eq("user_id", resolvedUserId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+
+    if (fallbackResponse.error) {
+      throw new Error(
+        `Failed to load organization memberships: ${fallbackResponse.error.message}`
+      );
+    }
+
+    const fallbackRows = (fallbackResponse.data ?? []) as Array<
+      Omit<MembershipRow, "can_approve_deal_overrides">
+    >;
+
+    const organizationIds = Array.from(
+      new Set(fallbackRows.map((row) => row.organization_id))
+    );
+
+    if (!organizationIds.length) {
+      return [];
+    }
+
+    const organizationsResponse = await client
+      .from("organizations")
+      .select("id, name, slug, is_active, created_at, updated_at")
+      .in("id", organizationIds)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+
+    if (organizationsResponse.error) {
+      throw new Error(
+        `Failed to load organizations: ${organizationsResponse.error.message}`
+      );
+    }
+
+    const organizations = new Map(
+      ((organizationsResponse.data ?? []) as OrganizationRow[]).map((row) => [
+        row.id,
+        mapOrganization(row),
+      ])
+    );
+
+    const mappedFallbackMemberships = fallbackRows
+      .map<OrganizationMembership | null>((row) => {
+        const organization = organizations.get(row.organization_id);
+        if (!organization) {
+          return null;
+        }
+
+        return {
+          canApproveDealOverrides: false,
+          organizationId: row.organization_id,
+          userId: row.user_id,
+          role: row.role,
+          isActive: row.is_active,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          organization,
+        } satisfies OrganizationMembership;
+      })
+      .filter((membership): membership is OrganizationMembership => !!membership);
+
+    return mappedFallbackMemberships.sort((a, b) =>
+      a.organization.name.localeCompare(b.organization.name)
+    );
+  }
 
   if (membershipResponse.error) {
     throw new Error(
@@ -234,6 +313,7 @@ export async function getOrganizationMembershipsForUser(
       }
 
       return {
+        canApproveDealOverrides: row.can_approve_deal_overrides,
         organizationId: row.organization_id,
         userId: row.user_id,
         role: row.role,

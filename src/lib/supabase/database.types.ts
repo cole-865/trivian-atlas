@@ -161,6 +161,73 @@ export type Database = {
           },
         ]
       }
+      app_notifications: {
+        Row: {
+          body: string
+          created_at: string
+          deal_id: string | null
+          id: string
+          link_href: string | null
+          metadata_json: Json | null
+          organization_id: string
+          override_request_id: string | null
+          read_at: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deal_id?: string | null
+          id?: string
+          link_href?: string | null
+          metadata_json?: Json | null
+          organization_id: string
+          override_request_id?: string | null
+          read_at?: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deal_id?: string | null
+          id?: string
+          link_href?: string | null
+          metadata_json?: Json | null
+          organization_id?: string
+          override_request_id?: string | null
+          read_at?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_notifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_notifications_override_request_id_fkey"
+            columns: ["override_request_id"]
+            isOneToOne: false
+            referencedRelation: "deal_override_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bureau_public_records: {
         Row: {
           amount: number | null
@@ -729,6 +796,99 @@ export type Database = {
           },
         ]
       }
+      deal_override_requests: {
+        Row: {
+          amount_financed_snapshot: number | null
+          blocker_code: string
+          cash_down_snapshot: number | null
+          created_at: string
+          deal_id: string
+          id: string
+          ltv_snapshot: number | null
+          monthly_payment_snapshot: number | null
+          organization_id: string
+          pti_snapshot: number | null
+          requested_at: string
+          requested_by: string | null
+          requested_note: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          stale_reason: string | null
+          status: string
+          status_changed_at: string
+          structure_fingerprint: string
+          term_months_snapshot: number | null
+          updated_at: string
+          vehicle_id: string | null
+        }
+        Insert: {
+          amount_financed_snapshot?: number | null
+          blocker_code: string
+          cash_down_snapshot?: number | null
+          created_at?: string
+          deal_id: string
+          id?: string
+          ltv_snapshot?: number | null
+          monthly_payment_snapshot?: number | null
+          organization_id: string
+          pti_snapshot?: number | null
+          requested_at?: string
+          requested_by?: string | null
+          requested_note?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          stale_reason?: string | null
+          status?: string
+          status_changed_at?: string
+          structure_fingerprint: string
+          term_months_snapshot?: number | null
+          updated_at?: string
+          vehicle_id?: string | null
+        }
+        Update: {
+          amount_financed_snapshot?: number | null
+          blocker_code?: string
+          cash_down_snapshot?: number | null
+          created_at?: string
+          deal_id?: string
+          id?: string
+          ltv_snapshot?: number | null
+          monthly_payment_snapshot?: number | null
+          organization_id?: string
+          pti_snapshot?: number | null
+          requested_at?: string
+          requested_by?: string | null
+          requested_note?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          stale_reason?: string | null
+          status?: string
+          status_changed_at?: string
+          structure_fingerprint?: string
+          term_months_snapshot?: number | null
+          updated_at?: string
+          vehicle_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_override_requests_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_override_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deal_people: {
         Row: {
           address_line1: string | null
@@ -1251,6 +1411,7 @@ export type Database = {
       }
       organization_users: {
         Row: {
+          can_approve_deal_overrides: boolean
           created_at: string
           is_active: boolean
           organization_id: string
@@ -1259,6 +1420,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          can_approve_deal_overrides?: boolean
           created_at?: string
           is_active?: boolean
           organization_id: string
@@ -1267,6 +1429,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          can_approve_deal_overrides?: boolean
           created_at?: string
           is_active?: boolean
           organization_id?: string

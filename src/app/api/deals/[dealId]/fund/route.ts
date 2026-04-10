@@ -5,6 +5,8 @@ import {
   getDealForCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
+import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
 
 type DealDocument = {
   id: string;
@@ -152,6 +154,24 @@ export async function GET(
     );
   }
 
+  const overrideSnapshot = structure
+    ? await loadDealOverrideSnapshot({
+        organizationId,
+        dealId,
+        customerName: null,
+        failReasons: structure.fail_reasons ?? [],
+        liveStructure: buildOverrideStructureSnapshot({
+          vehicleId: structure.vehicle_id,
+          cashDown: structure.cash_down,
+          amountFinanced: structure.amount_financed,
+          monthlyPayment: structure.monthly_payment,
+          termMonths: structure.term_months,
+          ltv: structure.ltv,
+          pti: null,
+        }),
+      })
+    : null;
+
   const access = await canAccessStep({
     supabase,
     step: "fund",
@@ -173,6 +193,18 @@ export async function GET(
         error: "STEP_BLOCKED",
         redirectTo: access.redirectTo ?? "submit",
         reason: access.reason,
+      },
+      { status: 403 }
+    );
+  }
+
+  if (overrideSnapshot?.effectiveBlockers.length) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "STEP_BLOCKED",
+        redirectTo: "deal",
+        reason: `Program blockers unresolved: ${overrideSnapshot.effectiveBlockers.join(", ")}`,
       },
       { status: 403 }
     );
@@ -253,6 +285,7 @@ export async function GET(
     ok: true,
     deal,
     selection: structure ?? null,
+    overrides: overrideSnapshot,
     documents: grouped,
     checklist,
   });

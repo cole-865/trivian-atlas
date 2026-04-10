@@ -15,6 +15,7 @@ type OrganizationRow = {
 };
 
 type MembershipRow = {
+  can_approve_deal_overrides?: boolean;
   user_id: string;
   role: string;
   is_active: boolean;
@@ -100,6 +101,49 @@ async function getOrganizationRoleRecipients(organizationId: string, roles: stri
       const isActive = profile?.is_active ?? true;
 
       if (!email || !isActive) {
+        return null;
+      }
+
+      return {
+        userId: membership.user_id,
+        email,
+        fullName: profile?.full_name ?? null,
+      };
+    })
+    .filter(
+      (
+        recipient
+      ): recipient is { email: string; fullName: string | null; userId: string } => !!recipient
+    );
+}
+
+async function getOverrideAuthorityRecipients(organizationId: string) {
+  if (!hasAdminAccess()) {
+    return [] as Array<{ email: string; fullName: string | null; userId: string }>;
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("organization_users")
+    .select("user_id, is_active, can_approve_deal_overrides")
+    .eq("organization_id", organizationId)
+    .eq("is_active", true)
+    .eq("can_approve_deal_overrides", true);
+
+  if (error) {
+    throw new Error(`Failed to load override authority recipients: ${error.message}`);
+  }
+
+  const memberships = (data ?? []) as MembershipRow[];
+  const profileLookup = await getUserProfilesByIds(memberships.map((row) => row.user_id));
+
+  return memberships
+    .map((membership) => {
+      const profile = profileLookup.get(membership.user_id);
+      const email = profile?.email?.trim() ?? "";
+      const isActive = profile?.is_active ?? true;
+
+      if (!membership.can_approve_deal_overrides || !email || !isActive) {
         return null;
       }
 
@@ -239,5 +283,204 @@ export async function sendDealApprovalRequestEmail(args: {
         <p><a href="${safeReviewUrl}">Review deal in Trivian Atlas</a></p>
       </div>
     `,
+  });
+}
+
+function money(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) {
+    return "n/a";
+  }
+
+  return Number(value).toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+  });
+}
+
+function percent(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) {
+    return "n/a";
+  }
+
+  return `${(Number(value) * 100).toFixed(2)}%`;
+}
+
+type OverrideEmailStructure = {
+  amountFinanced: number | null;
+  cashDown: number | null;
+  ltv: number | null;
+  monthlyPayment: number | null;
+  pti: number | null;
+  termMonths: number | null;
+};
+
+function buildOverrideStructureLines(structure: OverrideEmailStructure) {
+  return [
+    `Vehicle: ${structure.termMonths != null ? `${structure.termMonths} month term` : "n/a"}`,
+    `Cash down: ${money(structure.cashDown)}`,
+    `Amount financed: ${money(structure.amountFinanced)}`,
+    `Monthly payment: ${money(structure.monthlyPayment)}`,
+    `LTV: ${percent(structure.ltv)}`,
+    `PTI: ${percent(structure.pti)}`,
+  ];
+}
+
+export async function sendDealOverrideRequestedEmail(args: {
+  organizationId: string;
+  dealId: string;
+  blockerCode: string;
+  customerName: string | null;
+  requestedByUserId: string | null;
+  requestedNote: string | null;
+  vehicleSummary: string;
+  structure: OverrideEmailStructure;
+}) {
+  if (!hasAdminAccess()) {
+    return {
+      sent: false,
+      reason: "Email delivery requires SUPABASE_SERVICE_ROLE_KEY for recipient lookups.",
+    } satisfies EmailSendResult;
+  }
+
+  const organization = await getOrganizationById(args.organizationId);
+  if (!organization) {
+    return {
+      sent: false,
+      reason: "Account was not found while preparing the override request email.",
+    } satisfies EmailSendResult;
+  }
+
+  const recipients = await getOverrideAuthorityRecipients(args.organizationId);
+  const to = Array.from(new Set(recipients.map((recipient) => recipient.email)));
+
+  if (!to.length) {
+    return {
+      sent: false,
+      reason: "No active override approvers are configured for this account.",
+    } satisfies EmailSendResult;
+  }
+
+  const requester = await getUserDisplayName(args.requestedByUserId);
+  const customerName = args.customerName?.trim() || "Untitled customer";
+  const reviewUrl = `${getSiteUrl()}/deals/${encodeURIComponent(args.dealId)}/deal`;
+  const safeReviewUrl = escapeHtml(reviewUrl);
+  const safeCustomerName = escapeHtml(customerName);
+  const safeBlockerCode = escapeHtml(args.blockerCode);
+  const safeRequester = escapeHtml(requester);
+  const safeVehicleSummary = escapeHtml(args.vehicleSummary);
+  const safeRequestedNote = escapeHtml(args.requestedNote?.trim() || "No note provided.");
+
+  return sendEmail({
+    to,
+    subject: `${customerName} requested a ${args.blockerCode} override`,
+    text: [
+      `${customerName} requested a ${args.blockerCode} override in ${organization.name}.`,
+      "",
+      `Requested by: ${requester}`,
+      `Vehicle: ${args.vehicleSummary}`,
+      ...buildOverrideStructureLines(args.structure),
+      "",
+      `Requester note: ${args.requestedNote?.trim() || "No note provided."}`,
+      `Review in Atlas: ${reviewUrl}`,
+    ].join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
+        <p><strong>${safeCustomerName}</strong> requested a <strong>${safeBlockerCode}</strong> override in <strong>${escapeHtml(organization.name)}</strong>.</p>
+        <p>Requested by: ${safeRequester}</p>
+        <p>Vehicle: ${safeVehicleSummary}</p>
+        <p>Requester note: ${safeRequestedNote}</p>
+        <p><a href="${safeReviewUrl}">Review override in Trivian Atlas</a></p>
+      </div>
+    `,
+  });
+}
+
+type OverrideOutcomeEmailArgs = {
+  organizationId: string;
+  dealId: string;
+  blockerCode: string;
+  customerName: string | null;
+  requesterEmail: string;
+  requesterName: string | null;
+  reviewNote?: string | null;
+  reviewedByUserId?: string | null;
+  staleReason?: string | null;
+};
+
+async function sendDealOverrideOutcomeEmail(
+  args: OverrideOutcomeEmailArgs & {
+    outcomeLabel: string;
+    reasonLabel: string;
+  }
+) {
+  if (!hasAdminAccess()) {
+    return {
+      sent: false,
+      reason: "Email delivery requires SUPABASE_SERVICE_ROLE_KEY for recipient lookups.",
+    } satisfies EmailSendResult;
+  }
+
+  const organization = await getOrganizationById(args.organizationId);
+  if (!organization) {
+    return {
+      sent: false,
+      reason: "Account was not found while preparing the override outcome email.",
+    } satisfies EmailSendResult;
+  }
+
+  const customerName = args.customerName?.trim() || "Untitled customer";
+  const requesterName = args.requesterName?.trim() || "there";
+  const reviewedBy = await getUserDisplayName(args.reviewedByUserId);
+  const reviewUrl = `${getSiteUrl()}/deals/${encodeURIComponent(args.dealId)}/deal`;
+  const detail =
+    args.staleReason?.trim() ||
+    args.reviewNote?.trim() ||
+    "No additional notes were provided.";
+
+  return sendEmail({
+    to: [args.requesterEmail],
+    subject: `${customerName} ${args.blockerCode} override ${args.outcomeLabel}`,
+    text: [
+      `Hi ${requesterName},`,
+      "",
+      `${customerName}'s ${args.blockerCode} override is now ${args.outcomeLabel}.`,
+      `Handled by: ${reviewedBy}`,
+      `${args.reasonLabel}: ${detail}`,
+      `Review deal: ${reviewUrl}`,
+    ].join("\n"),
+  });
+}
+
+export async function sendDealOverrideApprovedEmail(args: OverrideOutcomeEmailArgs) {
+  return sendDealOverrideOutcomeEmail({
+    ...args,
+    outcomeLabel: "approved",
+    reasonLabel: "Review note",
+  });
+}
+
+export async function sendDealOverrideDeniedEmail(args: OverrideOutcomeEmailArgs) {
+  return sendDealOverrideOutcomeEmail({
+    ...args,
+    outcomeLabel: "denied",
+    reasonLabel: "Review note",
+  });
+}
+
+export async function sendDealOverrideStaleEmail(args: {
+  organizationId: string;
+  dealId: string;
+  blockerCode: string;
+  customerName: string | null;
+  requesterEmail: string;
+  requesterName: string | null;
+  staleReason: string;
+}) {
+  return sendDealOverrideOutcomeEmail({
+    ...args,
+    outcomeLabel: "is stale",
+    reasonLabel: "Stale reason",
+    reviewNote: null,
+    reviewedByUserId: null,
   });
 }

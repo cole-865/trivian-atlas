@@ -40,6 +40,9 @@ type DealStructureResponse = {
     selection: Selection;
     structure: DealStructure;
   } | null;
+  overrides?: {
+    effectiveBlockers: string[];
+  };
 };
 
 type DocumentsErrorResponse = {
@@ -181,6 +184,7 @@ export default function DealSubmitPage() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [structure, setStructure] = useState<DealStructure | null>(null);
   const [documents, setDocuments] = useState<DocumentsResponse["documents"] | null>(null);
+  const [effectiveBlockers, setEffectiveBlockers] = useState<string[]>([]);
 
   const [submitNotes, setSubmitNotes] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
@@ -211,17 +215,22 @@ export default function DealSubmitPage() {
       }));
 
       if (!r.ok) {
-        if (j.error === "STEP_BLOCKED" && j.redirectTo) {
+        if ("error" in j && j.error === "STEP_BLOCKED" && j.redirectTo) {
           router.replace(`/deals/${dealId}/${j.redirectTo}`);
           return;
         }
 
-        throw new Error(j.details || j.error || "Failed to load structure");
+        throw new Error(
+          ("details" in j && j.details) || ("error" in j && j.error) || "Failed to load structure"
+        );
       }
 
+      const successResponse = j as DealStructureResponse;
+
       if (!cancelled) {
-        setSelection(j.structure?.selection ?? null);
-        setStructure(j.structure?.structure ?? null);
+        setSelection(successResponse.structure?.selection ?? null);
+        setStructure(successResponse.structure?.structure ?? null);
+        setEffectiveBlockers(successResponse.overrides?.effectiveBlockers ?? []);
       }
     }
 
@@ -312,9 +321,12 @@ export default function DealSubmitPage() {
     if (!selection || !structure) blockers.push("Missing saved structure.");
     if (!documents?.credit_bureau) blockers.push("Missing credit bureau PDF.");
     if (!requiredStipsComplete) blockers.push("Missing one or more required stip docs.");
+    if (effectiveBlockers.length) {
+      blockers.push(`Program blockers unresolved: ${effectiveBlockers.join(", ")}`);
+    }
 
     return blockers;
-  }, [selection, structure, documents, requiredStipsComplete]);
+  }, [selection, structure, documents, requiredStipsComplete, effectiveBlockers]);
 
   const checklistItems = useMemo(() => {
     const creditBureauPresent = !!documents?.credit_bureau;
@@ -349,6 +361,14 @@ export default function DealSubmitPage() {
           : "Missing one or more required stips.",
       },
       {
+        ok: effectiveBlockers.length === 0,
+        label: "Program blockers resolved",
+        detail:
+          effectiveBlockers.length === 0
+            ? "No unresolved program blockers remain."
+            : `Still blocked by: ${effectiveBlockers.join(", ")}`,
+      },
+      {
         ok: submitted,
         label: "Deal submitted",
         detail: submitted
@@ -356,14 +376,20 @@ export default function DealSubmitPage() {
           : "Deal has not been submitted yet.",
       },
     ];
-  }, [selection, structure, documents, requiredStipsComplete, submitted]);
+  }, [selection, structure, documents, requiredStipsComplete, effectiveBlockers, submitted]);
 
   const readyCount = checklistItems.filter((x) => x.ok).length;
   const totalCount = checklistItems.length;
 
   const canSubmit = useMemo(() => {
-    return !!selection && !!structure && !!documents?.credit_bureau && requiredStipsComplete;
-  }, [selection, structure, documents, requiredStipsComplete]);
+    return (
+      !!selection &&
+      !!structure &&
+      !!documents?.credit_bureau &&
+      requiredStipsComplete &&
+      effectiveBlockers.length === 0
+    );
+  }, [selection, structure, documents, requiredStipsComplete, effectiveBlockers]);
 
   function onPrev() {
     router.push(`/deals/${dealId}/deal`);

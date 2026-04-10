@@ -238,21 +238,34 @@ export default async function SettingsPage({
                       <div className="text-sm text-muted-foreground">
                         {member.email || member.userId}
                       </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Can Approve Deal Overrides: {member.canApproveDealOverrides ? "Yes" : "No"}
+                      </div>
                     </div>
 
                     <form action={updateOrganizationMembershipAction} className="flex items-center gap-2">
                       <input type="hidden" name="user_id" value={member.userId} />
-                      <select
-                        name="role"
-                        defaultValue={member.role}
-                        className="w-full rounded-xl border px-3 py-2 text-sm"
-                      >
-                        {ORG_MANAGED_ROLES.map((orgRole) => (
-                          <option key={orgRole} value={orgRole}>
-                            {orgRole}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="grid w-full gap-2">
+                        <select
+                          name="role"
+                          defaultValue={member.role}
+                          className="w-full rounded-xl border px-3 py-2 text-sm"
+                        >
+                          {ORG_MANAGED_ROLES.map((orgRole) => (
+                            <option key={orgRole} value={orgRole}>
+                              {orgRole}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          name="can_approve_deal_overrides"
+                          defaultValue={member.canApproveDealOverrides ? "true" : "false"}
+                          className="w-full rounded-xl border px-3 py-2 text-sm"
+                        >
+                          <option value="false">Override Authority: No</option>
+                          <option value="true">Override Authority: Yes</option>
+                        </select>
+                      </div>
                       <button
                         type="submit"
                         className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
@@ -341,14 +354,17 @@ export default async function SettingsPage({
                 {managementData.inactiveUsers.length ? (
                   managementData.inactiveUsers.map((member) => (
                     <div key={member.userId} className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
-                      <div>
-                        <div className="font-medium">
-                          {displayUserName(member)}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {member.email || member.userId}
-                        </div>
+                    <div>
+                      <div className="font-medium">
+                        {displayUserName(member)}
                       </div>
+                      <div className="text-sm text-muted-foreground">
+                        {member.email || member.userId}
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Can Approve Deal Overrides: {member.canApproveDealOverrides ? "Yes" : "No"}
+                      </div>
+                    </div>
 
                       <div className="flex items-center text-sm text-muted-foreground">
                         Role on deactivated membership: {member.role}

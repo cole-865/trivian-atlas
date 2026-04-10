@@ -36,6 +36,7 @@ const updateMembershipSchema = z.object({
   userId: z.string().uuid(),
   role: z.enum(ORG_MANAGED_ROLES).optional(),
   isActive: z.boolean().optional(),
+  canApproveDealOverrides: z.boolean().optional(),
 });
 
 function toBoolean(value: FormDataEntryValue | null) {
@@ -225,6 +226,10 @@ export async function updateOrganizationMembershipAction(formData: FormData) {
     role: rawRole ? rawRole : undefined,
     isActive:
       formData.get("is_active") === null ? undefined : toBoolean(formData.get("is_active")),
+    canApproveDealOverrides:
+      formData.get("can_approve_deal_overrides") === null
+        ? undefined
+        : toBoolean(formData.get("can_approve_deal_overrides")),
   });
 
   if (!parsed.success) {

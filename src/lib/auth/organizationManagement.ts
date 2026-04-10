@@ -27,6 +27,7 @@ type OrganizationRow = {
 };
 
 type OrganizationUserRow = {
+  can_approve_deal_overrides: boolean;
   organization_id: string;
   user_id: string;
   role: string;
@@ -34,6 +35,10 @@ type OrganizationUserRow = {
   created_at: string;
   updated_at: string;
 };
+
+function isMissingOverrideAuthorityColumnError(error: { message: string } | null | undefined) {
+  return !!error?.message.includes("can_approve_deal_overrides");
+}
 
 type UserProfileRow = {
   id: string;
@@ -80,6 +85,7 @@ type SwitchableOrganization = {
 };
 
 export type OrganizationMemberRecord = {
+  canApproveDealOverrides: boolean;
   userId: string;
   email: string | null;
   fullName: string | null;
@@ -377,16 +383,35 @@ export async function loadOrganizationManagementData(
   const admin = createAdminClient();
   const { data: membershipData, error: membershipError } = await admin
     .from("organization_users")
-    .select("organization_id, user_id, role, is_active, created_at, updated_at")
+    .select(
+      "organization_id, user_id, role, is_active, can_approve_deal_overrides, created_at, updated_at"
+    )
     .eq("organization_id", organizationId)
     .order("is_active", { ascending: false })
     .order("created_at", { ascending: true });
 
-  if (membershipError) {
+  const fallbackMembershipResponse =
+    membershipError && isMissingOverrideAuthorityColumnError(membershipError)
+      ? await admin
+          .from("organization_users")
+          .select("organization_id, user_id, role, is_active, created_at, updated_at")
+          .eq("organization_id", organizationId)
+          .order("is_active", { ascending: false })
+          .order("created_at", { ascending: true })
+      : null;
+
+  if (membershipError && !fallbackMembershipResponse) {
     throw new Error(`Failed to load organization memberships: ${membershipError.message}`);
   }
 
-  const memberships = (membershipData ?? []) as OrganizationUserRow[];
+  const memberships = fallbackMembershipResponse
+    ? ((fallbackMembershipResponse.data ?? []) as Array<
+        Omit<OrganizationUserRow, "can_approve_deal_overrides">
+      >).map((row) => ({
+        ...row,
+        can_approve_deal_overrides: false,
+      }))
+    : ((membershipData ?? []) as OrganizationUserRow[]);
   const userLookup = await getUserLookup(memberships.map((membership) => membership.user_id));
 
   const mappedMemberships = memberships
@@ -398,6 +423,7 @@ export async function loadOrganizationManagementData(
       const profile = userLookup.get(membership.user_id);
 
       return {
+        canApproveDealOverrides: membership.can_approve_deal_overrides,
         userId: membership.user_id,
         email: profile?.email ?? null,
         fullName: profile?.fullName ?? null,
@@ -604,6 +630,7 @@ export async function revokeOrganizationInvite(inviteId: string, organizationId:
 }
 
 export async function updateOrganizationMembership(args: {
+  canApproveDealOverrides?: boolean;
   organizationId: string;
   userId: string;
   role?: OrgManagedRole;
@@ -620,6 +647,10 @@ export async function updateOrganizationMembership(args: {
 
   if (typeof args.isActive === "boolean") {
     update.is_active = args.isActive;
+  }
+
+  if (typeof args.canApproveDealOverrides === "boolean") {
+    update.can_approve_deal_overrides = args.canApproveDealOverrides;
   }
 
   const { error } = await admin

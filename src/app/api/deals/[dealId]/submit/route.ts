@@ -7,6 +7,8 @@ import {
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { loadInventoryVehicleForOrganization } from "@/lib/los/organizationScope";
+import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
+import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
 import { sendDealApprovalRequestEmail } from "@/lib/email/notifications";
 
 const REQUIRED_DOC_TYPES = [
@@ -82,7 +84,9 @@ export async function POST(
       monthly_payment,
       amount_financed,
       apr,
-      fits_program
+      fits_program,
+      ltv,
+      fail_reasons
     `),
         organizationId
     )
@@ -171,6 +175,23 @@ export async function POST(
     const missingRequiredDocs = REQUIRED_DOC_TYPES.filter((t) => !uploadedTypes.has(t));
 
     const blockers: string[] = [];
+    const overrideSnapshot = dealStructure
+        ? await loadDealOverrideSnapshot({
+            organizationId,
+            dealId,
+            customerName: deal.customer_name,
+            failReasons: dealStructure.fail_reasons ?? [],
+            liveStructure: buildOverrideStructureSnapshot({
+                vehicleId: dealStructure.vehicle_id,
+                cashDown: dealStructure.cash_down,
+                amountFinanced: dealStructure.amount_financed,
+                monthlyPayment: dealStructure.monthly_payment,
+                termMonths: dealStructure.term_months,
+                ltv: dealStructure.ltv ?? null,
+                pti: null,
+            }),
+        })
+        : null;
 
     if (!dealStructure) {
         blockers.push("Deal structure missing");
@@ -188,6 +209,12 @@ export async function POST(
 
     if (missingRequiredDocs.length > 0) {
         blockers.push(`Missing required docs: ${missingRequiredDocs.join(", ")}`);
+    }
+
+    if (overrideSnapshot?.effectiveBlockers.length) {
+        blockers.push(
+            `Program blockers unresolved: ${overrideSnapshot.effectiveBlockers.join(", ")}`
+        );
     }
 
     if (blockers.length > 0) {

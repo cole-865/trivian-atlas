@@ -101,6 +101,36 @@ type DealStructureResponse = {
       vehicle_base_term_months: number;
     };
   };
+  overrides: {
+    canApprove: boolean;
+    currentFingerprint: string;
+    rawBlockers: string[];
+    effectiveBlockers: string[];
+    blockerStates: Array<{
+      blockerCode: string;
+      state: "blocked" | "pending" | "overridden" | "stale";
+      staleReason: string | null;
+    }>;
+    requests: Array<{
+      id: string;
+      blocker_code: string;
+      status: string;
+      requested_note: string | null;
+      requested_at: string;
+      reviewed_at: string | null;
+      review_note: string | null;
+      stale_reason: string | null;
+      vehicle_id: string | null;
+      cash_down_snapshot: number | null;
+      amount_financed_snapshot: number | null;
+      monthly_payment_snapshot: number | null;
+      term_months_snapshot: number | null;
+      ltv_snapshot: number | null;
+      pti_snapshot: number | null;
+      requesterName: string;
+      reviewerName: string | null;
+    }>;
+  };
 };
 
 type ApiErrorResponse = {
@@ -182,6 +212,10 @@ export default function DealDealPage() {
   const [err, setErr] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [structure, setStructure] = useState<DealStructureResponse["structure"] | null>(null);
+  const [overrides, setOverrides] = useState<DealStructureResponse["overrides"] | null>(null);
+  const [requestNotes, setRequestNotes] = useState<Record<string, string>>({});
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [workingKey, setWorkingKey] = useState<string | null>(null);
 
   const hasQuerySelection = useMemo(() => {
     return !!query.vehicleId && isValidLabel(query.option);
@@ -223,6 +257,7 @@ export default function DealDealPage() {
     }
 
     setStructure(j.structure ?? null);
+    setOverrides(j.overrides ?? null);
   }
 
   async function persistFromQueryThenCleanUrl() {
@@ -286,6 +321,7 @@ export default function DealDealPage() {
           await loadStructure();
         } else if (!cancelled) {
           setStructure(null);
+          setOverrides(null);
         }
       } catch (error: unknown) {
         if (!cancelled) {
@@ -306,7 +342,12 @@ export default function DealDealPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId, hasQuerySelection]);
 
-  const canNext = !!selection && !!structure && !loading && !saving;
+  const canNext =
+    !!selection &&
+    !!structure &&
+    !loading &&
+    !saving &&
+    (overrides?.effectiveBlockers.length ?? 0) === 0;
 
   function onPrev() {
     router.push(`/deals/${dealId}/vehicle`);
@@ -325,7 +366,71 @@ export default function DealDealPage() {
       return;
     }
 
+    if ((overrides?.effectiveBlockers.length ?? 0) > 0) {
+      setErr("Resolve or override all active program blockers before continuing.");
+      return;
+    }
+
     router.push(`/deals/${dealId}/submit`);
+  }
+
+  async function requestOverride(blockerCode: string) {
+    setErr(null);
+    setWorkingKey(`request:${blockerCode}`);
+
+    try {
+      const r = await fetch(`/api/deals/${dealId}/override-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blocker_code: blockerCode,
+          requested_note: requestNotes[blockerCode] ?? "",
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(j?.details || j?.error || "Failed to request override.");
+      }
+
+      setRequestNotes((current) => ({ ...current, [blockerCode]: "" }));
+      await loadStructure();
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Failed to request override.");
+    } finally {
+      setWorkingKey(null);
+    }
+  }
+
+  async function reviewOverride(requestId: string, status: "approved" | "denied") {
+    setErr(null);
+    setWorkingKey(`${status}:${requestId}`);
+
+    try {
+      const r = await fetch(
+        `/api/deals/${dealId}/override-requests/${requestId}/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status,
+            review_note: reviewNotes[requestId] ?? "",
+          }),
+        }
+      );
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(j?.details || j?.error || "Failed to review override.");
+      }
+
+      setReviewNotes((current) => ({ ...current, [requestId]: "" }));
+      await loadStructure();
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Failed to review override.");
+    } finally {
+      setWorkingKey(null);
+    }
   }
 
   if (!dealId) {
@@ -339,6 +444,10 @@ export default function DealDealPage() {
   const vehicle = structure?.vehicle;
   const dealMath = structure?.structure;
   const assumptions = structure?.assumptions;
+  const blockerStates = overrides?.blockerStates ?? [];
+  const requestHistory = overrides?.requests ?? [];
+  const hasEffectiveBlockers = (overrides?.effectiveBlockers.length ?? 0) > 0;
+  const hasRawBlockers = (overrides?.rawBlockers.length ?? 0) > 0;
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -403,12 +512,12 @@ export default function DealDealPage() {
                   borderRadius: 999,
                   fontWeight: 900,
                   fontSize: 12,
-                  background: dealMath.fits_program ? "#ecfdf3" : "#fff7ed",
-                  color: dealMath.fits_program ? "#166534" : "#c2410c",
-                  border: `1px solid ${dealMath.fits_program ? "#bbf7d0" : "#fed7aa"}`,
+                  background: hasEffectiveBlockers ? "#fff7ed" : "#ecfdf3",
+                  color: hasEffectiveBlockers ? "#c2410c" : "#166534",
+                  border: `1px solid ${hasEffectiveBlockers ? "#fed7aa" : "#bbf7d0"}`,
                 }}
               >
-                {dealMath.fits_program ? "Fits Program" : "Needs Attention"}
+                {hasEffectiveBlockers ? "Needs Attention" : "Ready to Continue"}
               </div>
             </div>
           </div>
@@ -590,15 +699,119 @@ export default function DealDealPage() {
               <CheckPill label="Payment" ok={dealMath.checks.payment_ok} />
             </div>
 
-            {!dealMath.fits_program ? (
+            {hasRawBlockers || requestHistory.length ? (
               <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
                 <div style={{ fontWeight: 900, color: "#b91c1c" }}>Blocking Issues</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {dealMath.fail_reasons.map((reason) => (
-                    <span key={reason} style={failTag}>
-                      {normalizeReason(reason)}
-                    </span>
-                  ))}
+                <div style={{ display: "grid", gap: 12 }}>
+                  {blockerStates.map((blocker) => {
+                    const matchingRequest =
+                      requestHistory.find(
+                        (request) => request.blocker_code === blocker.blockerCode
+                      ) ?? null;
+
+                    return (
+                      <div key={blocker.blockerCode} style={overrideCard}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                              <span style={failTag}>{normalizeReason(blocker.blockerCode)}</span>
+                              <span style={blockerStateTag(blocker.state)}>
+                                {blocker.state === "overridden"
+                                  ? "Overridden"
+                                  : blocker.state === "pending"
+                                    ? "Pending override"
+                                    : blocker.state === "stale"
+                                      ? "Stale"
+                                      : "Blocked"}
+                              </span>
+                            </div>
+                            {blocker.staleReason ? (
+                              <div style={{ ...hintText, marginTop: 8 }}>{blocker.staleReason}</div>
+                            ) : null}
+                          </div>
+
+                          {!overrides?.canApprove && blocker.state !== "overridden" ? (
+                            <div style={{ minWidth: 260, display: "grid", gap: 8 }}>
+                              <textarea
+                                value={requestNotes[blocker.blockerCode] ?? ""}
+                                onChange={(event) =>
+                                  setRequestNotes((current) => ({
+                                    ...current,
+                                    [blocker.blockerCode]: event.target.value,
+                                  }))
+                                }
+                                placeholder="Optional note for the override reviewer..."
+                                style={smallTextarea}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => requestOverride(blocker.blockerCode)}
+                                disabled={
+                                  blocker.state === "pending" ||
+                                  workingKey === `request:${blocker.blockerCode}`
+                                }
+                                style={{
+                                  ...btnSecondary,
+                                  cursor:
+                                    blocker.state === "pending"
+                                      ? "not-allowed"
+                                      : "pointer",
+                                  opacity:
+                                    blocker.state === "pending"
+                                      ? 0.65
+                                      : 1,
+                                }}
+                              >
+                                {workingKey === `request:${blocker.blockerCode}`
+                                  ? "Requesting..."
+                                  : "Request Override"}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {overrides?.canApprove &&
+                        matchingRequest &&
+                        matchingRequest.status === "pending" ? (
+                          <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                            <textarea
+                              value={reviewNotes[matchingRequest.id] ?? ""}
+                              onChange={(event) =>
+                                setReviewNotes((current) => ({
+                                  ...current,
+                                  [matchingRequest.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="Optional review note..."
+                              style={smallTextarea}
+                            />
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                onClick={() => reviewOverride(matchingRequest.id, "approved")}
+                                disabled={workingKey === `approved:${matchingRequest.id}`}
+                                style={btnPrimary}
+                              >
+                                {workingKey === `approved:${matchingRequest.id}`
+                                  ? "Approving..."
+                                  : "Approve Override"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => reviewOverride(matchingRequest.id, "denied")}
+                                disabled={workingKey === `denied:${matchingRequest.id}`}
+                                style={btnSecondary}
+                              >
+                                {workingKey === `denied:${matchingRequest.id}`
+                                  ? "Denying..."
+                                  : "Deny Override"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
@@ -624,6 +837,45 @@ export default function DealDealPage() {
                     </div>
                   ) : null}
                 </div>
+
+                {requestHistory.length ? (
+                  <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                    <div style={sectionSubtitle}>Override History</div>
+                    {requestHistory.map((request) => (
+                      <div key={request.id} style={auditCard}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <span style={failTag}>{normalizeReason(request.blocker_code)}</span>
+                          <span style={blockerStateTag(
+                            request.status === "approved"
+                              ? "overridden"
+                              : request.status === "pending"
+                                ? "pending"
+                                : request.status === "stale"
+                                  ? "stale"
+                                  : "blocked"
+                          )}>
+                            {request.status}
+                          </span>
+                        </div>
+                        <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                          <div style={auditLine}>Requester: {request.requesterName}</div>
+                          <div style={auditLine}>Requested: {new Date(request.requested_at).toLocaleString()}</div>
+                          <div style={auditLine}>Requester note: {request.requested_note || "None"}</div>
+                          <div style={auditLine}>
+                            Structure: down {money(request.cash_down_snapshot)}, financed {money(request.amount_financed_snapshot)}, payment {money(request.monthly_payment_snapshot)}, term {request.term_months_snapshot ?? "n/a"}, LTV {request.ltv_snapshot != null ? `${(Number(request.ltv_snapshot) * 100).toFixed(2)}%` : "n/a"}
+                          </div>
+                          <div style={auditLine}>Vehicle: {request.vehicle_id || "n/a"}</div>
+                          <div style={auditLine}>Reviewer: {request.reviewerName || "Not reviewed"}</div>
+                          <div style={auditLine}>Reviewed: {request.reviewed_at ? new Date(request.reviewed_at).toLocaleString() : "Not reviewed"}</div>
+                          <div style={auditLine}>Review note: {request.review_note || "None"}</div>
+                          {request.stale_reason ? (
+                            <div style={auditLine}>Stale reason: {request.stale_reason}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -653,6 +905,42 @@ function CheckPill({ label, ok }: { label: string; ok: boolean }) {
       <span>{ok ? "OK" : "Blocked"}</span>
     </div>
   );
+}
+
+function blockerStateTag(state: "blocked" | "pending" | "overridden" | "stale") {
+  if (state === "overridden") {
+    return {
+      ...statusTagBase,
+      background: "#ecfdf3",
+      border: "1px solid #bbf7d0",
+      color: "#166534",
+    };
+  }
+
+  if (state === "pending") {
+    return {
+      ...statusTagBase,
+      background: "#fff8e8",
+      border: "1px solid #fde68a",
+      color: "#92400e",
+    };
+  }
+
+  if (state === "stale") {
+    return {
+      ...statusTagBase,
+      background: "#fff7ed",
+      border: "1px solid #fdba74",
+      color: "#c2410c",
+    };
+  }
+
+  return {
+    ...statusTagBase,
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#b91c1c",
+  };
 }
 
 const card: React.CSSProperties = {
@@ -717,4 +1005,46 @@ const hintText: React.CSSProperties = {
   fontSize: 13,
   color: "#7c2d12",
   fontWeight: 700,
+};
+
+const statusTagBase: React.CSSProperties = {
+  padding: "6px 10px",
+  borderRadius: 999,
+  fontWeight: 900,
+  fontSize: 12,
+};
+
+const overrideCard: React.CSSProperties = {
+  border: "1px solid #ececec",
+  borderRadius: 12,
+  padding: 12,
+  background: "#fafafa",
+};
+
+const smallTextarea: React.CSSProperties = {
+  width: "100%",
+  minHeight: 72,
+  resize: "vertical",
+  borderRadius: 10,
+  border: "1px solid #d8d8d8",
+  padding: 10,
+  fontSize: 13,
+  fontFamily: "inherit",
+};
+
+const auditCard: React.CSSProperties = {
+  border: "1px solid #ececec",
+  borderRadius: 12,
+  padding: 12,
+  background: "#fff",
+};
+
+const auditLine: React.CSSProperties = {
+  fontSize: 13,
+  color: "#444",
+};
+
+const sectionSubtitle: React.CSSProperties = {
+  fontWeight: 900,
+  fontSize: 14,
 };

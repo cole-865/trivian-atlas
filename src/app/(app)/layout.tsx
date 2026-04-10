@@ -4,6 +4,7 @@ import { stopImpersonationAction } from "@/lib/auth/impersonationActions";
 import { getAuthContext, type AuthContext } from "@/lib/auth/userRole";
 import { getSwitchableOrganizations } from "@/lib/auth/organizationManagement";
 import { OrganizationSwitcher } from "@/components/OrganizationSwitcher";
+import { getCurrentUserUnreadNotificationCount } from "@/lib/notifications/appNotifications";
 
 function NavLink({ href, label }: { href: string; label: string }) {
   return (
@@ -81,6 +82,7 @@ export default async function AppLayout({
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
   const switchableOrganizations = await getSwitchableOrganizations(authContext);
+  const unreadNotifications = await getCurrentUserUnreadNotificationCount(supabase);
   const showImpersonationBanner =
     authContext.isImpersonating &&
     authContext.impersonatedProfile &&
@@ -156,6 +158,12 @@ export default async function AppLayout({
                       compact
                     />
                   ) : null}
+                  <Link
+                    href="/messages"
+                    className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
+                  >
+                    Messages{unreadNotifications ? ` (${unreadNotifications})` : ""}
+                  </Link>
                   <UserPill authContext={authContext} />
                 </div>
               </div>
