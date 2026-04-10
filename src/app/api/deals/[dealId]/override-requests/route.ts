@@ -7,6 +7,7 @@ import {
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { getAuthContext } from "@/lib/auth/userRole";
 import { buildOverrideStructureSnapshot, normalizeDealOverrideBlockerCode } from "@/lib/deals/dealOverrideWorkflow";
+import { buildDealOverrideRequestNote } from "@/lib/deals/dealOverrideSummary";
 import { createDealOverrideRequest } from "@/lib/deals/dealOverrideServer";
 
 type DealStructureRow = {
@@ -16,9 +17,23 @@ type DealStructureRow = {
   ltv: number | null;
   monthly_payment: number | null;
   snapshot_json: {
+    assumptions?: {
+      max_vehicle_price?: number | null;
+    } | null;
+    structure?: {
+      additional_down_breakdown?: {
+        amount_financed?: number | null;
+        ltv?: number | null;
+        min_down?: number | null;
+        pti?: number | null;
+      } | null;
+      amount_financed?: number | null;
+      sale_price?: number | null;
+    } | null;
     vehicle?: {
       make?: string | null;
       model?: string | null;
+      odometer?: number | null;
       stock_number?: string | null;
       year?: number | null;
     } | null;
@@ -40,13 +55,25 @@ export async function POST(
   }
 
   const body = await req.json().catch(() => ({}));
+  const action = String(body?.action ?? "request").trim().toLowerCase();
   const blockerCode = normalizeDealOverrideBlockerCode(
     String(body?.blocker_code ?? "")
   );
-  const requestedNote = String(body?.requested_note ?? "").trim() || null;
+  const requestedNote = String(body?.requested_note ?? "").trim();
 
   if (!blockerCode) {
     return NextResponse.json({ error: "Invalid blocker code." }, { status: 400 });
+  }
+
+  if (action !== "request" && action !== "approve") {
+    return NextResponse.json({ error: "Invalid override action." }, { status: 400 });
+  }
+
+  if (!requestedNote) {
+    return NextResponse.json(
+      { error: "Override notes are required." },
+      { status: 400 }
+    );
   }
 
   const { data: deal, error: dealError, organizationId } =
@@ -76,6 +103,17 @@ export async function POST(
   if (authContext.currentOrganizationMembership?.organizationId !== organizationId) {
     return NextResponse.json(
       { error: "You cannot request overrides in this account." },
+      { status: 403 }
+    );
+  }
+
+  const canApprove =
+    authContext.currentOrganizationMembership?.organizationId === organizationId &&
+    !!authContext.currentOrganizationMembership?.canApproveDealOverrides;
+
+  if (action === "approve" && !canApprove) {
+    return NextResponse.json(
+      { error: "You do not have override approval authority in this account." },
       { status: 403 }
     );
   }
@@ -115,13 +153,20 @@ export async function POST(
       : null,
   ].filter(Boolean);
 
+  const overrideRequestNote = buildDealOverrideRequestNote({
+    blockerCode,
+    customerName: deal.customer_name,
+    snapshot: liveStructure.snapshot_json,
+    userNote: requestedNote,
+  });
+
   try {
     const request = await createDealOverrideRequest({
       organizationId,
       dealId,
       blockerCode,
       requestedByUserId: authContext.realUser.id,
-      requestedNote,
+      requestedNote: overrideRequestNote,
       customerName: deal.customer_name,
       vehicleSummary: vehicleParts.join(" ") || liveStructure.vehicle_id,
       failReasons: liveStructure.fail_reasons,
@@ -134,6 +179,13 @@ export async function POST(
         ltv: liveStructure.ltv,
         pti: null,
       }),
+      directApproval:
+        action === "approve"
+          ? {
+              reviewedByUserId: authContext.realUser.id,
+              reviewNote: "Approved directly by authorized user from the deal screen.",
+            }
+          : null,
     });
 
     return NextResponse.json({ ok: true, request });

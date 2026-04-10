@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { splitCustomerName } from "@/lib/deals/customerName";
 import CustomerDocuments from "./CustomerDocuments";
 
 type Role = "primary" | "co";
@@ -133,7 +134,13 @@ function getResidenceBreakdown(moveInDate: string) {
   };
 }
 
-export default function CustomerStepClient({ dealId }: { dealId: string }) {
+export default function CustomerStepClient({
+  dealId,
+  initialCustomerName,
+}: {
+  dealId: string;
+  initialCustomerName?: string | null;
+}) {
   const router = useRouter();
 
   const [activeRole, setActiveRole] = useState<Role>("primary");
@@ -230,9 +237,28 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
           };
         }
 
+        const primaryHasSavedName =
+          next.primary.first_name.trim().length > 0 || next.primary.last_name.trim().length > 0;
+
+        if (!primaryHasSavedName && initialCustomerName) {
+          const splitName = splitCustomerName(initialCustomerName);
+          next.primary = {
+            ...next.primary,
+            first_name: splitName.firstName,
+            last_name: splitName.lastName,
+          };
+        }
+
         if (!cancelled) {
           setPeople(next);
-          setLastSavedPeople(next);
+          setLastSavedPeople(
+            primaryHasSavedName || !initialCustomerName
+              ? next
+              : {
+                  ...next,
+                  primary: emptyForm(),
+                }
+          );
           setSaveStateByRole({
             primary: "idle",
             co: "idle",
@@ -255,7 +281,7 @@ export default function CustomerStepClient({ dealId }: { dealId: string }) {
       if (autosaveTimer) clearTimeout(autosaveTimer);
       if (saveBadgeTimer) clearTimeout(saveBadgeTimer);
     };
-  }, [dealId]);
+  }, [dealId, initialCustomerName]);
 
   function updateField<K extends keyof PersonForm>(key: K, value: PersonForm[K]) {
     setPeople((prev) => ({

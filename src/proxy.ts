@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const res = NextResponse.next({
     request: { headers: req.headers },
   });
@@ -23,7 +23,7 @@ export async function middleware(req: NextRequest) {
     }
   );
 
-  // IMPORTANT: this refreshes the session cookie if needed
+  // Refresh the session cookie if needed before the request reaches the app.
   await supabase.auth.getUser();
 
   return res;

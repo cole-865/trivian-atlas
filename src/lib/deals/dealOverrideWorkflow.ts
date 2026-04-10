@@ -8,6 +8,7 @@ export type DealOverrideRequestStatus =
   | "pending"
   | "approved"
   | "denied"
+  | "countered"
   | "cancelled"
   | "stale";
 
@@ -25,6 +26,12 @@ export type DealOverrideBlockerState =
   | "pending"
   | "overridden"
   | "stale";
+
+export function canRequestOverrideForBlockerState(
+  state: DealOverrideBlockerState
+) {
+  return state === "blocked" || state === "stale";
+}
 
 export type DealOverrideEvaluation = {
   currentFingerprint: string;

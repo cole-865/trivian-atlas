@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const supabase = supabaseBrowser();
   const searchParams = useSearchParams();
 
@@ -154,5 +154,22 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-2xl border p-6 shadow-sm">
+            <h1 className="text-2xl font-semibold mb-2">Trivian Atlas</h1>
+            <p className="text-sm text-gray-600">Loading sign-in…</p>
+          </div>
+        </div>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

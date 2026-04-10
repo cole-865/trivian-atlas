@@ -6,6 +6,7 @@ export type AppNotificationType =
   | "deal_override_requested"
   | "deal_override_approved"
   | "deal_override_denied"
+  | "deal_override_countered"
   | "deal_override_stale";
 
 type AppNotificationRow = {

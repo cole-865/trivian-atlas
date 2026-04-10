@@ -889,6 +889,97 @@ export type Database = {
           },
         ]
       }
+      deal_override_counter_offers: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          base_structure_fingerprint: string
+          counter_type: string
+          created_at: string
+          deal_id: string
+          deal_override_request_id: string
+          id: string
+          inputs_json: Json
+          organization_id: string
+          outputs_snapshot_json: Json
+          proposal_structure_fingerprint: string
+          rejection_reason: string | null
+          review_note: string
+          reviewed_at: string
+          reviewed_by: string | null
+          stale_reason: string | null
+          status: string
+          updated_at: string
+          version_number: number
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          base_structure_fingerprint: string
+          counter_type: string
+          created_at?: string
+          deal_id: string
+          deal_override_request_id: string
+          id?: string
+          inputs_json: Json
+          organization_id: string
+          outputs_snapshot_json: Json
+          proposal_structure_fingerprint: string
+          rejection_reason?: string | null
+          review_note: string
+          reviewed_at: string
+          reviewed_by?: string | null
+          stale_reason?: string | null
+          status?: string
+          updated_at?: string
+          version_number: number
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          base_structure_fingerprint?: string
+          counter_type?: string
+          created_at?: string
+          deal_id?: string
+          deal_override_request_id?: string
+          id?: string
+          inputs_json?: Json
+          organization_id?: string
+          outputs_snapshot_json?: Json
+          proposal_structure_fingerprint?: string
+          rejection_reason?: string | null
+          review_note?: string
+          reviewed_at?: string
+          reviewed_by?: string | null
+          stale_reason?: string | null
+          status?: string
+          updated_at?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_override_counter_offers_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_override_counter_offers_deal_override_request_id_fkey"
+            columns: ["deal_override_request_id"]
+            isOneToOne: false
+            referencedRelation: "deal_override_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_override_counter_offers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deal_people: {
         Row: {
           address_line1: string | null
@@ -1141,6 +1232,94 @@ export type Database = {
           },
           {
             foreignKeyName: "deal_vehicle_selection_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "trivian_inventory"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deal_structure_inputs: {
+        Row: {
+          cash_down: number | null
+          created_at: string
+          deal_id: string
+          doc_fee: number
+          gap_price: number
+          id: string
+          include_gap: boolean
+          include_vsc: boolean
+          option_label: string
+          organization_id: string
+          sale_price: number
+          tax_add_base: number
+          tax_add_rate: number
+          tax_rate_main: number
+          term_months: number
+          title_license: number
+          updated_at: string
+          vehicle_id: string
+          vsc_price: number
+        }
+        Insert: {
+          cash_down?: number | null
+          created_at?: string
+          deal_id: string
+          doc_fee?: number
+          gap_price?: number
+          id?: string
+          include_gap?: boolean
+          include_vsc?: boolean
+          option_label: string
+          organization_id: string
+          sale_price?: number
+          tax_add_base?: number
+          tax_add_rate?: number
+          tax_rate_main?: number
+          term_months: number
+          title_license?: number
+          updated_at?: string
+          vehicle_id: string
+          vsc_price?: number
+        }
+        Update: {
+          cash_down?: number | null
+          created_at?: string
+          deal_id?: string
+          doc_fee?: number
+          gap_price?: number
+          id?: string
+          include_gap?: boolean
+          include_vsc?: boolean
+          option_label?: string
+          organization_id?: string
+          sale_price?: number
+          tax_add_base?: number
+          tax_add_rate?: number
+          tax_rate_main?: number
+          term_months?: number
+          title_license?: number
+          updated_at?: string
+          vehicle_id?: string
+          vsc_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_structure_inputs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: true
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_structure_inputs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_structure_inputs_vehicle_id_fkey"
             columns: ["vehicle_id"]
             isOneToOne: false
             referencedRelation: "trivian_inventory"

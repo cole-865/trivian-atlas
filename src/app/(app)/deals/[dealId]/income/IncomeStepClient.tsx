@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import React, {
+  startTransition,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   calcW2Income,
@@ -338,6 +345,9 @@ export default function IncomeStepClient({
 
       setApplyResult(j);
       setAppliedOk(applyResultLooksOk(j));
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (e: unknown) {
       setAppliedOk(false);
       if (!silent) {
@@ -364,6 +374,9 @@ export default function IncomeStepClient({
       if (!r.ok) {
         throw new Error(j?.details || j?.error || "Failed to update household income");
       }
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (e: unknown) {
       setErr(errorMessage(e, "Failed to update household income"));
       setHouseholdIncome(!next);

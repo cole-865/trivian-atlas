@@ -9,10 +9,13 @@ import {
 async function createDeal(formData: FormData) {
   "use server";
 
-  const customer_name = String(formData.get("customer_name") ?? "").trim();
+  const firstName = String(formData.get("first_name") ?? "").trim();
+  const lastName = String(formData.get("last_name") ?? "").trim();
+  const fallbackCustomerName = String(formData.get("customer_name") ?? "").trim();
+  const customer_name = `${firstName} ${lastName}`.trim() || fallbackCustomerName;
 
   if (!customer_name) {
-    redirect("/deals/new?error=Customer%20name%20is%20required");
+    redirect("/deals/new?error=Customer%20first%20and%20last%20name%20are%20required");
   }
 
   const supabase = await createClient();
@@ -49,7 +52,7 @@ export default async function NewDealPage({
       <div className="rounded-2xl border bg-white p-6 shadow-sm">
         <div className="text-xl font-semibold">New Deal</div>
         <div className="mt-1 text-sm text-muted-foreground">
-          Enter a customer name to start a deal.
+          Enter the customer name to start a deal.
         </div>
 
         {error ? (
@@ -59,14 +62,25 @@ export default async function NewDealPage({
         ) : null}
 
         <form action={createDeal} className="mt-5 space-y-4">
-          <div>
-            <label className="text-sm font-medium">Customer name</label>
-            <input
-              name="customer_name"
-              placeholder="e.g., Cole Hitchcox"
-              className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
-              autoFocus
-            />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="text-sm font-medium">First name</label>
+              <input
+                name="first_name"
+                placeholder="e.g., Cole"
+                className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Last name</label>
+              <input
+                name="last_name"
+                placeholder="e.g., Hitchcox"
+                className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between">

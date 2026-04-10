@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type DocType = "credit_bureau";
 
@@ -153,6 +154,7 @@ export default function CustomerDocuments({
   dealId: string;
   onStatus?: (s: { credit_app: boolean; credit_bureau: boolean }) => void;
 }) {
+  const router = useRouter();
   const [docs, setDocs] = useState<{
     credit_bureau: DealDoc | null;
   }>({
@@ -253,6 +255,7 @@ export default function CustomerDocuments({
       if (!r.ok) throw new Error(cleanErrorMessage(j, "Failed to refresh underwriting"));
 
       await refresh();
+      router.refresh();
     } catch (e: unknown) {
       setErr(errorMessage(e, "Failed to refresh underwriting"));
     } finally {
@@ -331,6 +334,12 @@ export default function CustomerDocuments({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
+
+  useEffect(() => {
+    if (bureauStatus === "done") {
+      router.refresh();
+    }
+  }, [bureauStatus, router]);
 
   useEffect(() => {
     if (refreshTimer.current) {

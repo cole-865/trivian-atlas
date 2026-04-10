@@ -316,7 +316,7 @@ type OverrideEmailStructure = {
 
 function buildOverrideStructureLines(structure: OverrideEmailStructure) {
   return [
-    `Vehicle: ${structure.termMonths != null ? `${structure.termMonths} month term` : "n/a"}`,
+    `Term: ${structure.termMonths != null ? `${structure.termMonths} month term` : "n/a"}`,
     `Cash down: ${money(structure.cashDown)}`,
     `Amount financed: ${money(structure.amountFinanced)}`,
     `Monthly payment: ${money(structure.monthlyPayment)}`,
@@ -368,7 +368,8 @@ export async function sendDealOverrideRequestedEmail(args: {
   const safeBlockerCode = escapeHtml(args.blockerCode);
   const safeRequester = escapeHtml(requester);
   const safeVehicleSummary = escapeHtml(args.vehicleSummary);
-  const safeRequestedNote = escapeHtml(args.requestedNote?.trim() || "No note provided.");
+  const requestedNote = args.requestedNote?.trim() || "No note provided.";
+  const safeRequestedNote = escapeHtml(requestedNote);
 
   return sendEmail({
     to,
@@ -380,7 +381,8 @@ export async function sendDealOverrideRequestedEmail(args: {
       `Vehicle: ${args.vehicleSummary}`,
       ...buildOverrideStructureLines(args.structure),
       "",
-      `Requester note: ${args.requestedNote?.trim() || "No note provided."}`,
+      "Override request:",
+      requestedNote,
       `Review in Atlas: ${reviewUrl}`,
     ].join("\n"),
     html: `
@@ -388,7 +390,8 @@ export async function sendDealOverrideRequestedEmail(args: {
         <p><strong>${safeCustomerName}</strong> requested a <strong>${safeBlockerCode}</strong> override in <strong>${escapeHtml(organization.name)}</strong>.</p>
         <p>Requested by: ${safeRequester}</p>
         <p>Vehicle: ${safeVehicleSummary}</p>
-        <p>Requester note: ${safeRequestedNote}</p>
+        <p>Override request:</p>
+        <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">${safeRequestedNote}</pre>
         <p><a href="${safeReviewUrl}">Review override in Trivian Atlas</a></p>
       </div>
     `,

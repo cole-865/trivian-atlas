@@ -778,6 +778,60 @@ async function cloneOrganizationDefaults(sourceOrganizationId: string, targetOrg
   }
 }
 
+async function cleanupFailedOrganizationCreation(organizationId: string) {
+  const admin = createAdminClient();
+
+  const cleanupSteps: Array<{
+    label: string;
+    run: () => Promise<{ error: { message: string } | null }>;
+  }> = [
+    {
+      label: "organization invitations",
+      run: async () =>
+        admin.from("organization_invitations").delete().eq("organization_id", organizationId),
+    },
+    {
+      label: "organization memberships",
+      run: async () =>
+        admin.from("organization_users").delete().eq("organization_id", organizationId),
+    },
+    {
+      label: "vehicle term policy",
+      run: async () =>
+        admin.from("vehicle_term_policy").delete().eq("organization_id", organizationId),
+    },
+    {
+      label: "underwriting tier policy",
+      run: async () =>
+        admin.from("underwriting_tier_policy").delete().eq("organization_id", organizationId),
+    },
+    {
+      label: "trivian config",
+      run: async () =>
+        admin.from("trivian_config").delete().eq("organization_id", organizationId),
+    },
+    {
+      label: "organization",
+      run: async () => admin.from("organizations").delete().eq("id", organizationId),
+    },
+  ];
+
+  const cleanupErrors: string[] = [];
+
+  for (const step of cleanupSteps) {
+    const { error } = await step.run();
+    if (error) {
+      cleanupErrors.push(`${step.label}: ${error.message}`);
+    }
+  }
+
+  if (cleanupErrors.length) {
+    throw new Error(
+      `Failed to roll back organization creation cleanly: ${cleanupErrors.join("; ")}`
+    );
+  }
+}
+
 export async function createOrganization(
   input: CreateOrganizationInput
 ): Promise<CreateOrganizationResult> {
@@ -818,57 +872,65 @@ export async function createOrganization(
     throw new Error("Default organization 865-autos was not found.");
   }
 
-  const { data: createdOrganization, error: createOrganizationError } = await admin
-    .from("organizations")
-    .insert({
-      name: input.name.trim(),
-      slug: normalizedSlug,
-      is_active: true,
-    })
-    .select("id, name, slug, is_active, created_at, updated_at")
-    .maybeSingle();
+  let organizationId: string | null = null;
 
-  if (createOrganizationError) {
-    throw new Error(`Failed to create organization: ${createOrganizationError.message}`);
-  }
+  try {
+    const { data: createdOrganization, error: createOrganizationError } = await admin
+      .from("organizations")
+      .insert({
+        name: input.name.trim(),
+        slug: normalizedSlug,
+        is_active: true,
+      })
+      .select("id, name, slug, is_active, created_at, updated_at")
+      .maybeSingle();
 
-  const organization = createdOrganization as OrganizationRow | null;
+    if (createOrganizationError) {
+      throw new Error(`Failed to create organization: ${createOrganizationError.message}`);
+    }
 
-  if (!organization?.id) {
-    throw new Error("Organization creation did not return a row.");
-  }
+    const organization = createdOrganization as OrganizationRow | null;
 
-  await cloneOrganizationDefaults(defaultOrganization.id, organization.id);
+    if (!organization?.id) {
+      throw new Error("Organization creation did not return a row.");
+    }
 
-  const { error: membershipError } = await admin.from("organization_users").upsert(
-    {
-      organization_id: organization.id,
-      user_id: input.createdByUserId,
+    organizationId = organization.id;
+
+    await cloneOrganizationDefaults(defaultOrganization.id, organization.id);
+
+    const initialInvite = await createOrganizationInvite({
+      organizationId: organization.id,
+      email: input.initialAdminEmail,
+      fullName: input.initialAdminName,
       role: "admin",
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "organization_id,user_id" }
-  );
+      invitedByUserId: input.createdByUserId,
+    });
 
-  if (membershipError) {
-    throw new Error(`Failed to add platform dev organization membership: ${membershipError.message}`);
+    await setStoredCurrentOrganizationId(organization.id);
+
+    return {
+      organization,
+      initialInvite,
+    };
+  } catch (error) {
+    if (organizationId) {
+      try {
+        await cleanupFailedOrganizationCreation(organizationId);
+      } catch (cleanupError) {
+        const primaryMessage =
+          error instanceof Error ? error.message : "Organization creation failed.";
+        const cleanupMessage =
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : "Organization rollback failed.";
+
+        throw new Error(`${primaryMessage} ${cleanupMessage}`);
+      }
+    }
+
+    throw error;
   }
-
-  const initialInvite = await createOrganizationInvite({
-    organizationId: organization.id,
-    email: input.initialAdminEmail,
-    fullName: input.initialAdminName,
-    role: "admin",
-    invitedByUserId: input.createdByUserId,
-  });
-
-  await setStoredCurrentOrganizationId(organization.id);
-
-  return {
-    organization,
-    initialInvite,
-  };
 }
 
 export async function setOrganizationActiveState(args: {

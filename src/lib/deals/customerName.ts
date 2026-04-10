@@ -33,6 +33,25 @@ export function buildCustomerName(firstName: unknown, lastName: unknown) {
   return full.length ? full : null;
 }
 
+export function splitCustomerName(customerName: unknown) {
+  const normalized = normalizeNamePart(customerName);
+
+  if (!normalized) {
+    return {
+      firstName: "",
+      lastName: "",
+    };
+  }
+
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  const [firstName = "", ...lastNameParts] = parts;
+
+  return {
+    firstName,
+    lastName: lastNameParts.join(" "),
+  };
+}
+
 export async function loadPrimaryCustomerNames(
   supabase: unknown,
   dealIds: string[],

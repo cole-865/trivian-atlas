@@ -15,7 +15,7 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           // In Server Components, setting cookies can throw.
-          // It's fine for read-only pages like /home; auth refresh happens elsewhere (proxy/middleware).
+          // It's fine for read-only pages like /home; auth refresh happens in the request proxy.
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set({ name, value, ...options });

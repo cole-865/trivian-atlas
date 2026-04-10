@@ -228,5 +228,24 @@ export async function POST(
     );
   }
 
+  const { error: resetStructureInputsError } = await supabase
+    .from("deal_structure_inputs")
+    .delete()
+    .eq("organization_id", scopedDeal.organizationId)
+    .eq("deal_id", dealId);
+
+  if (
+    resetStructureInputsError &&
+    !resetStructureInputsError.message.includes("deal_structure_inputs")
+  ) {
+    return NextResponse.json(
+      {
+        error: "Failed to reset live structure inputs",
+        details: resetStructureInputsError.message,
+      },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json({ ok: true, selection: data });
 }

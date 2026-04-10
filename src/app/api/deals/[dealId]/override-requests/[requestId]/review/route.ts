@@ -5,7 +5,12 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { getAuthContext } from "@/lib/auth/userRole";
-import { reviewDealOverrideRequest } from "@/lib/deals/dealOverrideServer";
+import { buildDealStructureInputFingerprint, type DealStructureInputsRecord } from "@/lib/deals/dealStructureEngine";
+import { loadDealStructurePageData } from "@/lib/deals/dealStructureLoader";
+import {
+  reviewDealOverrideRequest,
+  type DealOverrideCounterType,
+} from "@/lib/deals/dealOverrideServer";
 
 export async function POST(
   req: Request,
@@ -22,9 +27,18 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const status = String(body?.status ?? "").trim().toLowerCase();
   const reviewNote = String(body?.review_note ?? "").trim() || null;
+  const counterType = String(body?.counter_type ?? "").trim().toLowerCase() || null;
+  const counterInputs = body?.counter_offer?.inputs as Partial<DealStructureInputsRecord> | undefined;
 
-  if (status !== "approved" && status !== "denied") {
+  if (status !== "approved" && status !== "denied" && status !== "countered") {
     return NextResponse.json({ error: "Invalid review status." }, { status: 400 });
+  }
+
+  if ((status === "denied" || status === "countered") && !reviewNote) {
+    return NextResponse.json(
+      { error: "A review note is required for this review action." },
+      { status: 400 }
+    );
   }
 
   const { data: deal, error: dealError, organizationId } =
@@ -62,17 +76,58 @@ export async function POST(
   }
 
   try {
-    const request = await reviewDealOverrideRequest({
+    let counterOffer = null;
+    if (status === "countered") {
+      if (
+        !counterInputs ||
+        (counterType !== "improve_approval" &&
+          counterType !== "reduce_risk" &&
+          counterType !== "pricing_adjustment")
+      ) {
+        return NextResponse.json(
+          { error: "Counter offer inputs and counter_type are required." },
+          { status: 400 }
+        );
+      }
+
+      const currentState = await loadDealStructurePageData({
+        dealId,
+        persist: false,
+      });
+
+      const preview = await loadDealStructurePageData({
+        dealId,
+        overrideInputs: counterInputs,
+        persist: false,
+      });
+
+      counterOffer = {
+        counterType: counterType as DealOverrideCounterType,
+        inputs: {
+          ...preview.structureInputs,
+          option_label: preview.structure.selection.option_label,
+        } satisfies DealStructureInputsRecord,
+        outputsSnapshot: preview.structure,
+        baseStructureFingerprint: currentState.overrides.currentInputFingerprint,
+        proposalStructureFingerprint: buildDealStructureInputFingerprint({
+          ...preview.structureInputs,
+          option_label: preview.structure.selection.option_label,
+        } satisfies DealStructureInputsRecord),
+      };
+    }
+
+    const result = await reviewDealOverrideRequest({
       organizationId,
       dealId,
       requestId,
       reviewedByUserId: authContext.realUser.id,
-      status,
+      status: status as "approved" | "denied" | "countered",
       reviewNote,
       customerName: deal.customer_name,
+      counterOffer,
     });
 
-    return NextResponse.json({ ok: true, request });
+    return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to review override request.";
