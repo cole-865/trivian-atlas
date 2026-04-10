@@ -113,6 +113,48 @@ test("invite acceptance is blocked for revoked, accepted, expired, and wrong-ema
   );
 });
 
+test("invite acceptance requires the invited email and preserves status-based blocks", () => {
+  assert.equal(
+    getInviteAcceptanceBlockReason({
+      status: "pending",
+      isExpired: false,
+      inviteEmail: "invitee@example.com",
+      authenticatedEmail: null,
+    }),
+    "You must sign in with the invited email address to accept this invitation."
+  );
+
+  assert.equal(
+    getInviteAcceptanceBlockReason({
+      status: "pending",
+      isExpired: false,
+      inviteEmail: "Invitee@Example.com ",
+      authenticatedEmail: " invitee@example.com",
+    }),
+    null
+  );
+
+  assert.equal(
+    getInviteAcceptanceBlockReason({
+      status: "revoked",
+      isExpired: true,
+      inviteEmail: "invitee@example.com",
+      authenticatedEmail: "other@example.com",
+    }),
+    "This invitation has been revoked."
+  );
+
+  assert.equal(
+    getInviteAcceptanceBlockReason({
+      status: "accepted",
+      isExpired: true,
+      inviteEmail: "invitee@example.com",
+      authenticatedEmail: "other@example.com",
+    }),
+    "This invitation has already been accepted."
+  );
+});
+
 test("impersonation is limited to platform dev acting within the current organization", () => {
   assert.equal(
     getImpersonationDecision({
@@ -175,6 +217,44 @@ test("impersonation is limited to platform dev acting within the current organiz
   );
 });
 
+test("impersonation rejects missing context before any cross-org action", () => {
+  assert.equal(
+    getImpersonationDecision({
+      realRole: "dev",
+      realUserId: null,
+      currentOrganizationId: "org-1",
+      targetUserId: "target-user",
+      targetUserActive: true,
+      targetMembershipOrganizationId: "org-1",
+    }),
+    "reject"
+  );
+
+  assert.equal(
+    getImpersonationDecision({
+      realRole: "dev",
+      realUserId: "real-user",
+      currentOrganizationId: null,
+      targetUserId: "target-user",
+      targetUserActive: true,
+      targetMembershipOrganizationId: "org-1",
+    }),
+    "reject"
+  );
+
+  assert.equal(
+    getImpersonationDecision({
+      realRole: "dev",
+      realUserId: "real-user",
+      currentOrganizationId: "org-1",
+      targetUserId: null,
+      targetUserActive: true,
+      targetMembershipOrganizationId: "org-1",
+    }),
+    "reject"
+  );
+});
+
 test("platform dev role helper stays narrow", () => {
   assert.equal(isPlatformDevRole("dev"), true);
   assert.equal(isPlatformDevRole("admin"), false);
@@ -201,6 +281,24 @@ test("organization switching only allows visible organizations and supports clea
   assert.equal(
     getOrganizationSwitchDecision({
       requestedOrganizationId: "org-3",
+      switchableOrganizationIds: ["org-1", "org-2"],
+    }),
+    "reject"
+  );
+});
+
+test("organization switching tolerates whitespace but still rejects invisible orgs", () => {
+  assert.equal(
+    getOrganizationSwitchDecision({
+      requestedOrganizationId: " org-2 ",
+      switchableOrganizationIds: ["org-1", "org-2"],
+    }),
+    "set"
+  );
+
+  assert.equal(
+    getOrganizationSwitchDecision({
+      requestedOrganizationId: " org-3 ",
       switchableOrganizationIds: ["org-1", "org-2"],
     }),
     "reject"

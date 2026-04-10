@@ -47,6 +47,20 @@ test("organization switch plan sets cookie for visible organizations", () => {
   );
 });
 
+test("organization switch plan normalizes whitespace before setting the cookie", () => {
+  assert.deepEqual(
+    planOrganizationSwitch({
+      requestedOrganizationId: " org-1 ",
+      switchableOrganizationIds: ["org-1"],
+    }),
+    {
+      cookieAction: "set",
+      organizationId: "org-1",
+      revalidatePaths: ["/", "/settings", "/dev-tools"],
+    }
+  );
+});
+
 test("impersonation plan rejects invalid targets without side effects", () => {
   assert.deepEqual(
     planImpersonationChange({
@@ -97,6 +111,40 @@ test("impersonation plan sets cookie for valid in-org target", () => {
       cookieAction: "set",
       impersonatedUserId: "target",
       revalidatePaths: ["/", "/settings"],
+    }
+  );
+});
+
+test("impersonation plan noops for cross-org or inactive targets", () => {
+  assert.deepEqual(
+    planImpersonationChange({
+      realRole: "dev",
+      realUserId: "real",
+      currentOrganizationId: "org-1",
+      targetUserId: "target",
+      targetUserActive: true,
+      targetMembershipOrganizationId: "org-2",
+    }),
+    {
+      cookieAction: "noop",
+      impersonatedUserId: null,
+      revalidatePaths: [],
+    }
+  );
+
+  assert.deepEqual(
+    planImpersonationChange({
+      realRole: "dev",
+      realUserId: "real",
+      currentOrganizationId: "org-1",
+      targetUserId: "target",
+      targetUserActive: false,
+      targetMembershipOrganizationId: "org-1",
+    }),
+    {
+      cookieAction: "noop",
+      impersonatedUserId: null,
+      revalidatePaths: [],
     }
   );
 });

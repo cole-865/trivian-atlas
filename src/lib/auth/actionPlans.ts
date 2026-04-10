@@ -11,6 +11,7 @@ export function planOrganizationSwitch(args: {
   requestedOrganizationId: string | null | undefined;
   switchableOrganizationIds: string[];
 }) {
+  const requestedOrganizationId = args.requestedOrganizationId?.trim() ?? null;
   const decision = getOrganizationSwitchDecision(args);
 
   if (decision === "clear") {
@@ -31,7 +32,7 @@ export function planOrganizationSwitch(args: {
 
   return {
     cookieAction: "set" as const,
-    organizationId: args.requestedOrganizationId ?? null,
+    organizationId: requestedOrganizationId,
     revalidatePaths: ORG_REVALIDATE_PATHS,
   };
 }
