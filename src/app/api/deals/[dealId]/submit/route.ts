@@ -10,6 +10,7 @@ import { loadInventoryVehicleForOrganization } from "@/lib/los/organizationScope
 import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
 import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
 import { sendDealApprovalRequestEmail } from "@/lib/email/notifications";
+import { createDealFundingReviewNotifications } from "@/lib/notifications/appNotifications";
 
 const REQUIRED_DOC_TYPES = [
     "proof_of_income",
@@ -249,6 +250,16 @@ export async function POST(
             { error: "Failed to submit deal", details: updateErr.message },
             { status: 500 }
         );
+    }
+
+    try {
+        await createDealFundingReviewNotifications({
+            organizationId,
+            dealId,
+            customerName: deal.customer_name,
+        });
+    } catch (error) {
+        console.error("deal funding review notification failed:", error);
     }
 
     try {

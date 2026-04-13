@@ -269,16 +269,16 @@ export async function sendDealApprovalRequestEmail(args: {
 
   return sendEmail({
     to,
-    subject: `${customerName} is ready for final approval`,
+    subject: `${customerName} is ready for funding review`,
     text: [
-      `${customerName} was submitted for final approval in the ${organization.name} account.`,
+      `${customerName} is ready for funding review in the ${organization.name} account.`,
       "",
       `Submitted by: ${submittedBy}`,
       `Review deal: ${reviewUrl}`,
     ].join("\n"),
     html: `
       <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
-        <p><strong>${safeCustomerName}</strong> was submitted for final approval in the <strong>${safeAccountName}</strong> account.</p>
+        <p><strong>${safeCustomerName}</strong> is ready for funding review in the <strong>${safeAccountName}</strong> account.</p>
         <p>Submitted by: ${safeSubmittedBy}</p>
         <p><a href="${safeReviewUrl}">Review deal in Trivian Atlas</a></p>
       </div>
@@ -323,6 +323,152 @@ function buildOverrideStructureLines(structure: OverrideEmailStructure) {
     `LTV: ${percent(structure.ltv)}`,
     `PTI: ${percent(structure.pti)}`,
   ];
+}
+
+function toEmailRecipient(profile: UserProfileRow | undefined, userId: string) {
+  const email = profile?.email?.trim() ?? "";
+  const isActive = profile?.is_active ?? true;
+
+  if (!email || !isActive) {
+    return null;
+  }
+
+  return {
+    userId,
+    email,
+    fullName: profile?.full_name ?? null,
+  };
+}
+
+async function getCounterOfferRecipients(args: {
+  organizationId: string;
+  salespersonUserId: string | null;
+}) {
+  const managementRecipients = await getOrganizationRoleRecipients(args.organizationId, [
+    "management",
+    "admin",
+  ]);
+  const recipients = [...managementRecipients];
+  const salespersonUserId = args.salespersonUserId?.trim() || null;
+
+  if (salespersonUserId) {
+    const salespersonLookup = await getUserProfilesByIds([salespersonUserId]);
+    const salesperson = toEmailRecipient(
+      salespersonLookup.get(salespersonUserId),
+      salespersonUserId
+    );
+
+    if (salesperson) {
+      recipients.push(salesperson);
+    }
+  }
+
+  return Array.from(
+    new Map(recipients.map((recipient) => [recipient.email, recipient])).values()
+  );
+}
+
+async function getFundingOutcomeRecipients(args: {
+  organizationId: string;
+  salespersonUserId: string | null;
+  submittedByUserId: string | null;
+}) {
+  const managementRecipients = await getOrganizationRoleRecipients(args.organizationId, [
+    "management",
+    "admin",
+  ]);
+  const involvedUserIds = [args.salespersonUserId, args.submittedByUserId].filter(
+    (userId): userId is string => !!userId
+  );
+  const involvedLookup = await getUserProfilesByIds(involvedUserIds);
+  const involvedRecipients = involvedUserIds
+    .map((userId) => toEmailRecipient(involvedLookup.get(userId), userId))
+    .filter(
+      (
+        recipient
+      ): recipient is { email: string; fullName: string | null; userId: string } => !!recipient
+    );
+
+  return Array.from(
+    new Map(
+      [...managementRecipients, ...involvedRecipients].map((recipient) => [
+        recipient.email,
+        recipient,
+      ])
+    ).values()
+  );
+}
+
+export async function sendDealFundingOutcomeEmail(args: {
+  organizationId: string;
+  dealId: string;
+  dealNumber: string | null;
+  customerName: string | null;
+  salespersonUserId: string | null;
+  submittedByUserId: string | null;
+  outcome: "funded" | "funded_with_changes" | "rejected" | "restructure_requested";
+  reason?: string | null;
+  verifiedMonthlyIncome?: number | null;
+}) {
+  if (!hasAdminAccess()) {
+    return {
+      sent: false,
+      reason: "Email delivery requires SUPABASE_SERVICE_ROLE_KEY for recipient lookups.",
+    } satisfies EmailSendResult;
+  }
+
+  const organization = await getOrganizationById(args.organizationId);
+  if (!organization) {
+    return {
+      sent: false,
+      reason: "Account was not found while preparing the funding email.",
+    } satisfies EmailSendResult;
+  }
+
+  const recipients = await getFundingOutcomeRecipients({
+    organizationId: args.organizationId,
+    salespersonUserId: args.salespersonUserId,
+    submittedByUserId: args.submittedByUserId,
+  });
+  const to = recipients.map((recipient) => recipient.email);
+
+  if (!to.length) {
+    return {
+      sent: false,
+      reason: "No active funding outcome recipients are configured for this account.",
+    } satisfies EmailSendResult;
+  }
+
+  const dealLabel = args.dealNumber?.trim() || args.dealId;
+  const customerName = args.customerName?.trim() || `Deal #${dealLabel}`;
+  const reviewUrl = `${getSiteUrl()}/deals/${encodeURIComponent(args.dealId)}/fund`;
+  const reason = args.reason?.trim() || "No reason provided.";
+  const verifiedIncomeLine =
+    args.verifiedMonthlyIncome != null && Number.isFinite(args.verifiedMonthlyIncome)
+      ? `Verified monthly income: ${money(args.verifiedMonthlyIncome)}`
+      : null;
+  const outcomeText =
+    args.outcome === "funded"
+      ? "is funded. No further review!"
+      : args.outcome === "funded_with_changes"
+        ? "is funded with verified income changes."
+        : args.outcome === "restructure_requested"
+          ? "was sent back to underwriting to restructure."
+          : `funding was rejected: ${reason}`;
+
+  return sendEmail({
+    to,
+    subject: `Deal #${dealLabel} ${args.outcome === "rejected" ? "funding rejected" : args.outcome === "restructure_requested" ? "sent back to underwriting" : "funded"}`,
+    text: [
+      `Deal #${dealLabel} for ${customerName} ${outcomeText}`,
+      `Account: ${organization.name}`,
+      verifiedIncomeLine,
+      args.outcome === "funded" ? null : `Reason: ${reason}`,
+      `Review deal: ${reviewUrl}`,
+    ]
+      .filter((line): line is string => !!line)
+      .join("\n"),
+  });
 }
 
 export async function sendDealOverrideRequestedEmail(args: {
@@ -393,6 +539,80 @@ export async function sendDealOverrideRequestedEmail(args: {
         <p>Override request:</p>
         <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">${safeRequestedNote}</pre>
         <p><a href="${safeReviewUrl}">Review override in Trivian Atlas</a></p>
+      </div>
+    `,
+  });
+}
+
+export async function sendDealOverrideCounterOfferEmail(args: {
+  organizationId: string;
+  dealId: string;
+  blockerCode: string;
+  customerName: string | null;
+  reviewNote: string | null;
+  reviewedByUserId: string | null;
+  salespersonUserId: string | null;
+  structure: OverrideEmailStructure;
+}) {
+  if (!hasAdminAccess()) {
+    return {
+      sent: false,
+      reason: "Email delivery requires SUPABASE_SERVICE_ROLE_KEY for recipient lookups.",
+    } satisfies EmailSendResult;
+  }
+
+  const organization = await getOrganizationById(args.organizationId);
+  if (!organization) {
+    return {
+      sent: false,
+      reason: "Account was not found while preparing the counter offer email.",
+    } satisfies EmailSendResult;
+  }
+
+  const recipients = await getCounterOfferRecipients({
+    organizationId: args.organizationId,
+    salespersonUserId: args.salespersonUserId,
+  });
+  const to = recipients.map((recipient) => recipient.email);
+
+  if (!to.length) {
+    return {
+      sent: false,
+      reason: "No active salesperson, management, or admin recipients are configured for this account.",
+    } satisfies EmailSendResult;
+  }
+
+  const customerName = args.customerName?.trim() || "Untitled customer";
+  const reviewedBy = await getUserDisplayName(args.reviewedByUserId);
+  const reviewUrl = `${getSiteUrl()}/deals/${encodeURIComponent(args.dealId)}/deal`;
+  const reviewNote = args.reviewNote?.trim() || "No note provided.";
+  const safeCustomerName = escapeHtml(customerName);
+  const safeBlockerCode = escapeHtml(args.blockerCode);
+  const safeOrganizationName = escapeHtml(organization.name);
+  const safeReviewedBy = escapeHtml(reviewedBy);
+  const safeReviewUrl = escapeHtml(reviewUrl);
+  const safeReviewNote = escapeHtml(reviewNote);
+
+  return sendEmail({
+    to,
+    subject: `${customerName} received a ${args.blockerCode} counter offer`,
+    text: [
+      `${customerName} received a ${args.blockerCode} counter offer in ${organization.name}.`,
+      "",
+      `Countered by: ${reviewedBy}`,
+      ...buildOverrideStructureLines(args.structure),
+      "",
+      "Counter note:",
+      reviewNote,
+      `Review in Atlas: ${reviewUrl}`,
+    ].join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
+        <p><strong>${safeCustomerName}</strong> received a <strong>${safeBlockerCode}</strong> counter offer in <strong>${safeOrganizationName}</strong>.</p>
+        <p>Countered by: ${safeReviewedBy}</p>
+        <p>Counter note:</p>
+        <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">${safeReviewNote}</pre>
+        <p><a href="${safeReviewUrl}">Review counter offer in Trivian Atlas</a></p>
       </div>
     `,
   });

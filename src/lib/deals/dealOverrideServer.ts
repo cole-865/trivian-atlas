@@ -17,6 +17,7 @@ import {
 import { createAppNotifications } from "@/lib/notifications/appNotifications";
 import {
   sendDealOverrideApprovedEmail,
+  sendDealOverrideCounterOfferEmail,
   sendDealOverrideDeniedEmail,
   sendDealOverrideRequestedEmail,
   sendDealOverrideStaleEmail,
@@ -90,6 +91,19 @@ type UserProfileRow = {
   is_active: boolean;
 };
 
+type CounterOfferOutputSnapshot = {
+  structure?: {
+    amount_financed?: number | null;
+    cash_down_effective?: number | null;
+    ltv?: number | null;
+    monthly_payment?: number | null;
+    term_months?: number | null;
+  } | null;
+  vehicle?: {
+    id?: string | null;
+  } | null;
+};
+
 function toRequestLike(
   request: DealOverrideRequestRecord
 ): DealOverrideRequestLike {
@@ -126,6 +140,37 @@ async function getUserProfiles(userIds: string[]) {
   }
 
   return lookup;
+}
+
+function getCounterOfferEmailStructure(outputsSnapshot: Record<string, unknown>) {
+  const snapshot = outputsSnapshot as CounterOfferOutputSnapshot;
+  const structure = snapshot.structure ?? null;
+
+  return {
+    amountFinanced: structure?.amount_financed ?? null,
+    cashDown: structure?.cash_down_effective ?? null,
+    ltv: structure?.ltv ?? null,
+    monthlyPayment: structure?.monthly_payment ?? null,
+    pti: null,
+    termMonths: structure?.term_months ?? null,
+  };
+}
+
+function getCounterOfferOverrideSnapshot(
+  outputsSnapshot: Record<string, unknown>
+): DealOverrideStructureSnapshot {
+  const snapshot = outputsSnapshot as CounterOfferOutputSnapshot;
+  const structure = snapshot.structure ?? null;
+
+  return {
+    vehicleId: snapshot.vehicle?.id ?? null,
+    cashDown: structure?.cash_down_effective ?? null,
+    amountFinanced: structure?.amount_financed ?? null,
+    monthlyPayment: structure?.monthly_payment ?? null,
+    termMonths: structure?.term_months ?? null,
+    ltv: structure?.ltv ?? null,
+    pti: null,
+  };
 }
 
 export async function loadOverrideAuthorityRecipients(organizationId: string) {
@@ -594,6 +639,7 @@ export async function reviewDealOverrideRequest(args: {
   status: "approved" | "denied" | "countered";
   reviewNote: string | null;
   customerName: string | null;
+  salespersonUserId: string | null;
   counterOffer?:
     | {
         counterType: DealOverrideCounterType;
@@ -613,11 +659,12 @@ export async function reviewDealOverrideRequest(args: {
   }
 
   const timestamp = new Date().toISOString();
+  const requestStatus = args.status === "countered" ? "pending" : args.status;
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("deal_override_requests")
     .update({
-      status: args.status,
+      status: requestStatus,
       reviewed_by: args.reviewedByUserId,
       review_note: args.reviewNote,
       reviewed_at: timestamp,
@@ -686,6 +733,19 @@ export async function reviewDealOverrideRequest(args: {
     }
 
     counterOfferRecord = insertedCounter as DealOverrideCounterOfferRecord;
+
+    await sendDealOverrideCounterOfferEmail({
+      organizationId: args.organizationId,
+      dealId: args.dealId,
+      blockerCode: request.blocker_code,
+      customerName: args.customerName,
+      reviewNote: args.reviewNote,
+      reviewedByUserId: args.reviewedByUserId,
+      salespersonUserId: args.salespersonUserId,
+      structure: getCounterOfferEmailStructure(args.counterOffer.outputsSnapshot),
+    }).catch((emailError) => {
+      console.error("deal override counter offer email failed:", emailError);
+    });
   }
 
   const profileLookup = await getUserProfiles([
@@ -701,7 +761,7 @@ export async function reviewDealOverrideRequest(args: {
         args.status === "approved"
           ? "deal_override_approved"
           : args.status === "countered"
-            ? "deal_override_countered"
+            ? "deal_override_requested"
             : "deal_override_denied",
       dealId: args.dealId,
       overrideRequestId: request.id,
@@ -862,5 +922,33 @@ export async function acceptLatestDealOverrideCounterOffer(args: {
     throw new Error("This counter offer was already handled or is no longer active.");
   }
 
-  return data as DealOverrideCounterOfferRecord;
+  const acceptedOffer = data as DealOverrideCounterOfferRecord;
+  const acceptedSnapshot = getCounterOfferOverrideSnapshot(
+    acceptedOffer.outputs_snapshot_json
+  );
+  const { error: requestErr } = await admin
+    .from("deal_override_requests")
+    .update({
+      status: "approved",
+      structure_fingerprint: buildDealOverrideFingerprint(acceptedSnapshot),
+      vehicle_id: acceptedSnapshot.vehicleId,
+      cash_down_snapshot: acceptedSnapshot.cashDown,
+      amount_financed_snapshot: acceptedSnapshot.amountFinanced,
+      monthly_payment_snapshot: acceptedSnapshot.monthlyPayment,
+      term_months_snapshot: acceptedSnapshot.termMonths,
+      ltv_snapshot: acceptedSnapshot.ltv,
+      pti_snapshot: acceptedSnapshot.pti,
+      stale_reason: null,
+      status_changed_at: timestamp,
+      updated_at: timestamp,
+    })
+    .eq("id", args.requestId)
+    .eq("organization_id", args.organizationId)
+    .eq("deal_id", args.dealId);
+
+  if (requestErr) {
+    throw new Error(`Failed to approve accepted counter offer: ${requestErr.message}`);
+  }
+
+  return acceptedOffer;
 }

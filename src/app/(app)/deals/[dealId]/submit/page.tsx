@@ -26,6 +26,8 @@ type DealStructure = {
   include_gap: boolean;
   term_months: number;
   monthly_payment: number;
+  ltv: number;
+  pti: number;
   cash_down: number | null;
 };
 
@@ -528,7 +530,7 @@ export default function DealSubmitPage() {
             style={{
               ...btnPrimary,
               background: !canSubmit || loading || submitting ? "#999" : "#111",
-              borderColor: !canSubmit || loading || submitting ? "#999" : "#111",
+              border: `1px solid ${!canSubmit || loading || submitting ? "#999" : "#111"}`,
               cursor:
                 !canSubmit || loading || submitting ? "not-allowed" : "pointer",
             }}
@@ -581,6 +583,16 @@ export default function DealSubmitPage() {
 
               <div style={k}>Monthly Payment</div>
               <div style={vStrong}>{structure ? money(structure.monthly_payment) : "—"}</div>
+
+              <div style={k}>LTV</div>
+              <div style={vStrong}>
+                {structure?.ltv ? `${(Number(structure.ltv) * 100).toFixed(1)}%` : "-"}
+              </div>
+
+              <div style={k}>PTI</div>
+              <div style={vStrong}>
+                {structure?.pti ? `${(Number(structure.pti) * 100).toFixed(1)}%` : "-"}
+              </div>
 
               <div style={k}>Term</div>
               <div style={vStrong}>{structure ? `${structure.term_months} months` : "—"}</div>

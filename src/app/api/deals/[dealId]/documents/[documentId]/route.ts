@@ -9,6 +9,67 @@ import {
 import { purgeCreditReportArtifacts } from "@/lib/deals/creditReportArtifacts";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ dealId: string; documentId: string }> }
+) {
+  const { dealId, documentId } = await params;
+  const supabase = await supabaseServer();
+  const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+
+  if (!scopedDeal.organizationId) {
+    return NextResponse.json(
+      { error: NO_CURRENT_ORGANIZATION_MESSAGE },
+      { status: 400 }
+    );
+  }
+
+  if (scopedDeal.error) {
+    return NextResponse.json(
+      { error: "Failed to load deal", details: scopedDeal.error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!scopedDeal.data) {
+    return NextResponse.json({ error: "Deal not found" }, { status: 404 });
+  }
+
+  const { data: doc, error: loadErr } = await scopeQueryToOrganization(
+    supabase
+      .from("deal_documents")
+      .select("id, deal_id, storage_bucket, storage_path"),
+    scopedDeal.organizationId
+  )
+    .eq("id", documentId)
+    .eq("deal_id", dealId)
+    .maybeSingle();
+
+  if (loadErr) {
+    return NextResponse.json(
+      { error: "Failed to load document", details: loadErr.message },
+      { status: 500 }
+    );
+  }
+
+  if (!doc?.id) {
+    return NextResponse.json({ error: "Document not found" }, { status: 404 });
+  }
+
+  const { data: signed, error: signedErr } = await supabase.storage
+    .from(doc.storage_bucket)
+    .createSignedUrl(doc.storage_path, 60 * 5);
+
+  if (signedErr || !signed?.signedUrl) {
+    return NextResponse.json(
+      { error: "Failed to create document link", details: signedErr?.message },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.redirect(signed.signedUrl);
+}
+
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ dealId: string; documentId: string }> }

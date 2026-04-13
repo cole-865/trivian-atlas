@@ -45,7 +45,9 @@ export async function POST(
     await getDealForCurrentOrganization<{
       customer_name: string | null;
       id: string;
-    }>(supabase, dealId, "id, customer_name");
+      submitted_by: string | null;
+      user_id: string | null;
+    }>(supabase, dealId, "id, customer_name, user_id, submitted_by");
 
   if (!organizationId) {
     return NextResponse.json(
@@ -124,6 +126,7 @@ export async function POST(
       status: status as "approved" | "denied" | "countered",
       reviewNote,
       customerName: deal.customer_name,
+      salespersonUserId: deal.user_id ?? deal.submitted_by ?? null,
       counterOffer,
     });
 

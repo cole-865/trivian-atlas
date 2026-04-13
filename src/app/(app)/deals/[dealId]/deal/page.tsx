@@ -112,6 +112,7 @@ type DealStructureResponse = {
       term_months: number;
       monthly_payment: number;
       ltv: number;
+      pti: number;
       fits_program: boolean;
       fail_reasons: string[];
       checks: {
@@ -133,6 +134,7 @@ type DealStructureResponse = {
       max_amount_financed: number;
       max_vehicle_price: number;
       max_ltv: number;
+      max_pti: number;
       trade_payoff: number;
       underwriting_max_term_months: number;
       vehicle_max_term_months: number;
@@ -230,6 +232,7 @@ type CounterOfferEditorState = {
   include_gap: boolean;
   include_vsc: boolean;
   sale_price: string;
+  sales_tax: string;
   tax_add_base: string;
   tax_add_rate: string;
   tax_rate_main: string;
@@ -268,9 +271,74 @@ function fmtInput(value: number | null | undefined) {
   return value == null || !Number.isFinite(value) ? "" : String(value);
 }
 
+function formatPercent(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) {
+    return "n/a";
+  }
+
+  return `${(Number(value) * 100).toFixed(1)}%`;
+}
+
+function parseMoneyInput(value: string) {
+  const normalized = value.replace(/[$,]/g, "").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function calculateSalesTax(args: {
+  includeVsc: boolean;
+  salePrice: number;
+  taxAddBase: number;
+  taxAddRate: number;
+  taxRateMain: number;
+  vscPrice: number;
+}) {
+  const taxableAmount =
+    Number(args.salePrice ?? 0) + (args.includeVsc ? Number(args.vscPrice ?? 0) : 0);
+  const salesTax =
+    taxableAmount * Number(args.taxRateMain ?? 0) +
+    Math.min(taxableAmount, Number(args.taxAddBase ?? 0)) *
+      Number(args.taxAddRate ?? 0);
+
+  return Number(salesTax.toFixed(2));
+}
+
+function calculateCounterSalesTax(
+  editor: CounterOfferEditorState,
+  baseInputs: DealStructureResponse["structureInputs"]
+) {
+  return calculateSalesTax({
+    includeVsc: editor.include_vsc,
+    salePrice: parseMoneyInput(editor.sale_price),
+    taxAddBase: Number(baseInputs.tax_add_base ?? 0),
+    taxAddRate: Number(baseInputs.tax_add_rate ?? 0),
+    taxRateMain: Number(baseInputs.tax_rate_main ?? 0),
+    vscPrice: parseMoneyInput(editor.vsc_price),
+  });
+}
+
+function withCalculatedSalesTax(
+  editor: CounterOfferEditorState,
+  baseInputs: DealStructureResponse["structureInputs"]
+) {
+  return {
+    ...editor,
+    sales_tax: fmtInput(calculateCounterSalesTax(editor, baseInputs)),
+  };
+}
+
 function buildCounterOfferEditorState(
   inputs: DealStructureResponse["structureInputs"]
 ): CounterOfferEditorState {
+  const salesTax = calculateSalesTax({
+    includeVsc: inputs.include_vsc,
+    salePrice: Number(inputs.sale_price ?? 0),
+    taxAddBase: Number(inputs.tax_add_base ?? 0),
+    taxAddRate: Number(inputs.tax_add_rate ?? 0),
+    taxRateMain: Number(inputs.tax_rate_main ?? 0),
+    vscPrice: Number(inputs.vsc_price ?? 0),
+  });
+
   return {
     cash_down: fmtInput(inputs.cash_down),
     counter_type: "improve_approval",
@@ -279,6 +347,7 @@ function buildCounterOfferEditorState(
     include_gap: !!inputs.include_gap,
     include_vsc: !!inputs.include_vsc,
     sale_price: fmtInput(inputs.sale_price),
+    sales_tax: fmtInput(salesTax),
     tax_add_base: fmtInput(inputs.tax_add_base),
     tax_add_rate: fmtInput(inputs.tax_add_rate),
     tax_rate_main: fmtInput(inputs.tax_rate_main),
@@ -292,34 +361,111 @@ function toCounterOfferPayload(
   editor: CounterOfferEditorState,
   baseInputs: DealStructureResponse["structureInputs"]
 ) {
+  const editorWithCalculatedTax = withCalculatedSalesTax(editor, baseInputs);
+  const salesTax = parseMoneyInput(editorWithCalculatedTax.sales_tax);
+
   return {
-    counter_type: editor.counter_type,
+    counter_type: editorWithCalculatedTax.counter_type,
     counter_offer: {
       inputs: {
         ...baseInputs,
-        cash_down: parseNumOrNull(editor.cash_down),
-        doc_fee: Number(editor.doc_fee),
-        gap_price: Number(editor.gap_price),
-        include_gap: editor.include_gap,
-        include_vsc: editor.include_vsc,
+        cash_down: parseNumOrNull(editorWithCalculatedTax.cash_down),
+        doc_fee: Number(editorWithCalculatedTax.doc_fee),
+        gap_price: Number(editorWithCalculatedTax.gap_price),
+        include_gap: editorWithCalculatedTax.include_gap,
+        include_vsc: editorWithCalculatedTax.include_vsc,
         option_label:
-          editor.include_vsc && editor.include_gap
+          editorWithCalculatedTax.include_vsc && editorWithCalculatedTax.include_gap
             ? "VSC+GAP"
-            : editor.include_vsc
+            : editorWithCalculatedTax.include_vsc
               ? "VSC"
-              : editor.include_gap
+              : editorWithCalculatedTax.include_gap
                 ? "GAP"
                 : "NONE",
-        sale_price: Number(editor.sale_price),
-        tax_add_base: Number(editor.tax_add_base),
-        tax_add_rate: Number(editor.tax_add_rate),
-        tax_rate_main: Number(editor.tax_rate_main),
-        term_months: Number(editor.term_months),
-        title_license: Number(editor.title_license),
-        vsc_price: Number(editor.vsc_price),
+        sale_price: Number(editorWithCalculatedTax.sale_price),
+        tax_add_base: salesTax,
+        tax_add_rate: 1,
+        tax_rate_main: 0,
+        term_months: Number(editorWithCalculatedTax.term_months),
+        title_license: Number(editorWithCalculatedTax.title_license),
+        vsc_price: Number(editorWithCalculatedTax.vsc_price),
       },
     },
   };
+}
+
+function getBlockerDetailLine(args: {
+  blockerCode: DealOverrideBlockerCode;
+  assumptions: DealStructureResponse["structure"]["assumptions"];
+  structure: DealStructureResponse["structure"]["structure"];
+}) {
+  const { blockerCode, assumptions, structure } = args;
+  const breakdown = structure.additional_down_breakdown;
+
+  if (blockerCode === "LTV") {
+    return `LTV is ${formatPercent(structure.ltv)} vs ${formatPercent(assumptions.max_ltv)} max. Route to fix: ${money(breakdown.ltv)} additional down.`;
+  }
+
+  if (blockerCode === "PTI") {
+    return `Payment is ${money(structure.monthly_payment)} vs ${money(assumptions.max_payment_cap)} cap. Route to fix: ${money(breakdown.pti)} additional down.`;
+  }
+
+  if (blockerCode === "AMOUNT_FINANCED") {
+    return `Amount financed is ${money(structure.amount_financed)} vs ${money(assumptions.max_amount_financed)} max. Route to fix: ${money(breakdown.amount_financed)} additional down.`;
+  }
+
+  if (blockerCode === "VEHICLE_PRICE") {
+    const overBy = Math.max(0, Number(structure.sale_price) - Number(assumptions.max_vehicle_price));
+    return `Vehicle price is ${money(structure.sale_price)} vs ${money(assumptions.max_vehicle_price)} max. Over by ${money(overBy)}.`;
+  }
+
+  return null;
+}
+
+function getStructureIssueLine(args: {
+  row: "sale_price" | "amount_financed" | "payment" | "ltv" | "additional_down";
+  assumptions: DealStructureResponse["structure"]["assumptions"];
+  structure: DealStructureResponse["structure"]["structure"];
+}) {
+  const { row, assumptions, structure } = args;
+
+  if (
+    row === "sale_price" &&
+    assumptions.max_vehicle_price > 0 &&
+    structure.sale_price > assumptions.max_vehicle_price
+  ) {
+    return `Over vehicle max by ${money(structure.sale_price - assumptions.max_vehicle_price)}.`;
+  }
+
+  if (
+    row === "amount_financed" &&
+    assumptions.max_amount_financed > 0 &&
+    structure.amount_financed > assumptions.max_amount_financed
+  ) {
+    return `Amount financed must be <= ${money(assumptions.max_amount_financed)}.`;
+  }
+
+  if (
+    row === "payment" &&
+    assumptions.max_payment_cap > 0 &&
+    structure.monthly_payment > assumptions.max_payment_cap
+  ) {
+    return `Payment must be <= ${money(assumptions.max_payment_cap)}.`;
+  }
+
+  if (
+    row === "ltv" &&
+    assumptions.max_ltv > 0 &&
+    structure.ltv > assumptions.max_ltv
+  ) {
+    return `LTV must be <= ${formatPercent(assumptions.max_ltv)}.`;
+  }
+
+  if (row === "additional_down" && structure.additional_down_needed > 0) {
+    return `Needs ${money(structure.additional_down_needed)} more down to fit.`;
+  }
+
+  return null;
 }
 
 function isValidLabel(v: string | null): v is Selection["option_label"] {
@@ -539,6 +685,20 @@ export default function DealDealPage() {
     router.push(`/deals/${dealId}/submit`);
   }
 
+  function updateCounterEditor(
+    requestId: string,
+    baseInputs: DealStructureResponse["structureInputs"],
+    patch: Partial<CounterOfferEditorState>
+  ) {
+    setCounterEditors((current) => ({
+      ...current,
+      [requestId]: {
+        ...(current[requestId] ?? buildCounterOfferEditorState(baseInputs)),
+        ...patch,
+      },
+    }));
+  }
+
   async function submitOverride(
     blockerCode: DealOverrideBlockerCode,
     action: "request" | "approve"
@@ -621,9 +781,14 @@ export default function DealDealPage() {
       setErr("Counter offer inputs are not ready yet.");
       return;
     }
+    const editorWithCalculatedTax = withCalculatedSalesTax(editor, structureInputs);
 
     setErr(null);
     setWorkingKey(`preview:${requestId}`);
+    setCounterEditors((current) => ({
+      ...current,
+      [requestId]: editorWithCalculatedTax,
+    }));
 
     try {
       const r = await fetch(
@@ -631,7 +796,7 @@ export default function DealDealPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(toCounterOfferPayload(editor, structureInputs)),
+          body: JSON.stringify(toCounterOfferPayload(editorWithCalculatedTax, structureInputs)),
         }
       );
 
@@ -670,8 +835,13 @@ export default function DealDealPage() {
         if (!editor) {
           throw new Error("Counter offer inputs are not ready yet.");
         }
+        const editorWithCalculatedTax = withCalculatedSalesTax(editor, structureInputs);
+        setCounterEditors((current) => ({
+          ...current,
+          [requestId]: editorWithCalculatedTax,
+        }));
 
-        Object.assign(body, toCounterOfferPayload(editor, structureInputs));
+        Object.assign(body, toCounterOfferPayload(editorWithCalculatedTax, structureInputs));
       }
 
       const r = await fetch(
@@ -791,7 +961,7 @@ export default function DealDealPage() {
       {structure && vehicle && dealMath ? (
         <>
           {latestCounterOffer ? (
-            <div style={{ ...card, borderColor: "#cbd5e1", background: "#f8fafc" }}>
+            <div style={{ ...card, border: "1px solid #cbd5e1", background: "#f8fafc" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
                   <div style={sectionTitle}>Latest Counter Offer</div>
@@ -933,6 +1103,11 @@ export default function DealDealPage() {
                 <div style={v}>
                   {dealMath.ltv ? `${(Number(dealMath.ltv) * 100).toFixed(1)}%` : "—"}
                 </div>
+
+                <div style={k}>PTI</div>
+                <div style={v}>
+                  {dealMath.pti ? `${(Number(dealMath.pti) * 100).toFixed(1)}%` : "-"}
+                </div>
               </div>
             </div>
 
@@ -1027,6 +1202,11 @@ export default function DealDealPage() {
                     : "—"}
                 </div>
 
+                <div style={k}>Max PTI</div>
+                <div style={v}>
+                  {assumptions?.max_pti ? `${(Number(assumptions.max_pti) * 100).toFixed(1)}%` : "-"}
+                </div>
+
                 <div style={k}>Trade Payoff</div>
                 <div style={v}>{money(assumptions?.trade_payoff)}</div>
               </div>
@@ -1064,6 +1244,11 @@ export default function DealDealPage() {
                       requestHistory.find(
                         (request) => request.blocker_code === blocker.blockerCode
                       ) ?? null;
+                    const blockerDetail = getBlockerDetailLine({
+                      blockerCode: blocker.blockerCode,
+                      assumptions: structure.assumptions,
+                      structure: dealMath,
+                    });
 
                     return (
                       <div key={blocker.blockerCode} style={overrideCard}>
@@ -1081,6 +1266,11 @@ export default function DealDealPage() {
                                       : "Blocked"}
                               </span>
                             </div>
+                            {blockerDetail ? (
+                              <div style={{ ...blockerDetailText, marginTop: 8 }}>
+                                {blockerDetail}
+                              </div>
+                            ) : null}
                             {blocker.staleReason ? (
                               <div style={{ ...hintText, marginTop: 8 }}>{blocker.staleReason}</div>
                             ) : null}
@@ -1257,271 +1447,226 @@ export default function DealDealPage() {
                             </div>
                             {expandedCounterRequestId === matchingRequest.id &&
                             structureInputs ? (
-                              <div style={counterEditorCard}>
-                                <div style={compareGrid}>
-                                  <div style={comparePanel}>
-                                    <div style={sectionSubtitle}>Current Structure</div>
-                                    <div style={compareLine}>Sale Price: {money(dealMath.sale_price)}</div>
-                                    <div style={compareLine}>Cash Down: {money(dealMath.cash_down_input)}</div>
-                                    <div style={compareLine}>Sales Tax: {money(dealMath.sales_tax)}</div>
-                                    <div style={compareLine}>Doc Fee: {money(dealMath.doc_fee)}</div>
-                                    <div style={compareLine}>Title / License: {money(dealMath.title_license)}</div>
-                                    <div style={compareLine}>VSC Price: {money(dealMath.vsc_price)}</div>
-                                    <div style={compareLine}>GAP Price: {money(dealMath.gap_price)}</div>
-                                    <div style={compareLine}>Term: {dealMath.term_months} months</div>
-                                    <div style={compareLine}>Amount Financed: {money(dealMath.amount_financed)}</div>
-                                    <div style={compareLine}>Payment: {money(dealMath.monthly_payment)}</div>
-                                    <div style={compareLine}>Additional Down: {money(dealMath.additional_down_needed)}</div>
-                                  </div>
-                                  <div style={comparePanel}>
-                                    <div style={sectionSubtitle}>Counter Offer</div>
-                                    <div style={editorGrid}>
-                                      <label style={editorLabel}>
-                                        <span>Sale Price</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.sale_price ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                sale_price: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Tax Rate</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.tax_rate_main ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                tax_rate_main: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Tax Add Base</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.tax_add_base ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                tax_add_base: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Tax Add Rate</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.tax_add_rate ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                tax_add_rate: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Doc Fee</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.doc_fee ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                doc_fee: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Title / License</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.title_license ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                title_license: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Cash Down</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.cash_down ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                cash_down: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Term</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.term_months ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                term_months: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>VSC Price</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.vsc_price ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                vsc_price: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>GAP Price</span>
-                                        <input
-                                          value={counterEditors[matchingRequest.id]?.gap_price ?? ""}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                gap_price: event.target.value,
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        />
-                                      </label>
-                                      <label style={editorCheckbox}>
-                                        <input
-                                          type="checkbox"
-                                          checked={counterEditors[matchingRequest.id]?.include_vsc ?? false}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                include_vsc: event.target.checked,
-                                              },
-                                            }))
-                                          }
-                                        />
-                                        <span>Include VSC</span>
-                                      </label>
-                                      <label style={editorCheckbox}>
-                                        <input
-                                          type="checkbox"
-                                          checked={counterEditors[matchingRequest.id]?.include_gap ?? false}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                include_gap: event.target.checked,
-                                              },
-                                            }))
-                                          }
-                                        />
-                                        <span>Include GAP</span>
-                                      </label>
-                                      <label style={editorLabel}>
-                                        <span>Counter Type</span>
-                                        <select
-                                          value={counterEditors[matchingRequest.id]?.counter_type ?? "improve_approval"}
-                                          onChange={(event) =>
-                                            setCounterEditors((current) => ({
-                                              ...current,
-                                              [matchingRequest.id]: {
-                                                ...(current[matchingRequest.id] ?? buildCounterOfferEditorState(structureInputs)),
-                                                counter_type: event.target.value as CounterOfferEditorState["counter_type"],
-                                              },
-                                            }))
-                                          }
-                                          style={editorInput}
-                                        >
-                                          <option value="improve_approval">Improve Approval</option>
-                                          <option value="reduce_risk">Reduce Risk</option>
-                                          <option value="pricing_adjustment">Pricing Adjustment</option>
-                                        </select>
-                                      </label>
+                              (() => {
+                                const requestId = matchingRequest.id;
+                                const editor =
+                                  counterEditors[requestId] ??
+                                  buildCounterOfferEditorState(structureInputs);
+                                const previewStructure =
+                                  counterPreviews[requestId]?.structure.structure ?? null;
+                                const displayStructure = previewStructure ?? dealMath;
+                                const issueFor = (
+                                  row:
+                                    | "sale_price"
+                                    | "amount_financed"
+                                    | "payment"
+                                    | "ltv"
+                                    | "additional_down"
+                                ) =>
+                                  previewStructure
+                                    ? getStructureIssueLine({
+                                        row,
+                                        assumptions: structure.assumptions,
+                                        structure: previewStructure,
+                                      })
+                                    : null;
+
+                                return (
+                                  <div style={counterEditorCard}>
+                                    <div style={counterWorksheetHeader}>
+                                      <div style={sectionSubtitle}>Counter Structure</div>
+                                      <div style={counterWorksheetHint}>
+                                        Edit the current column, then calculate to validate the counter.
+                                      </div>
                                     </div>
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                    <div style={counterWorksheet}>
+                                      <div style={counterHeaderCell}>Field</div>
+                                      <div style={counterHeaderCell}>Approved</div>
+                                      <div style={counterHeaderCell}>Current</div>
+                                      <div style={counterHeaderCell}>Issue</div>
+
+                                      <div style={counterSectionLabel}>Tax / Fees</div>
+                                      <CounterRow
+                                        label="Sale Price"
+                                        approved={money(dealMath.sale_price)}
+                                        issue={issueFor("sale_price")}
+                                      >
+                                        <input
+                                          value={editor.sale_price}
+                                          onChange={(event) =>
+                                            updateCounterEditor(requestId, structureInputs, {
+                                              sale_price: event.target.value,
+                                            })
+                                          }
+                                          style={editorInput}
+                                        />
+                                      </CounterRow>
+                                      <CounterRow
+                                        label="Sales Tax"
+                                        approved={money(dealMath.sales_tax)}
+                                      >
+                                        <input
+                                          value={editor.sales_tax}
+                                          onChange={(event) =>
+                                            updateCounterEditor(requestId, structureInputs, {
+                                              sales_tax: event.target.value,
+                                            })
+                                          }
+                                          style={editorInput}
+                                        />
+                                      </CounterRow>
+                                      <CounterRow label="Doc Fee" approved={money(dealMath.doc_fee)}>
+                                        <input
+                                          value={editor.doc_fee}
+                                          onChange={(event) =>
+                                            updateCounterEditor(requestId, structureInputs, {
+                                              doc_fee: event.target.value,
+                                            })
+                                          }
+                                          style={editorInput}
+                                        />
+                                      </CounterRow>
+                                      <CounterRow
+                                        label="Title / License"
+                                        approved={money(dealMath.title_license)}
+                                      >
+                                        <input
+                                          value={editor.title_license}
+                                          onChange={(event) =>
+                                            updateCounterEditor(requestId, structureInputs, {
+                                              title_license: event.target.value,
+                                            })
+                                          }
+                                          style={editorInput}
+                                        />
+                                      </CounterRow>
+
+                                      <div style={counterSectionLabel}>Down Pmt</div>
+                                      <CounterRow
+                                        label="Cash Down"
+                                        approved={money(dealMath.cash_down_input)}
+                                      >
+                                        <input
+                                          value={editor.cash_down}
+                                          onChange={(event) =>
+                                            updateCounterEditor(requestId, structureInputs, {
+                                              cash_down: event.target.value,
+                                            })
+                                          }
+                                          style={editorInput}
+                                        />
+                                      </CounterRow>
+
+                                      <div style={counterSectionLabel}>Products</div>
+                                      <CounterRow label="VSC" approved={money(dealMath.vsc_price)}>
+                                        <div style={counterProductCell}>
+                                          <label style={counterInlineCheckbox}>
+                                            <input
+                                              type="checkbox"
+                                              checked={editor.include_vsc}
+                                              onChange={(event) =>
+                                                updateCounterEditor(requestId, structureInputs, {
+                                                  include_vsc: event.target.checked,
+                                                })
+                                              }
+                                            />
+                                            Include
+                                          </label>
+                                          <input
+                                            value={editor.vsc_price}
+                                            onChange={(event) =>
+                                              updateCounterEditor(requestId, structureInputs, {
+                                                vsc_price: event.target.value,
+                                              })
+                                            }
+                                            style={editorInput}
+                                          />
+                                        </div>
+                                      </CounterRow>
+                                      <CounterRow label="GAP" approved={money(dealMath.gap_price)}>
+                                        <div style={counterProductCell}>
+                                          <label style={counterInlineCheckbox}>
+                                            <input
+                                              type="checkbox"
+                                              checked={editor.include_gap}
+                                              onChange={(event) =>
+                                                updateCounterEditor(requestId, structureInputs, {
+                                                  include_gap: event.target.checked,
+                                                })
+                                              }
+                                            />
+                                            Include
+                                          </label>
+                                          <input
+                                            value={editor.gap_price}
+                                            onChange={(event) =>
+                                              updateCounterEditor(requestId, structureInputs, {
+                                                gap_price: event.target.value,
+                                              })
+                                            }
+                                            style={editorInput}
+                                          />
+                                        </div>
+                                      </CounterRow>
+
+                                      <div style={counterSectionLabel}>Advance</div>
+                                      <CounterRow
+                                        label="Amount Financed"
+                                        approved={money(dealMath.amount_financed)}
+                                        current={money(displayStructure.amount_financed)}
+                                        issue={issueFor("amount_financed")}
+                                      />
+                                      <CounterRow label="Term" approved={`${dealMath.term_months}`}>
+                                        <input
+                                          value={editor.term_months}
+                                          onChange={(event) =>
+                                            updateCounterEditor(requestId, structureInputs, {
+                                              term_months: event.target.value,
+                                            })
+                                          }
+                                          style={editorInput}
+                                        />
+                                      </CounterRow>
+                                      <CounterRow
+                                        label="Payment"
+                                        approved={money(dealMath.monthly_payment)}
+                                        current={money(displayStructure.monthly_payment)}
+                                        issue={issueFor("payment")}
+                                      />
+                                      <CounterRow
+                                        label="LTV"
+                                        approved={formatPercent(dealMath.ltv)}
+                                        current={formatPercent(displayStructure.ltv)}
+                                        issue={issueFor("ltv")}
+                                      />
+                                      <CounterRow
+                                        label="Additional Down"
+                                        approved={money(dealMath.additional_down_needed)}
+                                        current={money(displayStructure.additional_down_needed)}
+                                        issue={issueFor("additional_down")}
+                                      />
+                                    </div>
+                                    <div style={counterWorksheetActions}>
                                       <button
                                         type="button"
-                                        onClick={() => previewCounterOffer(matchingRequest.id)}
-                                        disabled={workingKey === `preview:${matchingRequest.id}`}
+                                        onClick={() => previewCounterOffer(requestId)}
+                                        disabled={workingKey === `preview:${requestId}`}
                                         style={btnSecondary}
                                       >
-                                        {workingKey === `preview:${matchingRequest.id}` ? "Previewing..." : "Preview Counter Offer"}
+                                        {workingKey === `preview:${requestId}` ? "Calculating..." : "Calculate"}
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => reviewOverride(matchingRequest.id, "countered")}
-                                        disabled={workingKey === `countered:${matchingRequest.id}`}
+                                        onClick={() => reviewOverride(requestId, "countered")}
+                                        disabled={workingKey === `countered:${requestId}`}
                                         style={btnPrimary}
                                       >
-                                        {workingKey === `countered:${matchingRequest.id}` ? "Sending..." : "Send Counter Offer"}
+                                        {workingKey === `countered:${requestId}` ? "Sending..." : "Send Counter Offer"}
                                       </button>
                                     </div>
-                                    {counterPreviews[matchingRequest.id] ? (
-                                      <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-                                        <div style={sectionSubtitle}>Preview</div>
-                                        <div style={compareLine}>Amount Financed: {money(counterPreviews[matchingRequest.id]?.structure.structure.amount_financed)}</div>
-                                        <div style={compareLine}>Payment: {money(counterPreviews[matchingRequest.id]?.structure.structure.monthly_payment)}</div>
-                                        <div style={compareLine}>LTV: {(Number(counterPreviews[matchingRequest.id]?.structure.structure.ltv ?? 0) * 100).toFixed(1)}%</div>
-                                        <div style={compareLine}>Additional Down: {money(counterPreviews[matchingRequest.id]?.structure.structure.additional_down_needed)}</div>
-                                        <div style={compareLine}>
-                                          Fail Reasons: {counterPreviews[matchingRequest.id]?.structure.structure.fail_reasons.join(", ") || "None"}
-                                        </div>
-                                      </div>
-                                    ) : null}
                                   </div>
-                                </div>
-                              </div>
+                                );
+                              })()
                             ) : null}
                           </div>
                         ) : null}
@@ -1655,6 +1800,29 @@ function CheckPill({ label, ok }: { label: string; ok: boolean }) {
   );
 }
 
+function CounterRow({
+  approved,
+  children,
+  current,
+  issue,
+  label,
+}: {
+  approved: React.ReactNode;
+  children?: React.ReactNode;
+  current?: React.ReactNode;
+  issue?: string | null;
+  label: string;
+}) {
+  return (
+    <>
+      <div style={counterRowLabel}>{label}</div>
+      <div style={counterReadOnlyCell}>{approved}</div>
+      <div style={counterCurrentCell}>{children ?? current ?? ""}</div>
+      <div style={issue ? counterIssueText : counterIssueEmpty}>{issue ?? ""}</div>
+    </>
+  );
+}
+
 function blockerStateTag(state: "blocked" | "pending" | "overridden" | "stale") {
   if (state === "overridden") {
     return {
@@ -1755,6 +1923,12 @@ const hintText: React.CSSProperties = {
   fontWeight: 700,
 };
 
+const blockerDetailText: React.CSSProperties = {
+  fontSize: 13,
+  color: "#334155",
+  fontWeight: 800,
+};
+
 const statusTagBase: React.CSSProperties = {
   padding: "6px 10px",
   borderRadius: 999,
@@ -1815,6 +1989,7 @@ const comparePanel: React.CSSProperties = {
   padding: 12,
   display: "grid",
   gap: 6,
+  minWidth: 0,
 };
 
 const compareLine: React.CSSProperties = {
@@ -1825,40 +2000,135 @@ const compareLine: React.CSSProperties = {
 
 const counterEditorCard: React.CSSProperties = {
   border: "1px solid #dbe2ea",
-  borderRadius: 12,
-  background: "#f8fafc",
+  borderRadius: 8,
+  background: "#fff",
   padding: 12,
+  overflowX: "auto",
 };
 
-const editorGrid: React.CSSProperties = {
-  display: "grid",
+const counterWorksheetHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
   gap: 10,
-  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+  justifyContent: "space-between",
+  flexWrap: "wrap",
+  marginBottom: 10,
+  minWidth: 720,
 };
 
-const editorLabel: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
+const counterWorksheetHint: React.CSSProperties = {
   fontSize: 12,
-  fontWeight: 700,
   color: "#475569",
+  fontWeight: 700,
 };
 
-const editorCheckbox: React.CSSProperties = {
+const counterWorksheet: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "170px 140px 170px minmax(260px, 1fr)",
+  alignItems: "center",
+  minWidth: 720,
+  borderTop: "1px solid #cbd5e1",
+  borderLeft: "1px solid #e5e7eb",
+};
+
+const counterHeaderCell: React.CSSProperties = {
+  background: "#f1f5f9",
+  borderRight: "1px solid #e5e7eb",
+  borderBottom: "1px solid #cbd5e1",
+  padding: "7px 8px",
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#0f172a",
+  textTransform: "uppercase",
+};
+
+const counterSectionLabel: React.CSSProperties = {
+  gridColumn: "1 / -1",
+  background: "#e0f2fe",
+  borderRight: "1px solid #e5e7eb",
+  borderBottom: "1px solid #cbd5e1",
+  color: "#075985",
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: 0,
+  padding: "7px 8px",
+  textTransform: "uppercase",
+};
+
+const counterRowLabel: React.CSSProperties = {
+  borderRight: "1px solid #e5e7eb",
+  borderBottom: "1px solid #eef2f7",
+  background: "#fff",
+  padding: "7px 8px",
+  fontSize: 13,
+  color: "#334155",
+  fontWeight: 800,
+  minHeight: 38,
   display: "flex",
   alignItems: "center",
-  gap: 6,
-  fontSize: 12,
-  fontWeight: 700,
+};
+
+const counterReadOnlyCell: React.CSSProperties = {
+  ...counterRowLabel,
+  justifyContent: "flex-end",
   color: "#475569",
+  fontVariantNumeric: "tabular-nums",
+};
+
+const counterCurrentCell: React.CSSProperties = {
+  ...counterRowLabel,
+  background: "#fbfdff",
+  justifyContent: "flex-end",
+  color: "#111827",
+  fontVariantNumeric: "tabular-nums",
+};
+
+const counterIssueText: React.CSSProperties = {
+  ...counterRowLabel,
+  color: "#dc2626",
+  fontWeight: 900,
+  justifyContent: "flex-start",
+};
+
+const counterIssueEmpty: React.CSSProperties = {
+  ...counterIssueText,
+  color: "#64748b",
+};
+
+const counterProductCell: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "72px 1fr",
+  gap: 8,
+  width: "100%",
+  alignItems: "center",
+};
+
+const counterInlineCheckbox: React.CSSProperties = {
+  display: "flex",
+  gap: 5,
+  alignItems: "center",
+  fontSize: 12,
+  color: "#334155",
+  fontWeight: 800,
+};
+
+const counterWorksheetActions: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  marginTop: 12,
 };
 
 const editorInput: React.CSSProperties = {
   border: "1px solid #d1d5db",
   borderRadius: 8,
-  padding: "8px 10px",
+  padding: "6px 8px",
   fontSize: 13,
   fontFamily: "inherit",
+  boxSizing: "border-box",
+  width: "100%",
+  minWidth: 0,
+  textAlign: "right",
 };
 
 const auditCard: React.CSSProperties = {

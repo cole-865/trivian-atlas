@@ -118,6 +118,7 @@ export type DealStructureComputedState = {
     max_amount_financed: number;
     max_vehicle_price: number;
     max_ltv: number;
+    max_pti: number;
     trade_payoff: number;
     underwriting_max_term_months: number;
     vehicle_max_term_months: number;
@@ -142,6 +143,7 @@ export type DealStructureComputedState = {
     term_months: number;
     monthly_payment: number;
     ltv: number;
+    pti: number;
     fits_program: boolean;
     fail_reasons: string[];
     checks: {
@@ -526,11 +528,15 @@ export function computeDealStructureState(args: {
   const maxAmountFinanced = Number(underwriting?.max_amount_financed ?? 0);
   const maxVehiclePrice = Number(underwriting?.max_vehicle_price ?? 0);
   const maxLtv = Number(underwriting?.max_ltv ?? 0);
+  const grossMonthlyIncome = Number(underwritingInputs?.gross_monthly_income ?? 0);
+  const maxPti = underwriting?.max_pti != null
+    ? Number(underwriting.max_pti)
+    : Number(underwritingInputs?.max_payment_pct ?? 0.22);
 
   const maxPayment = resolveMaxPayment({
-    grossMonthlyIncome: Number(underwritingInputs?.gross_monthly_income ?? 0),
+    grossMonthlyIncome,
     maxPaymentPct: Number(underwritingInputs?.max_payment_pct ?? 0.22),
-    maxPti: underwriting?.max_pti != null ? Number(underwriting.max_pti) : null,
+    maxPti,
   });
 
   const {
@@ -578,6 +584,7 @@ export function computeDealStructureState(args: {
   const ltvOk = retailBook > 0 && maxLtv > 0 ? ltv <= maxLtv : true;
 
   const monthlyPmt = monthlyPayment(amountFinanced, apr, termMonths);
+  const pti = grossMonthlyIncome > 0 ? round2(monthlyPmt / grossMonthlyIncome) : 0;
   const paymentOk = maxPayment > 0 ? monthlyPmt <= maxPayment : true;
 
   let downNeededForAmountFinanced = 0;
@@ -626,6 +633,7 @@ export function computeDealStructureState(args: {
     max_amount_financed: maxAmountFinanced,
     max_vehicle_price: maxVehiclePrice,
     max_ltv: maxLtv,
+    max_pti: maxPti,
     trade_payoff: Number(args.deal.trade_payoff ?? 0),
     underwriting_max_term_months: underwritingMaxTermMonths,
     vehicle_max_term_months: vehicleMaxTermMonths,
@@ -675,6 +683,7 @@ export function computeDealStructureState(args: {
       term_months: termMonths,
       monthly_payment: monthlyPmt,
       ltv: retailBook > 0 ? ltv : 0,
+      pti,
       fits_program: vehiclePriceOk && amountFinancedOk && ltvOk && paymentOk,
       fail_reasons: failReasons,
       checks: {

@@ -601,7 +601,7 @@ export default function DealVehiclePage() {
       </div>
 
       {!loading && !incomeAppliedOk ? (
-        <div style={{ ...card, borderColor: "#f2c9c9", background: "#fff7f7" }}>
+        <div style={{ ...card, border: "1px solid #f2c9c9", background: "#fff7f7" }}>
           <div style={{ fontWeight: 900, color: "crimson" }}>Income totals are not ready yet.</div>
           <div style={{ marginTop: 6, opacity: 0.85 }}>
             Go back to <b>Step 2</b> and let the income step finish saving and updating totals.
@@ -691,7 +691,7 @@ export default function DealVehiclePage() {
                 style={{
                   ...filterBtn,
                   background: active ? "#e8f0fe" : "#fff",
-                  borderColor: active ? "#7aa2e3" : "#d8d8d8",
+                  border: `1px solid ${active ? "#7aa2e3" : "#d8d8d8"}`,
                   color: active ? "#0f3d91" : "#222",
                   boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
                 }}

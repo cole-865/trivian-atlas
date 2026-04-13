@@ -761,6 +761,66 @@ export type Database = {
           },
         ]
       }
+      deal_funding_stip_verifications: {
+        Row: {
+          created_at: string
+          deal_id: string
+          doc_type: string
+          id: string
+          organization_id: string
+          rejection_reason: string | null
+          status: string
+          structure_fingerprint: string
+          updated_at: string
+          verified_at: string
+          verified_by: string | null
+          verified_monthly_income: number | null
+        }
+        Insert: {
+          created_at?: string
+          deal_id: string
+          doc_type: string
+          id?: string
+          organization_id: string
+          rejection_reason?: string | null
+          status: string
+          structure_fingerprint: string
+          updated_at?: string
+          verified_at?: string
+          verified_by?: string | null
+          verified_monthly_income?: number | null
+        }
+        Update: {
+          created_at?: string
+          deal_id?: string
+          doc_type?: string
+          id?: string
+          organization_id?: string
+          rejection_reason?: string | null
+          status?: string
+          structure_fingerprint?: string
+          updated_at?: string
+          verified_at?: string
+          verified_by?: string | null
+          verified_monthly_income?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_funding_stip_verifications_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_funding_stip_verifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deal_management_notes: {
         Row: {
           created_at: string

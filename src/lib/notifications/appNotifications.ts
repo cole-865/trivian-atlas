@@ -3,6 +3,9 @@ import { getCurrentOrganizationId } from "@/lib/auth/organizationContext";
 import type { Json } from "@/lib/supabase/database.types";
 
 export type AppNotificationType =
+  | "deal_funded"
+  | "deal_funding_rejected"
+  | "deal_funding_review"
   | "deal_override_requested"
   | "deal_override_approved"
   | "deal_override_denied"
@@ -68,6 +71,89 @@ export async function createAppNotifications(args: {
   if (error) {
     throw new Error(`Failed to create notifications: ${error.message}`);
   }
+}
+
+export async function createDealFundingReviewNotifications(args: {
+  organizationId: string;
+  dealId: string;
+  customerName: string | null;
+}) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("organization_users")
+    .select("user_id")
+    .eq("organization_id", args.organizationId)
+    .eq("is_active", true)
+    .in("role", ["management", "admin"]);
+
+  if (error) {
+    throw new Error(`Failed to load funding notification recipients: ${error.message}`);
+  }
+
+  const customerName = args.customerName?.trim() || "Customer";
+
+  await createAppNotifications({
+    organizationId: args.organizationId,
+    userIds: (data ?? []).map((row) => row.user_id),
+    type: "deal_funding_review",
+    dealId: args.dealId,
+    title: "Funding review ready",
+    body: `${customerName} is ready for funding review.`,
+    linkHref: `/deals/${args.dealId}/fund`,
+    metadata: {
+      customerName,
+    },
+  });
+}
+
+export async function createDealFundingOutcomeNotifications(args: {
+  organizationId: string;
+  dealId: string;
+  dealNumber?: string | null;
+  customerName: string | null;
+  salespersonUserId?: string | null;
+  submittedByUserId?: string | null;
+  outcome: "funded" | "rejected";
+  reason?: string | null;
+}) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("organization_users")
+    .select("user_id")
+    .eq("organization_id", args.organizationId)
+    .eq("is_active", true)
+    .in("role", ["management", "admin"]);
+
+  if (error) {
+    throw new Error(`Failed to load funding outcome notification recipients: ${error.message}`);
+  }
+
+  const customerName = args.customerName?.trim() || "Deal";
+  const dealLabel = args.dealNumber?.trim() || args.dealId;
+  const managementUserIds = (data ?? []).map((row) => row.user_id);
+  const userIds = [
+    ...managementUserIds,
+    args.salespersonUserId ?? null,
+    args.submittedByUserId ?? null,
+  ].filter((userId): userId is string => !!userId);
+  const isFunded = args.outcome === "funded";
+  const reason = args.reason?.trim() || "No reason provided.";
+
+  await createAppNotifications({
+    organizationId: args.organizationId,
+    userIds,
+    type: isFunded ? "deal_funded" : "deal_funding_rejected",
+    dealId: args.dealId,
+    title: isFunded ? "Deal funded" : "Funding rejected",
+    body: isFunded
+      ? `Deal #${dealLabel} is funded. No further review!`
+      : `Deal #${dealLabel} funding rejected: ${reason}`,
+    linkHref: `/deals/${args.dealId}/fund`,
+    metadata: {
+      customerName,
+      reason: isFunded ? null : reason,
+    },
+  });
 }
 
 export async function listCurrentUserNotifications(

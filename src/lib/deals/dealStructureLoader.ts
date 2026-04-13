@@ -59,7 +59,7 @@ export async function loadDealStructurePageData(args: {
       monthlyPayment: computed.structure.monthly_payment,
       termMonths: computed.structure.term_months,
       ltv: computed.vehicle.jd_power_retail_book > 0 ? computed.structure.ltv : null,
-      pti: null,
+      pti: computed.structure.pti,
     }),
   });
 
@@ -75,6 +75,7 @@ export async function loadDealStructurePageData(args: {
       include_gap: inputs.include_gap,
       term_months: computed.structure.term_months,
       monthly_payment: computed.structure.monthly_payment,
+      pti: computed.structure.pti,
       cash_down: inputs.cash_down,
     },
     underwriting: context.underwriting,

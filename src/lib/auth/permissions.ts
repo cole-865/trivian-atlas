@@ -28,6 +28,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     "select_vehicle",
     "submit_deal",
     "view_decision",
+    "fund_deal",
     "override_workflow",
   ],
 
