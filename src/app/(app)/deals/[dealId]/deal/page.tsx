@@ -701,11 +701,12 @@ export default function DealDealPage() {
 
   async function submitOverride(
     blockerCode: DealOverrideBlockerCode,
-    action: "request" | "approve"
+    action: "request" | "approve",
+    options?: { allowEmptyNote?: boolean; counterOfferDraft?: boolean }
   ) {
     setErr(null);
     const note = (requestNotes[blockerCode] ?? "").trim();
-    if (!note) {
+    if (!note && !options?.allowEmptyNote) {
       setErr("Override notes are required before submitting.");
       return null;
     }
@@ -720,6 +721,7 @@ export default function DealDealPage() {
           action,
           blocker_code: blockerCode,
           requested_note: note,
+          counter_offer_draft: options?.counterOfferDraft ?? false,
         }),
       });
 
@@ -764,7 +766,10 @@ export default function DealDealPage() {
       return;
     }
 
-    const requestId = await submitOverride(blockerCode, "request");
+    const requestId = await submitOverride(blockerCode, "request", {
+      allowEmptyNote: true,
+      counterOfferDraft: true,
+    });
     if (requestId) {
       setExpandedCounterRequestId(requestId);
     }
@@ -818,12 +823,24 @@ export default function DealDealPage() {
     status: "approved" | "denied" | "countered"
   ) {
     setErr(null);
+    const reviewNote = (reviewNotes[requestId] ?? "").trim();
+
+    if (status === "countered" && !reviewNote) {
+      setErr("A note is required before sending a counter offer.");
+      return;
+    }
+
+    if (status === "denied" && !reviewNote) {
+      setErr("A note is required before declining an override.");
+      return;
+    }
+
     setWorkingKey(`${status}:${requestId}`);
 
     try {
       const body: Record<string, unknown> = {
         status,
-        review_note: reviewNotes[requestId] ?? "",
+        review_note: reviewNote,
       };
 
       if (status === "countered") {
@@ -920,14 +937,23 @@ export default function DealDealPage() {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
+      {err ? (
+        <div style={topDialog} role="alertdialog" aria-modal="false" aria-live="assertive">
+          <div style={topDialogHeader}>
+            <div style={{ fontWeight: 900 }}>Action Needed</div>
+            <button type="button" onClick={() => setErr(null)} style={topDialogClose}>
+              Dismiss
+            </button>
+          </div>
+          <div style={topDialogMessage}>{err}</div>
+        </div>
+      ) : null}
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Step 4: Deal</h2>
 
         {loading ? <span style={{ opacity: 0.7 }}>Loading…</span> : null}
         {saving ? <span style={{ opacity: 0.7 }}>Saving…</span> : null}
-        {err ? <span style={{ color: "crimson", fontWeight: 900 }}>{err}</span> : null}
-
         <div style={{ flex: 1 }} />
 
         <button type="button" onClick={onPrev} style={btnSecondary}>
@@ -1407,7 +1433,7 @@ export default function DealDealPage() {
                                   [matchingRequest.id]: event.target.value,
                                 }))
                               }
-                              placeholder="Optional review note..."
+                              placeholder="Required for decline or counter offer..."
                               style={smallTextarea}
                             />
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1893,6 +1919,43 @@ const btnSecondary: React.CSSProperties = {
   background: "#fff",
   cursor: "pointer",
   fontWeight: 900,
+};
+
+const topDialog: React.CSSProperties = {
+  position: "fixed",
+  top: 16,
+  left: "50%",
+  transform: "translateX(-50%)",
+  zIndex: 1000,
+  width: "min(720px, calc(100vw - 32px))",
+  border: "1px solid #fecaca",
+  borderRadius: 8,
+  background: "#fff",
+  boxShadow: "0 16px 40px rgba(15, 23, 42, 0.22)",
+  padding: 14,
+};
+
+const topDialogHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 8,
+};
+
+const topDialogClose: React.CSSProperties = {
+  border: "1px solid #d1d5db",
+  borderRadius: 8,
+  background: "#fff",
+  cursor: "pointer",
+  fontWeight: 900,
+  padding: "6px 10px",
+};
+
+const topDialogMessage: React.CSSProperties = {
+  color: "#b91c1c",
+  fontWeight: 900,
+  lineHeight: 1.4,
 };
 
 const k: React.CSSProperties = {

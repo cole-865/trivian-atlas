@@ -60,6 +60,7 @@ export async function POST(
     String(body?.blocker_code ?? "")
   );
   const requestedNote = String(body?.requested_note ?? "").trim();
+  const isCounterOfferDraft = body?.counter_offer_draft === true;
 
   if (!blockerCode) {
     return NextResponse.json({ error: "Invalid blocker code." }, { status: 400 });
@@ -67,13 +68,6 @@ export async function POST(
 
   if (action !== "request" && action !== "approve") {
     return NextResponse.json({ error: "Invalid override action." }, { status: 400 });
-  }
-
-  if (!requestedNote) {
-    return NextResponse.json(
-      { error: "Override notes are required." },
-      { status: 400 }
-    );
   }
 
   const { data: deal, error: dealError, organizationId } =
@@ -115,6 +109,13 @@ export async function POST(
     return NextResponse.json(
       { error: "You do not have override approval authority in this account." },
       { status: 403 }
+    );
+  }
+
+  if (!requestedNote && !(action === "request" && isCounterOfferDraft && canApprove)) {
+    return NextResponse.json(
+      { error: "Override notes are required." },
+      { status: 400 }
     );
   }
 

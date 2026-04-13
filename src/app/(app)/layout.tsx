@@ -107,7 +107,7 @@ export default async function AppLayout({
             <NavLink href="/deals" label="Deals" />
             <NavLink href="/settings" label="Settings" />
             {authContext.realRole === "dev" ? (
-              <NavLink href="/dev-tools" label="DEV TOOLS" />
+              <NavLink href="/dev-tools" label="GOD MODE" />
             ) : null}
           </nav>
         </aside>
