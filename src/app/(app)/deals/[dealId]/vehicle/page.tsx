@@ -4,7 +4,15 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import type { DealStep } from "@/lib/deals/canAccessStep";
 
 type VehicleCategory = "all" | "car" | "suv" | "truck" | "van";
@@ -128,13 +136,13 @@ function hasPriceError(vehicle: ApiRow["vehicle"]) {
 function normalizeReason(reason: string | null | undefined) {
   switch (reason) {
     case "PTI":
-      return "Payment too high";
+      return "PTI fail";
     case "LTV":
-      return "LTV too high";
+      return "LTV high";
     case "AMOUNT_FINANCED":
-      return "Amount financed too high";
+      return "Amt financed high";
     case "VEHICLE_PRICE":
-      return "Vehicle price too high";
+      return "Price high";
     default:
       return reason ?? "Does not fit";
   }
@@ -161,7 +169,7 @@ function getOptionReasonSummary(opt: PayOption) {
   const reasons = (opt.fail_reasons ?? []).map(normalizeReason).filter(Boolean);
   if (!reasons.length) return "Does not fit";
 
-  return reasons.slice(0, 2).join(" • ");
+  return reasons.slice(0, 2).join(" / ");
 }
 
 function getOptionReasonDetail(opt: PayOption) {
@@ -170,35 +178,34 @@ function getOptionReasonDetail(opt: PayOption) {
   const parts: string[] = [];
 
   if (opt.additional_down_breakdown?.pti && opt.additional_down_breakdown.pti > 0) {
-    parts.push(`Payment: +${money(opt.additional_down_breakdown.pti)}`);
+    parts.push(`PTI +${money(opt.additional_down_breakdown.pti)}`);
   }
   if (opt.additional_down_breakdown?.ltv && opt.additional_down_breakdown.ltv > 0) {
-    parts.push(`LTV: +${money(opt.additional_down_breakdown.ltv)}`);
+    parts.push(`LTV +${money(opt.additional_down_breakdown.ltv)}`);
   }
   if (
     opt.additional_down_breakdown?.amount_financed &&
     opt.additional_down_breakdown.amount_financed > 0
   ) {
-    parts.push(`Amt Fin: +${money(opt.additional_down_breakdown.amount_financed)}`);
+    parts.push(`Amt Fin +${money(opt.additional_down_breakdown.amount_financed)}`);
   }
   if (opt.additional_down_breakdown?.min_down && opt.additional_down_breakdown.min_down > 0) {
-    parts.push(`Min Down: +${money(opt.additional_down_breakdown.min_down)}`);
+    parts.push(`Down +${money(opt.additional_down_breakdown.min_down)}`);
   }
 
-  return parts.length ? parts.slice(0, 2).join(" • ") : null;
+  return parts.length ? parts.slice(0, 2).join(" / ") : null;
 }
 
 function getOptionHoverText(opt: PayOption) {
-  if (opt.fits_cap) return "✔ This structure works";
+  if (opt.fits_cap) return "This structure works";
 
   const reasons = (opt.fail_reasons ?? []).map(normalizeReason).filter(Boolean);
-
   const lines: string[] = [];
 
   if (reasons.length) {
     lines.push(`Blocked by ${reasons[0]}`);
   } else {
-    lines.push("Doesn’t fit program");
+    lines.push("Does not fit program");
   }
 
   if (reasons.length > 1) {
@@ -208,24 +215,27 @@ function getOptionHoverText(opt: PayOption) {
   if (opt.additional_down_breakdown) {
     const b = opt.additional_down_breakdown;
 
-    if (b.min_down > 0) {
-      lines.push(`Add ${money(b.min_down)} down`);
-    }
-
-    if (b.pti > 0) {
-      lines.push(`Over payment cap by ${money(b.pti)}`);
-    }
-
-    if (b.ltv > 0) {
-      lines.push(`Over LTV by ${money(b.ltv)}`);
-    }
-
+    if (b.min_down > 0) lines.push(`Add ${money(b.min_down)} down`);
+    if (b.pti > 0) lines.push(`Over payment cap by ${money(b.pti)}`);
+    if (b.ltv > 0) lines.push(`Over LTV by ${money(b.ltv)}`);
     if (b.amount_financed > 0) {
       lines.push(`Amount financed too high by ${money(b.amount_financed)}`);
     }
   }
 
   return lines.join("\n");
+}
+
+function getOptionBadgeVariant(opt: PayOption): "success" | "warning" | "destructive" {
+  if (opt.fits_cap) return "success";
+  if ((opt.additional_down_needed ?? 0) > 0) return "warning";
+  return "destructive";
+}
+
+function getStatusLabel(opt: PayOption) {
+  if (opt.fits_cap) return "Works";
+  if ((opt.additional_down_needed ?? 0) > 0) return "More down";
+  return getOptionReasonSummary(opt) ?? "Blocked";
 }
 
 export default function DealVehiclePage() {
@@ -244,6 +254,9 @@ export default function DealVehiclePage() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selected | null>(null);
   const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>("all");
+  const [activeOptionByVehicle, setActiveOptionByVehicle] = useState<Record<string, PayOption["label"]>>(
+    {}
+  );
 
   async function load(cashDown: number | null) {
     if (!dealId) return;
@@ -290,6 +303,7 @@ export default function DealVehiclePage() {
         setCashDownApplied(Number(serverDown));
         setCashDownInput(String(serverDown));
       }
+
       const serverTradeValue = incoming?.[0]?.assumptions?.trade_value;
       if (serverTradeValue != null) {
         setTradeValueInput(String(serverTradeValue));
@@ -299,7 +313,9 @@ export default function DealVehiclePage() {
       if (serverTradePayoff != null) {
         setTradePayoffInput(String(serverTradePayoff));
       }
+
       setSelected(null);
+      setActiveOptionByVehicle({});
     } catch (error: unknown) {
       setErr(error instanceof Error ? error.message : "Failed to load");
     } finally {
@@ -332,11 +348,11 @@ export default function DealVehiclePage() {
 
       const bestPathOption = options.length
         ? [...options].sort((a, b) => {
-          const aDown = a.additional_down_needed ?? Infinity;
-          const bDown = b.additional_down_needed ?? Infinity;
-          if (aDown !== bDown) return aDown - bDown;
-          return a.monthly_payment - b.monthly_payment;
-        })[0]
+            const aDown = a.additional_down_needed ?? Infinity;
+            const bDown = b.additional_down_needed ?? Infinity;
+            if (aDown !== bDown) return aDown - bDown;
+            return a.monthly_payment - b.monthly_payment;
+          })[0]
         : undefined;
 
       const primaryBlock = bestPathOption?.fail_reasons?.length
@@ -418,8 +434,7 @@ export default function DealVehiclePage() {
 
     return vehicles.filter((v) => {
       const matchesCategory =
-        vehicleCategory === "all" ||
-        (v.vehicle.vehicle_category ?? "car") === vehicleCategory;
+        vehicleCategory === "all" || (v.vehicle.vehicle_category ?? "car") === vehicleCategory;
 
       if (!matchesCategory) return false;
 
@@ -494,6 +509,7 @@ export default function DealVehiclePage() {
       setErr("Failed to save deal inputs");
     }
   }
+
   const tradeEquityPreview =
     (Number(tradeValueInput || 0) || 0) - (Number(tradePayoffInput || 0) || 0);
 
@@ -543,15 +559,28 @@ export default function DealVehiclePage() {
     }
 
     setErr(null);
+    setActiveOptionByVehicle((current) => ({ ...current, [v.vehicle.id]: opt.label }));
 
     setSelected({
       vehicleId: v.vehicle.id,
-      stock: v.vehicle.stock_number ?? "—",
-      year: v.vehicle.year?.toString() ?? "—",
-      make: v.vehicle.make ?? "—",
-      model: v.vehicle.model ?? "—",
+      stock: v.vehicle.stock_number ?? "-",
+      year: v.vehicle.year?.toString() ?? "-",
+      make: v.vehicle.make ?? "-",
+      model: v.vehicle.model ?? "-",
       option: opt,
     });
+  }
+
+  function getActiveOption(v: VehicleRow) {
+    if (
+      selected?.vehicleId === v.vehicle.id &&
+      v.options.some((opt) => opt.label === selected.option.label)
+    ) {
+      return selected.option;
+    }
+
+    const activeLabel = activeOptionByVehicle[v.vehicle.id];
+    return v.options.find((opt) => opt.label === activeLabel) ?? v.options[0];
   }
 
   if (!dealId) {
@@ -570,17 +599,30 @@ export default function DealVehiclePage() {
         <div>
           <h2 style={{ margin: 0 }}>Step 3: Vehicle</h2>
           {header ? (
-            <div style={{ marginTop: 4, fontSize: 13, color: "rgba(255,255,255,0.62)", fontWeight: 600 }}>
-              APR <b style={{ color: "#f5f7fa" }}>{Number(header.apr ?? 0).toFixed(2)}%</b> • Max payment{" "}
-              <b style={{ color: "#7de2ff" }}>{money(header.max_payment_cap)}</b> • Terms capped by mileage and age policy
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 13,
+                color: "rgba(255,255,255,0.62)",
+                fontWeight: 600,
+              }}
+            >
+              APR <b style={{ color: "#f5f7fa" }}>{Number(header.apr ?? 0).toFixed(2)}%</b> | Max
+              payment <b style={{ color: "#7de2ff" }}>{money(header.max_payment_cap)}</b> | Terms
+              capped by mileage and age policy
             </div>
           ) : null}
         </div>
 
         <div style={{ flex: 1 }} />
 
-        <Button type="button" variant="outline" onClick={onPrev} className="border-border/75 bg-background/35 text-foreground hover:bg-accent/80">
-          ← Previous
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onPrev}
+          className="border-border/75 bg-background/35 text-foreground hover:bg-accent/80"
+        >
+          {"<-"} Previous
         </Button>
 
         <Button
@@ -596,7 +638,7 @@ export default function DealVehiclePage() {
                 : ""
           }
         >
-          Next →
+          Next {"->"}
         </Button>
       </div>
 
@@ -616,12 +658,12 @@ export default function DealVehiclePage() {
             <div style={{ fontWeight: 900 }}>Selected:</div>
             <div>
               <b>
-                {selected.stock} • {selected.year} {selected.make} {selected.model}
+                {selected.stock} | {selected.year} {selected.make} {selected.model}
               </b>
             </div>
             <div style={{ opacity: 0.75 }}>
-              ({selected.option.label}) {money(selected.option.monthly_payment)}/mo •{" "}
-              {selected.option.term_months ?? "—"} mo
+              ({selected.option.label}) {money(selected.option.monthly_payment)}/mo |{" "}
+              {selected.option.term_months ?? "-"} mo
             </div>
 
             <div style={{ flex: 1 }} />
@@ -635,80 +677,80 @@ export default function DealVehiclePage() {
 
       <div style={{ ...card, display: "grid", gap: 12 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>Cash Down</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>Cash Down</div>
+            <input
+              value={cashDownInput}
+              onChange={(e) => setCashDownInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleApplyDealInputs();
+              }}
+              placeholder="1.00"
+              style={input}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>Trade In</div>
+            <input
+              value={tradeValueInput}
+              onChange={(e) => setTradeValueInput(e.target.value)}
+              placeholder="0.00"
+              style={input}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>Trade Payoff</div>
+            <input
+              value={tradePayoffInput}
+              onChange={(e) => setTradePayoffInput(e.target.value)}
+              placeholder="0.00"
+              style={input}
+            />
+          </div>
+
+          <button type="button" onClick={handleApplyDealInputs} style={btnSecondary}>
+            Apply
+          </button>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {(
+              [
+                { key: "all", label: "All" },
+                { key: "car", label: "Cars" },
+                { key: "suv", label: "SUVs" },
+                { key: "truck", label: "Trucks" },
+                { key: "van", label: "Vans" },
+              ] as Array<{ key: VehicleCategory; label: string }>
+            ).map((item) => {
+              const active = vehicleCategory === item.key;
+
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setVehicleCategory(item.key)}
+                  style={{
+                    ...filterBtn,
+                    background: active ? "rgba(70,205,255,0.14)" : "rgba(10,18,30,0.45)",
+                    border: `1px solid ${active ? "rgba(70,205,255,0.32)" : "rgba(255,255,255,0.1)"}`,
+                    color: active ? "#7de2ff" : "rgba(255,255,255,0.82)",
+                    boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+                  }}
+                >
+                  {item.label} ({vehicleCategoryCounts[item.key]})
+                </button>
+              );
+            })}
+          </div>
+
           <input
-            value={cashDownInput}
-            onChange={(e) => setCashDownInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void handleApplyDealInputs();
-            }}
-            placeholder="1.00"
-            style={input}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search stock / year / make / model / VIN..."
+            style={{ ...input, flex: 1, minWidth: 260 }}
           />
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>Trade In</div>
-          <input
-            value={tradeValueInput}
-            onChange={(e) => setTradeValueInput(e.target.value)}
-            placeholder="0.00"
-            style={input}
-          />
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>Trade Payoff</div>
-          <input
-            value={tradePayoffInput}
-            onChange={(e) => setTradePayoffInput(e.target.value)}
-            placeholder="0.00"
-            style={input}
-          />
-        </div>
-
-        <button type="button" onClick={handleApplyDealInputs} style={btnSecondary}>
-          Apply
-        </button>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {(
-            [
-              { key: "all", label: "All" },
-              { key: "car", label: "Cars" },
-              { key: "suv", label: "SUVs" },
-              { key: "truck", label: "Trucks" },
-              { key: "van", label: "Vans" },
-            ] as Array<{ key: VehicleCategory; label: string }>
-          ).map((item) => {
-            const active = vehicleCategory === item.key;
-
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setVehicleCategory(item.key)}
-                style={{
-                  ...filterBtn,
-                  background: active ? "rgba(70,205,255,0.14)" : "rgba(10,18,30,0.45)",
-                  border: `1px solid ${active ? "rgba(70,205,255,0.32)" : "rgba(255,255,255,0.1)"}`,
-                  color: active ? "#7de2ff" : "rgba(255,255,255,0.82)",
-                  boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
-                }}
-              >
-                {item.label} ({vehicleCategoryCounts[item.key]})
-              </button>
-            );
-          })}
-        </div>
-
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search stock / year / make / model / VIN..."
-          style={{ ...input, flex: 1, minWidth: 260 }}
-        />
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -733,172 +775,221 @@ export default function DealVehiclePage() {
           </div>
           {filtered[0] ? (
             <div style={miniStat}>
-              Best Match <span style={miniStatValue}>{filtered[0].vehicle.stock_number ?? "—"}</span>
+              Best Match <span style={miniStatValue}>{filtered[0].vehicle.stock_number ?? "-"}</span>
             </div>
           ) : null}
         </div>
       </div>
 
-      {loading ? <div style={{ opacity: 0.8 }}>Loading…</div> : null}
+      {loading ? <div style={{ opacity: 0.8 }}>Loading...</div> : null}
       {err ? <div style={{ color: "#fca5a5" }}>{err}</div> : null}
 
       {!loading && !err ? (
-        <div style={{ display: "grid", gap: 14 }}>
-          {filtered.map((v) => {
-            const age = daysSince(v.vehicle.date_in_stock);
-            const priceError = hasPriceError(v.vehicle);
-            const isBest = v.vehicle.id === bestVehicleId;
-            const bestOption = v.options[0];
+        <div style={tableShell}>
+          <Table className="min-w-[1180px]">
+            <TableHeader>
+              <TableRow className="border-border/80 bg-background/55 hover:bg-background/55">
+                <TableHead className="w-[360px]">Vehicle</TableHead>
+                <TableHead className="w-[170px]">Monthly Payment</TableHead>
+                <TableHead className="w-[120px]">Required Down</TableHead>
+                <TableHead className="w-[90px]">Term</TableHead>
+                <TableHead className="w-[90px]">LTV</TableHead>
+                <TableHead className="w-[90px]">PTI</TableHead>
+                <TableHead className="w-[250px]">Status</TableHead>
+                <TableHead className="w-[110px] text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((v) => {
+                const age = daysSince(v.vehicle.date_in_stock);
+                const priceError = hasPriceError(v.vehicle);
+                const activeOption = getActiveOption(v);
+                const isBest = v.vehicle.id === bestVehicleId;
+                const isSelected =
+                  selected?.vehicleId === v.vehicle.id &&
+                  selected.option.label === activeOption.label;
+                const statusLabel = priceError ? "No price" : getStatusLabel(activeOption);
+                const statusDetail = priceError
+                  ? "Vehicle is not priced yet"
+                  : getOptionReasonDetail(activeOption);
+                const ptiPercent =
+                  header?.max_payment_cap && header.max_payment_cap > 0
+                    ? (activeOption.monthly_payment / header.max_payment_cap) * 100
+                    : null;
 
-            return (
-              <Card
-                key={v.vehicle.id}
-                className={isBest
-                  ? "border-primary/30 bg-[linear-gradient(180deg,rgba(70,205,255,0.08),rgba(255,255,255,0.02))] shadow-[0_18px_40px_rgba(24,182,230,0.16)]"
-                  : "border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.18)]"}
-              >
-                <CardContent className="p-0">
-                  <div style={{ ...vehicleHeader, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        {isBest ? <Badge className="bg-primary text-primary-foreground">Best Match</Badge> : null}
-                        {priceError ? (
-                          <Badge variant="outline" className="border-amber-400/30 bg-amber-500/10 text-amber-300">No Price</Badge>
-                        ) : v.fitsNow ? (
-                          <Badge variant="outline" className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300">Fits Now</Badge>
-                        ) : (
-                          <Badge variant="outline" className="border-red-400/30 bg-red-500/10 text-red-300">
-                            {normalizeReason(v.primaryBlock)}
-                          </Badge>
-                        )}
-                        {bestOption?.term_months ? (
-                          <span style={headerHint}>Best term {bestOption.term_months} mo</span>
-                        ) : null}
-                      </div>
+                return (
+                  <TableRow
+                    key={v.vehicle.id}
+                    className={cn(
+                      "align-top border-border/70",
+                      isBest &&
+                        "border-l-2 border-l-primary bg-[linear-gradient(90deg,rgba(70,205,255,0.09),rgba(70,205,255,0.02)_32%,rgba(0,0,0,0))] shadow-[inset_0_0_0_1px_rgba(70,205,255,0.18)]",
+                      isSelected && "bg-primary/8"
+                    )}
+                  >
+                    <TableCell className="px-4 py-3">
+                      <div className="grid gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isBest ? <Badge className="bg-primary text-primary-foreground">Best Fit</Badge> : null}
+                          {isSelected ? <Badge variant="secondary">Selected</Badge> : null}
+                          {v.fitsNow && !priceError ? <Badge variant="success">Fits Now</Badge> : null}
+                          {v.vehicle.vehicle_category ? (
+                            <Badge variant="outline" className="text-[10px]">
+                              {v.vehicle.vehicle_category}
+                            </Badge>
+                          ) : null}
+                        </div>
 
-                      <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1.1 }}>
-                        {v.vehicle.stock_number ?? "—"} • {v.vehicle.year ?? "—"} {v.vehicle.make ?? "—"} {v.vehicle.model ?? "—"}
-                      </div>
-
-                      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-                        <span style={headerMeta}>Mileage {v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}</span>
-                        <span style={headerMeta}>Age {age == null ? "—" : `${age} days`}</span>
-                        <span style={headerMeta}>Ask {money(v.vehicle.asking_price)}</span>
-                        {v.vehicle.vehicle_category ? (
-                          <span style={headerMeta}>{v.vehicle.vehicle_category.toUpperCase()}</span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "grid", gap: 8, justifyItems: "end", minWidth: 180 }}>
-                      <div style={summaryLabel}>Fastest path</div>
-                      <div style={summaryPayment}>{money(bestOption?.monthly_payment)}</div>
-                      <div style={summarySubtle}>
-                        Down {bestOption && bestOption.additional_down_needed > 0 ? `+${money(bestOption.additional_down_needed)}` : "—"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={vehicleBody}>
-                    {v.options.map((opt) => {
-                      const ok = opt.fits_cap;
-                      const needsMoreDown = !ok && (opt.additional_down_needed ?? 0) > 0;
-                      const isSelected =
-                        selected?.vehicleId === v.vehicle.id &&
-                        selected?.option?.label === opt.label;
-                      const reasonSummary = getOptionReasonSummary(opt);
-                      const reasonDetail = getOptionReasonDetail(opt);
-
-                      return (
-                        <div
-                          key={`${v.vehicle.id}-${opt.label}`}
-                          style={{
-                            ...optionCard,
-                            border: isSelected
-                              ? "1px solid rgba(70,205,255,0.32)"
-                              : ok
-                                ? "1px solid rgba(16,185,129,0.2)"
-                                : "1px solid rgba(255,255,255,0.08)",
-                            background: isSelected
-                              ? "rgba(70,205,255,0.08)"
-                              : ok
-                                ? "rgba(16,185,129,0.06)"
-                                : "rgba(10,18,30,0.28)",
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                            <div style={{ display: "grid", gap: 8 }}>
-                              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                <div style={optionLabel}>{opt.label}</div>
-                                {isSelected ? (
-                                  <Badge className="bg-primary text-primary-foreground">Selected</Badge>
-                                ) : null}
-                                {ok ? (
-                                  <Badge variant="outline" className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300">Works</Badge>
-                                ) : needsMoreDown ? (
-                                  <Badge variant="outline" className="border-amber-400/30 bg-amber-500/10 text-amber-300">More Down Needed</Badge>
-                                ) : (
-                                  <Badge variant="outline" className="border-red-400/30 bg-red-500/10 text-red-300">{reasonSummary ?? "Blocked"}</Badge>
-                                )}
-                              </div>
-
-                              <div style={metricGrid}>
-                                <div style={metricBlock}>
-                                  <div style={metricLabel}>Payment</div>
-                                  <div style={paymentValue}>{money(opt.monthly_payment)}</div>
-                                </div>
-                                <div style={metricBlock}>
-                                  <div style={metricLabel}>Required Down</div>
-                                  <div style={{ ...secondaryMetricValue, color: needsMoreDown ? "#fbbf24" : "rgba(255,255,255,0.72)" }}>
-                                    {needsMoreDown ? `+${money(opt.additional_down_needed)}` : "—"}
-                                  </div>
-                                </div>
-                                <div style={metricBlock}>
-                                  <div style={metricLabel}>Term</div>
-                                  <div style={secondaryMetricValue}>{opt.term_months ?? "—"} mo</div>
-                                </div>
-                              </div>
-
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <span style={pillChip(opt.include_vsc)}>VSC {opt.include_vsc ? "On" : "Off"}</span>
-                                <span style={pillChip(opt.include_gap)}>GAP {opt.include_gap ? "On" : "Off"}</span>
-                              </div>
-
-                              {!ok ? (
-                                <div style={failureBox}>
-                                  <div style={failureTitle}>{reasonSummary ?? "Does not fit"}</div>
-                                  {reasonDetail ? <div style={failureDetail}>{reasonDetail}</div> : null}
-                                </div>
-                              ) : null}
-                            </div>
-
-                            <Button
-                              type="button"
-                              disabled={!incomeAppliedOk || priceError}
-                              onClick={() => onPick(v, opt)}
-                              variant={isSelected ? "default" : "outline"}
-                              className={isSelected
-                                ? "min-w-[128px]"
-                                : "min-w-[128px] border-border/75 bg-background/35 text-foreground hover:bg-accent/80"}
-                              title={
-                                !incomeAppliedOk
-                                  ? "Income totals not ready"
-                                  : priceError
-                                    ? "Vehicle is not priced yet"
-                                    : getOptionHoverText(opt)
-                              }
-                            >
-                              {isSelected ? "Selected" : "Choose"}
-                            </Button>
+                        <div className="grid gap-1">
+                          <div className="text-sm font-black leading-tight text-foreground">
+                            {v.vehicle.year ?? "-"} {v.vehicle.make ?? "-"} {v.vehicle.model ?? "-"}
+                          </div>
+                          <div className="text-xs font-semibold text-muted-foreground">
+                            Stock {v.vehicle.stock_number ?? "-"} | Ask {money(v.vehicle.asking_price)} | Mileage{" "}
+                            {v.vehicle.odometer != null ? num(v.vehicle.odometer) : "-"} | Age{" "}
+                            {age == null ? "-" : `${age}d`}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+
+                        <div className="flex flex-wrap gap-2">
+                          {v.options.map((opt) => {
+                            const active = activeOption.label === opt.label;
+
+                            return (
+                              <button
+                                key={`${v.vehicle.id}-${opt.label}`}
+                                type="button"
+                                onClick={() =>
+                                  setActiveOptionByVehicle((current) => ({
+                                    ...current,
+                                    [v.vehicle.id]: opt.label,
+                                  }))
+                                }
+                                className={cn(
+                                  "inline-flex min-w-[68px] items-center justify-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors",
+                                  active
+                                    ? "border-primary/35 bg-primary/14 text-primary"
+                                    : "border-border/70 bg-background/50 text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                                )}
+                                title={getOptionHoverText(opt)}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="px-4 py-3">
+                      <div className="grid gap-1">
+                        <div className="text-[28px] font-black leading-none tracking-[-0.02em] text-foreground">
+                          {money(activeOption.monthly_payment)}
+                        </div>
+                        <div className="text-xs font-semibold text-muted-foreground">
+                          {activeOption.label} structure
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="px-4 py-3">
+                      <div
+                        className={cn(
+                          "text-base font-extrabold",
+                          (activeOption.additional_down_needed ?? 0) > 0
+                            ? "text-amber-300"
+                            : "text-foreground"
+                        )}
+                      >
+                        {(activeOption.additional_down_needed ?? 0) > 0
+                          ? `+${money(activeOption.additional_down_needed)}`
+                          : "$0"}
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-muted-foreground">
+                        add to current down
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="px-4 py-3">
+                      <div className="text-sm font-bold text-foreground">
+                        {activeOption.term_months ?? "-"} mo
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="px-4 py-3">
+                      <div className="text-sm font-bold text-foreground">
+                        {activeOption.ltv_est != null ? `${activeOption.ltv_est.toFixed(1)}%` : "-"}
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="px-4 py-3">
+                      <div className="text-sm font-bold text-foreground">
+                        {ptiPercent != null && Number.isFinite(ptiPercent) ? `${ptiPercent.toFixed(0)}% cap` : "-"}
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="px-4 py-3">
+                      <div className="grid gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            variant={
+                              priceError
+                                ? "warning"
+                                : getOptionBadgeVariant(activeOption)
+                            }
+                          >
+                            {statusLabel}
+                          </Badge>
+                          {activeOption.include_vsc ? (
+                            <span className={productChip(true)}>VSC</span>
+                          ) : null}
+                          {activeOption.include_gap ? (
+                            <span className={productChip(true)}>GAP</span>
+                          ) : null}
+                          {!activeOption.include_vsc && !activeOption.include_gap ? (
+                            <span className={productChip(false)}>No products</span>
+                          ) : null}
+                        </div>
+                        {statusDetail ? (
+                          <div className="text-xs font-semibold text-muted-foreground">
+                            {statusDetail}
+                          </div>
+                        ) : activeOption.fits_cap ? (
+                          <div className="text-xs font-semibold text-muted-foreground">
+                            Meets payment, LTV, amount financed, and price limits
+                          </div>
+                        ) : null}
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="px-4 py-3 text-right">
+                      <Button
+                        type="button"
+                        disabled={!incomeAppliedOk || priceError}
+                        onClick={() => onPick(v, activeOption)}
+                        variant={isSelected ? "default" : "outline"}
+                        size="sm"
+                        className={cn(
+                          "min-w-[88px]",
+                          !isSelected &&
+                            "border-border/75 bg-background/35 text-foreground hover:bg-accent/80"
+                        )}
+                        title={
+                          !incomeAppliedOk
+                            ? "Income totals not ready"
+                            : priceError
+                              ? "Vehicle is not priced yet"
+                              : getOptionHoverText(activeOption)
+                        }
+                      >
+                        {isSelected ? "Chosen" : "Choose"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
       ) : null}
     </div>
@@ -911,6 +1002,14 @@ const card: React.CSSProperties = {
   padding: 14,
   background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
   boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
+};
+
+const tableShell: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 16,
+  overflow: "hidden",
+  background: "linear-gradient(180deg, rgba(9,16,26,0.92), rgba(7,12,20,0.98))",
+  boxShadow: "0 18px 40px rgba(0,0,0,0.28)",
 };
 
 const input: React.CSSProperties = {
@@ -962,129 +1061,11 @@ const miniStatValue: React.CSSProperties = {
   fontWeight: 900,
 };
 
-const vehicleHeader: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 16,
-  padding: 18,
-  flexWrap: "wrap",
-};
-
-const vehicleBody: React.CSSProperties = {
-  display: "grid",
-  gap: 12,
-  padding: 18,
-};
-
-const headerMeta: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: "rgba(255,255,255,0.58)",
-};
-
-const headerHint: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 800,
-  color: "#7de2ff",
-};
-
-const summaryLabel: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "rgba(255,255,255,0.52)",
-};
-
-const summaryPayment: React.CSSProperties = {
-  fontSize: 28,
-  lineHeight: 1,
-  fontWeight: 950,
-  color: "#f5f7fa",
-};
-
-const summarySubtle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: "rgba(255,255,255,0.62)",
-};
-
-const optionCard: React.CSSProperties = {
-  borderRadius: 14,
-  padding: 14,
-  boxShadow: "0 10px 24px rgba(0,0,0,0.14)",
-};
-
-const optionLabel: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 900,
-  color: "#f5f7fa",
-};
-
-const metricGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-  gap: 12,
-};
-
-const metricBlock: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-};
-
-const metricLabel: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  color: "rgba(255,255,255,0.48)",
-};
-
-const paymentValue: React.CSSProperties = {
-  fontSize: 30,
-  lineHeight: 1,
-  fontWeight: 950,
-  color: "#f5f7fa",
-};
-
-const secondaryMetricValue: React.CSSProperties = {
-  fontSize: 18,
-  lineHeight: 1.1,
-  fontWeight: 900,
-  color: "#f5f7fa",
-};
-
-const failureBox: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  padding: 10,
-  borderRadius: 12,
-  border: "1px solid rgba(248,113,113,0.22)",
-  background: "rgba(127,29,29,0.16)",
-};
-
-const failureTitle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "#fca5a5",
-};
-
-const failureDetail: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: "rgba(255,255,255,0.72)",
-};
-
-function pillChip(active: boolean): React.CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "4px 8px",
-    borderRadius: 999,
-    border: `1px solid ${active ? "rgba(70,205,255,0.22)" : "rgba(255,255,255,0.08)"}`,
-    background: active ? "rgba(70,205,255,0.08)" : "rgba(255,255,255,0.03)",
-    color: active ? "#7de2ff" : "rgba(255,255,255,0.58)",
-    fontSize: 11,
-    fontWeight: 800,
-  };
+function productChip(active: boolean) {
+  return cn(
+    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]",
+    active
+      ? "border-primary/30 bg-primary/10 text-primary"
+      : "border-border/70 bg-background/50 text-muted-foreground"
+  );
 }
