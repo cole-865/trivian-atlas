@@ -496,7 +496,7 @@ export default function DealSubmitPage() {
 
   if (!dealId) {
     return (
-      <div style={{ padding: 16, color: "crimson" }}>
+      <div style={{ padding: 16, color: "#fca5a5" }}>
         Missing dealId in route params. (Check folder name: <code>deals/[dealId]/submit</code>)
       </div>
     );
@@ -507,7 +507,7 @@ export default function DealSubmitPage() {
       <div style={headerRow}>
         <div>
           <h2 style={{ margin: 0 }}>Step 5: Review & Submit</h2>
-          <div style={{ marginTop: 4, fontSize: 13, color: "#666", fontWeight: 600 }}>
+          <div style={{ marginTop: 4, fontSize: 13, color: "rgba(255,255,255,0.62)", fontWeight: 600 }}>
             Final review, required stip uploads, and deal packet assembly.
           </div>
         </div>
@@ -529,8 +529,11 @@ export default function DealSubmitPage() {
             disabled={!canSubmit || loading || submitting}
             style={{
               ...btnPrimary,
-              background: !canSubmit || loading || submitting ? "#999" : "#111",
-              border: `1px solid ${!canSubmit || loading || submitting ? "#999" : "#111"}`,
+              background:
+                !canSubmit || loading || submitting ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)",
+              border: `1px solid ${!canSubmit || loading || submitting ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)"}`,
+              color:
+                !canSubmit || loading || submitting ? "rgba(255,255,255,0.72)" : "rgb(10,18,30)",
               cursor:
                 !canSubmit || loading || submitting ? "not-allowed" : "pointer",
             }}
@@ -553,7 +556,7 @@ export default function DealSubmitPage() {
             <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1 }}>
               {readyCount}/{totalCount}
             </div>
-            <div style={{ fontSize: 13, color: "#666", fontWeight: 700, marginTop: 4 }}>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.62)", fontWeight: 700, marginTop: 4 }}>
               Checks passing
             </div>
           </div>
@@ -609,7 +612,7 @@ export default function DealSubmitPage() {
               <div style={v}>{yesNo(selection.include_gap)}</div>
             </div>
           ) : (
-            <div style={{ fontSize: 14, color: "#666", lineHeight: 1.5 }}>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.62)", lineHeight: 1.5 }}>
               No structure has been saved yet.
             </div>
           )}
@@ -726,7 +729,7 @@ export default function DealSubmitPage() {
                     style={{
                       gridColumn: "1 / -1",
                       fontSize: 13,
-                      color: "#777",
+                      color: "rgba(255,255,255,0.58)",
                       fontWeight: 700,
                     }}
                   >
@@ -814,15 +817,15 @@ function ChecklistRow({
         gap: 10,
         alignItems: "start",
         padding: "10px 12px",
-        border: "1px solid #ececec",
+        border: `1px solid ${ok ? "rgba(16,185,129,0.2)" : "rgba(248,113,113,0.2)"}`,
         borderRadius: 12,
-        background: ok ? "#f8fff8" : "#fff8f8",
+        background: ok ? "rgba(16,185,129,0.08)" : "rgba(127,29,29,0.18)",
       }}
     >
       <div
         style={{
           fontWeight: 900,
-          color: ok ? "green" : "crimson",
+          color: ok ? "#34d399" : "#f87171",
           fontSize: 16,
           lineHeight: "18px",
         }}
@@ -832,7 +835,7 @@ function ChecklistRow({
 
       <div>
         <div style={{ fontWeight: 900, fontSize: 14 }}>{label}</div>
-        <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{detail}</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", marginTop: 2 }}>{detail}</div>
       </div>
     </div>
   );
@@ -852,16 +855,18 @@ const gridTwo: React.CSSProperties = {
 };
 
 const card: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 14,
   padding: 16,
-  background: "#fff",
+  background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+  boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
 };
 
 const sectionTitle: React.CSSProperties = {
   fontWeight: 900,
   fontSize: 16,
   marginBottom: 12,
+  color: "#f5f7fa",
 };
 
 const kvGrid: React.CSSProperties = {
@@ -889,14 +894,14 @@ const vStrong: React.CSSProperties = {
 
 const helperText: React.CSSProperties = {
   fontSize: 12,
-  color: "#666",
+  color: "rgba(255,255,255,0.68)",
   marginBottom: 10,
   lineHeight: 1.45,
 };
 
 const stipHelper: React.CSSProperties = {
   fontSize: 12,
-  color: "#666",
+  color: "rgba(255,255,255,0.68)",
   lineHeight: 1.45,
   marginTop: 4,
 };
@@ -906,7 +911,9 @@ const textarea: React.CSSProperties = {
   minHeight: 120,
   resize: "vertical",
   borderRadius: 12,
-  border: "1px solid #d8d8d8",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "#f5f7fa",
   padding: 12,
   fontSize: 14,
   fontFamily: "inherit",
@@ -916,17 +923,18 @@ const textarea: React.CSSProperties = {
 const btnPrimary: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 10,
-  border: "1px solid #111",
-  background: "#111",
-  color: "#fff",
+  border: "1px solid rgb(70,205,255)",
+  background: "rgb(70,205,255)",
+  color: "rgb(10,18,30)",
   fontWeight: 900,
 };
 
 const btnSecondary: React.CSSProperties = {
   padding: "8px 12px",
   borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "#fff",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "rgba(255,255,255,0.92)",
   cursor: "pointer",
   fontWeight: 900,
 };
@@ -934,34 +942,35 @@ const btnSecondary: React.CSSProperties = {
 const infoBox: React.CSSProperties = {
   padding: 12,
   borderRadius: 12,
-  border: "1px solid #e5e5e5",
-  background: "#fafafa",
+  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(10,18,30,0.35)",
+  color: "rgba(255,255,255,0.85)",
   fontWeight: 700,
 };
 
 const warningBox: React.CSSProperties = {
   padding: 14,
   borderRadius: 12,
-  border: "1px solid #f0d2a8",
-  background: "#fff8ef",
-  color: "#8a4b00",
+  border: "1px solid rgba(245,158,11,0.24)",
+  background: "rgba(245,158,11,0.12)",
+  color: "#fbbf24",
 };
 
 const errorBox: React.CSSProperties = {
   padding: 12,
   borderRadius: 12,
-  border: "1px solid #f1b5b5",
-  background: "#fff3f3",
-  color: "crimson",
+  border: "1px solid rgba(248,113,113,0.28)",
+  background: "rgba(127,29,29,0.22)",
+  color: "#fca5a5",
   fontWeight: 900,
 };
 
 const successBox: React.CSSProperties = {
   padding: 12,
   borderRadius: 12,
-  border: "1px solid #cfe9cf",
-  background: "#f2fff2",
-  color: "green",
+  border: "1px solid rgba(16,185,129,0.28)",
+  background: "rgba(16,185,129,0.12)",
+  color: "#34d399",
   fontWeight: 900,
 };
 
@@ -975,7 +984,7 @@ const statusRow: React.CSSProperties = {
 const statusLabel: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 900,
-  color: "#555",
+  color: "rgba(255,255,255,0.62)",
 };
 
 const statusText: React.CSSProperties = {
@@ -986,13 +995,13 @@ const statusText: React.CSSProperties = {
 const statusGood: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 900,
-  color: "green",
+  color: "#34d399",
 };
 
 const statusBad: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 900,
-  color: "crimson",
+  color: "#f87171",
 };
 
 const stipRow: React.CSSProperties = {
@@ -1001,9 +1010,9 @@ const stipRow: React.CSSProperties = {
   gap: 12,
   alignItems: "start",
   padding: 12,
-  border: "1px solid #ececec",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 12,
-  background: "#fcfcfc",
+  background: "rgba(10,18,30,0.28)",
 };
 
 const docCard: React.CSSProperties = {
@@ -1011,15 +1020,15 @@ const docCard: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   alignItems: "center",
-  border: "1px solid #ececec",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 10,
   padding: 10,
-  background: "#fff",
+  background: "rgba(10,18,30,0.38)",
 };
 
 const docMeta: React.CSSProperties = {
   fontSize: 12,
-  color: "#666",
+  color: "rgba(255,255,255,0.58)",
   marginTop: 2,
 };
 
@@ -1028,9 +1037,9 @@ const pillRequired: React.CSSProperties = {
   fontWeight: 900,
   padding: "3px 8px",
   borderRadius: 999,
-  background: "#fff3f3",
-  color: "crimson",
-  border: "1px solid #f1c7c7",
+  background: "rgba(127,29,29,0.22)",
+  color: "#fca5a5",
+  border: "1px solid rgba(248,113,113,0.28)",
 };
 
 const pillOptional: React.CSSProperties = {
@@ -1038,9 +1047,9 @@ const pillOptional: React.CSSProperties = {
   fontWeight: 900,
   padding: "3px 8px",
   borderRadius: 999,
-  background: "#f4f4f4",
-  color: "#666",
-  border: "1px solid #e0e0e0",
+  background: "rgba(255,255,255,0.04)",
+  color: "rgba(255,255,255,0.58)",
+  border: "1px solid rgba(255,255,255,0.08)",
 };
 
 const pillGood: React.CSSProperties = {
@@ -1048,7 +1057,7 @@ const pillGood: React.CSSProperties = {
   fontWeight: 900,
   padding: "3px 8px",
   borderRadius: 999,
-  background: "#f2fff2",
-  color: "green",
-  border: "1px solid #cfe9cf",
+  background: "rgba(16,185,129,0.12)",
+  color: "#34d399",
+  border: "1px solid rgba(16,185,129,0.28)",
 };

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
@@ -29,9 +30,16 @@ function AppSidebarNav({
   return (
     <div className={cn("flex h-full flex-col", mobile && "min-h-full")}>
       <div className="border-b border-border/70 bg-gradient-to-b from-primary/[0.06] to-transparent px-5 py-5">
-        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-primary">
-          Trivian Atlas
-        </div>
+        <Link href="/home" className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+          <Image
+            src="/atlas-logo.png"
+            alt="Atlas"
+            width={180}
+            height={120}
+            priority
+            className="h-auto w-[180px] max-w-full"
+          />
+        </Link>
         <div className="mt-4 text-xl font-semibold tracking-tight text-foreground">
           {accountName}
         </div>

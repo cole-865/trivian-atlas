@@ -458,9 +458,27 @@ export default function CustomerDocuments({
     const isGood = s === "done";
     const isBusy = isProcessingStatus(s);
 
-    const bg = isGood ? "#E7F7EE" : isBad ? "#FFE9E9" : isBusy ? "#EEF2FF" : "#F3F4F6";
-    const border = isGood ? "#86EFAC" : isBad ? "#FCA5A5" : isBusy ? "#A5B4FC" : "#E5E7EB";
-    const color = isGood ? "#166534" : isBad ? "#991B1B" : isBusy ? "#1E3A8A" : "#374151";
+    const bg = isGood
+      ? "rgba(16,185,129,0.12)"
+      : isBad
+        ? "rgba(127,29,29,0.22)"
+        : isBusy
+          ? "rgba(70,205,255,0.12)"
+          : "rgba(255,255,255,0.04)";
+    const border = isGood
+      ? "rgba(16,185,129,0.28)"
+      : isBad
+        ? "rgba(248,113,113,0.28)"
+        : isBusy
+          ? "rgba(70,205,255,0.28)"
+          : "rgba(255,255,255,0.08)";
+    const color = isGood
+      ? "#34d399"
+      : isBad
+        ? "#fca5a5"
+        : isBusy
+          ? "#7de2ff"
+          : "rgba(255,255,255,0.72)";
 
     return (
       <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
@@ -484,7 +502,7 @@ export default function CustomerDocuments({
         </div>
 
         {s === "failed" && (bureauError || err) ? (
-          <div style={{ color: "crimson", fontSize: 12 }}>
+          <div style={{ color: "#fca5a5", fontSize: 12 }}>
             {cleanErrorMessage(bureauError || err)}
           </div>
         ) : null}
@@ -613,7 +631,7 @@ export default function CustomerDocuments({
       <div style={{ display: "grid", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <h3 style={{ margin: 0 }}>Documents</h3>
-          {err ? <span style={{ color: "crimson" }}>{err}</span> : null}
+          {err ? <span style={{ color: "#fca5a5" }}>{err}</span> : null}
         </div>
 
         <DocCard type="credit_bureau" />
@@ -679,7 +697,7 @@ function BureauDetailsModal({
 
         <div style={modalBody}>
           {loading ? <div>Loading bureau details…</div> : null}
-          {!loading && error ? <div style={{ color: "crimson" }}>{error}</div> : null}
+          {!loading && error ? <div style={{ color: "#fca5a5" }}>{error}</div> : null}
 
           {!loading && !error && activeTab === "report" ? (
             <ReportTab report={report} messages={messages} />
@@ -718,9 +736,9 @@ function TabButton({
       style={{
         padding: "10px 14px",
         border: "none",
-        borderBottom: active ? "2px solid #2563EB" : "2px solid transparent",
+        borderBottom: active ? "2px solid rgb(70,205,255)" : "2px solid transparent",
         background: "transparent",
-        color: active ? "#111" : "#2563EB",
+        color: active ? "#f5f7fa" : "#7de2ff",
         fontWeight: active ? 800 : 500,
         cursor: "pointer",
       }}
@@ -752,8 +770,8 @@ function ReportTab({
               style={{
                 padding: "8px 10px",
                 borderRadius: 10,
-                border: "1px solid #E5E7EB",
-                background: "#FAFAFA",
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(10,18,30,0.32)",
                 fontSize: 13,
               }}
             >
@@ -770,8 +788,8 @@ function ReportTab({
           whiteSpace: "pre-wrap",
           fontSize: 12,
           lineHeight: 1.5,
-          background: "#F8FAFC",
-          border: "1px solid #E5E7EB",
+          background: "rgba(10,18,30,0.42)",
+          border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: 12,
           padding: 14,
           maxHeight: 420,
@@ -860,7 +878,7 @@ function TradelinesTab({ tradelines }: { tradelines: BureauTradeline[] }) {
   }
 
   return (
-    <div style={{ overflow: "auto", maxHeight: 480, border: "1px solid #E5E7EB", borderRadius: 12 }}>
+    <div style={{ overflow: "auto", maxHeight: 480, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }}>
       <table style={table}>
         <thead>
           <tr>
@@ -907,7 +925,7 @@ function PublicRecordsTab({
   }
 
   return (
-    <div style={{ overflow: "auto", maxHeight: 480, border: "1px solid #E5E7EB", borderRadius: 12 }}>
+    <div style={{ overflow: "auto", maxHeight: 480, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }}>
       <table style={table}>
         <thead>
           <tr>
@@ -980,9 +998,10 @@ function Th({ children }: { children: React.ReactNode }) {
       style={{
         textAlign: "left",
         padding: "10px 12px",
-        borderBottom: "1px solid #E5E7EB",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
         fontSize: 12,
-        background: "#F9FAFB",
+        background: "rgba(255,255,255,0.04)",
+        color: "rgba(255,255,255,0.72)",
         whiteSpace: "nowrap",
       }}
     >
@@ -996,8 +1015,9 @@ function Td({ children }: { children: React.ReactNode }) {
     <td
       style={{
         padding: "10px 12px",
-        borderBottom: "1px solid #F1F5F9",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
         fontSize: 13,
+        color: "rgba(255,255,255,0.88)",
         whiteSpace: "nowrap",
       }}
     >
@@ -1007,9 +1027,11 @@ function Td({ children }: { children: React.ReactNode }) {
 }
 
 const card: React.CSSProperties = {
-  border: "1px solid #eee",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 14,
   padding: 14,
+  background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+  boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
 };
 
 const btnPrimary: React.CSSProperties = {
@@ -1018,27 +1040,27 @@ const btnPrimary: React.CSSProperties = {
   justifyContent: "center",
   padding: "10px 12px",
   borderRadius: 10,
-  border: "1px solid #111",
-  background: "#111",
-  color: "#fff",
+  border: "1px solid rgb(70,205,255)",
+  background: "rgb(70,205,255)",
+  color: "rgb(10,18,30)",
   fontWeight: 800,
 };
 
 const btnSecondary: React.CSSProperties = {
   padding: "10px 12px",
   borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "#fff",
-  color: "#111",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "rgba(255,255,255,0.92)",
   fontWeight: 800,
 };
 
 const btnDanger: React.CSSProperties = {
   padding: "10px 12px",
   borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "#fff",
-  color: "crimson",
+  border: "1px solid rgba(248,113,113,0.28)",
+  background: "rgba(127,29,29,0.22)",
+  color: "#fca5a5",
   fontWeight: 800,
 };
 
@@ -1057,9 +1079,9 @@ const modal: React.CSSProperties = {
   width: "min(1100px, 96vw)",
   maxHeight: "88vh",
   overflow: "hidden",
-  background: "#fff",
+  background: "rgb(11,16,23)",
   borderRadius: 16,
-  border: "1px solid #E5E7EB",
+  border: "1px solid rgba(255,255,255,0.08)",
   boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
   display: "flex",
   flexDirection: "column",
@@ -1072,14 +1094,14 @@ const closeBtn: React.CSSProperties = {
   fontSize: 28,
   lineHeight: 1,
   cursor: "pointer",
-  color: "#666",
+  color: "rgba(255,255,255,0.62)",
 };
 
 const tabBar: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 4,
-  borderBottom: "1px solid #E5E7EB",
+  borderBottom: "1px solid rgba(255,255,255,0.08)",
   marginTop: 10,
 };
 
@@ -1089,7 +1111,7 @@ const modalBody: React.CSSProperties = {
 };
 
 const sectionCard: React.CSSProperties = {
-  border: "1px solid #E5E7EB",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 12,
   padding: 14,
   display: "grid",

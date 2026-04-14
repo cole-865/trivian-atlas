@@ -919,7 +919,7 @@ export default function DealDealPage() {
 
   if (!dealId) {
     return (
-      <div style={{ padding: 16, color: "crimson" }}>
+      <div style={{ padding: 16, color: "#fca5a5" }}>
         Missing dealId in route params. (Check folder name: <code>deals/[dealId]/deal</code>)
       </div>
     );
@@ -966,7 +966,9 @@ export default function DealDealPage() {
           disabled={!canNext}
           style={{
             ...btnPrimary,
-            background: canNext ? "#111" : "#999",
+            background: canNext ? "rgb(70,205,255)" : "rgba(148,163,184,0.45)",
+            borderColor: canNext ? "rgb(70,205,255)" : "rgba(148,163,184,0.45)",
+            color: canNext ? "rgb(10,18,30)" : "rgba(255,255,255,0.72)",
             cursor: canNext ? "pointer" : "not-allowed",
           }}
           title={!structure ? "Deal structure is not ready" : ""}
@@ -976,7 +978,7 @@ export default function DealDealPage() {
       </div>
 
       {!selection ? (
-        <div style={{ ...card, background: "#fafafa" }}>
+        <div style={{ ...card, background: "rgba(10,18,30,0.3)" }}>
           <div style={{ fontWeight: 900, marginBottom: 8 }}>Vehicle Selection</div>
           <div style={{ opacity: 0.85 }}>
             No selection saved yet. Go to <b>Step 3</b> and click a payment option.
@@ -987,7 +989,7 @@ export default function DealDealPage() {
       {structure && vehicle && dealMath ? (
         <>
           {latestCounterOffer ? (
-            <div style={{ ...card, border: "1px solid #cbd5e1", background: "#f8fafc" }}>
+            <div style={{ ...card, border: "1px solid rgba(125,211,252,0.22)", background: "rgba(8,47,73,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
                   <div style={sectionTitle}>Latest Counter Offer</div>
@@ -1043,7 +1045,7 @@ export default function DealDealPage() {
             </div>
           ) : null}
 
-          <div style={{ ...card, background: "#fafafa" }}>
+          <div style={{ ...card, background: "rgba(10,18,30,0.3)" }}>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ fontWeight: 900 }}>Selected Unit</div>
               <div>
@@ -1064,9 +1066,9 @@ export default function DealDealPage() {
                   borderRadius: 999,
                   fontWeight: 900,
                   fontSize: 12,
-                  background: hasEffectiveBlockers ? "#fff7ed" : "#ecfdf3",
-                  color: hasEffectiveBlockers ? "#c2410c" : "#166534",
-                  border: `1px solid ${hasEffectiveBlockers ? "#fed7aa" : "#bbf7d0"}`,
+                  background: hasEffectiveBlockers ? "rgba(245,158,11,0.14)" : "rgba(16,185,129,0.14)",
+                  color: hasEffectiveBlockers ? "#fbbf24" : "#34d399",
+                  border: `1px solid ${hasEffectiveBlockers ? "rgba(245,158,11,0.28)" : "rgba(16,185,129,0.28)"}`,
                 }}
               >
                 {hasEffectiveBlockers ? "Needs Attention" : "Ready to Continue"}
@@ -1808,9 +1810,9 @@ function CheckPill({ label, ok }: { label: string; ok: boolean }) {
   return (
     <div
       style={{
-        border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}`,
-        background: ok ? "#f0fdf4" : "#fef2f2",
-        color: ok ? "#166534" : "#b91c1c",
+        border: `1px solid ${ok ? "rgba(16,185,129,0.28)" : "rgba(248,113,113,0.28)"}`,
+        background: ok ? "rgba(16,185,129,0.12)" : "rgba(127,29,29,0.22)",
+        color: ok ? "#34d399" : "#fca5a5",
         borderRadius: 12,
         padding: "10px 12px",
         fontWeight: 900,
@@ -1853,48 +1855,50 @@ function blockerStateTag(state: "blocked" | "pending" | "overridden" | "stale") 
   if (state === "overridden") {
     return {
       ...statusTagBase,
-      background: "#ecfdf3",
-      border: "1px solid #bbf7d0",
-      color: "#166534",
+      background: "rgba(16,185,129,0.14)",
+      border: "1px solid rgba(16,185,129,0.28)",
+      color: "#34d399",
     };
   }
 
   if (state === "pending") {
     return {
       ...statusTagBase,
-      background: "#fff8e8",
-      border: "1px solid #fde68a",
-      color: "#92400e",
+      background: "rgba(245,158,11,0.14)",
+      border: "1px solid rgba(245,158,11,0.28)",
+      color: "#fbbf24",
     };
   }
 
   if (state === "stale") {
     return {
       ...statusTagBase,
-      background: "#fff7ed",
-      border: "1px solid #fdba74",
-      color: "#c2410c",
+      background: "rgba(249,115,22,0.16)",
+      border: "1px solid rgba(249,115,22,0.28)",
+      color: "#fb923c",
     };
   }
 
   return {
     ...statusTagBase,
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#b91c1c",
+    background: "rgba(127,29,29,0.22)",
+    border: "1px solid rgba(248,113,113,0.28)",
+    color: "#fca5a5",
   };
 }
 
 const card: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 14,
   padding: 14,
-  background: "#fff",
+  background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+  boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
 };
 
 const sectionTitle: React.CSSProperties = {
   fontWeight: 900,
   marginBottom: 10,
+  color: "#f5f7fa",
 };
 
 const grid2: React.CSSProperties = {
@@ -1906,17 +1910,18 @@ const grid2: React.CSSProperties = {
 const btnPrimary: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 10,
-  border: "1px solid #111",
-  background: "#111",
-  color: "#fff",
+  border: "1px solid rgb(70,205,255)",
+  background: "rgb(70,205,255)",
+  color: "rgb(10,18,30)",
   fontWeight: 900,
 };
 
 const btnSecondary: React.CSSProperties = {
   padding: "8px 12px",
   borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "#fff",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "rgba(255,255,255,0.92)",
   cursor: "pointer",
   fontWeight: 900,
 };
@@ -1928,9 +1933,9 @@ const topDialog: React.CSSProperties = {
   transform: "translateX(-50%)",
   zIndex: 1000,
   width: "min(720px, calc(100vw - 32px))",
-  border: "1px solid #fecaca",
+  border: "1px solid rgba(248,113,113,0.35)",
   borderRadius: 8,
-  background: "#fff",
+  background: "rgb(20,24,32)",
   boxShadow: "0 16px 40px rgba(15, 23, 42, 0.22)",
   padding: 14,
 };
@@ -1944,16 +1949,17 @@ const topDialogHeader: React.CSSProperties = {
 };
 
 const topDialogClose: React.CSSProperties = {
-  border: "1px solid #d1d5db",
+  border: "1px solid rgba(255,255,255,0.1)",
   borderRadius: 8,
-  background: "#fff",
+  background: "rgba(10,18,30,0.45)",
   cursor: "pointer",
   fontWeight: 900,
   padding: "6px 10px",
+  color: "rgba(255,255,255,0.92)",
 };
 
 const topDialogMessage: React.CSSProperties = {
-  color: "#b91c1c",
+  color: "#fca5a5",
   fontWeight: 900,
   lineHeight: 1.4,
 };
@@ -1973,22 +1979,22 @@ const v: React.CSSProperties = {
 const failTag: React.CSSProperties = {
   padding: "6px 10px",
   borderRadius: 999,
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "#b91c1c",
+  background: "rgba(127,29,29,0.22)",
+  border: "1px solid rgba(248,113,113,0.28)",
+  color: "#fca5a5",
   fontWeight: 900,
   fontSize: 12,
 };
 
 const hintText: React.CSSProperties = {
   fontSize: 13,
-  color: "#7c2d12",
+  color: "#fdba74",
   fontWeight: 700,
 };
 
 const blockerDetailText: React.CSSProperties = {
   fontSize: 13,
-  color: "#334155",
+  color: "rgba(255,255,255,0.8)",
   fontWeight: 800,
 };
 
@@ -2000,10 +2006,10 @@ const statusTagBase: React.CSSProperties = {
 };
 
 const overrideCard: React.CSSProperties = {
-  border: "1px solid #ececec",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 12,
   padding: 12,
-  background: "#fafafa",
+  background: "rgba(10,18,30,0.28)",
 };
 
 const smallTextarea: React.CSSProperties = {
@@ -2011,16 +2017,18 @@ const smallTextarea: React.CSSProperties = {
   minHeight: 72,
   resize: "vertical",
   borderRadius: 10,
-  border: "1px solid #d8d8d8",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "#f5f7fa",
   padding: 10,
   fontSize: 13,
   fontFamily: "inherit",
 };
 
 const requestPreviewCard: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 10,
-  background: "#fff",
+  background: "rgba(10,18,30,0.38)",
   padding: 10,
   display: "grid",
   gap: 4,
@@ -2028,13 +2036,13 @@ const requestPreviewCard: React.CSSProperties = {
 
 const requestPreviewLine: React.CSSProperties = {
   fontSize: 12,
-  color: "#334155",
+  color: "rgba(255,255,255,0.8)",
   fontWeight: 700,
 };
 
 const requestHelpText: React.CSSProperties = {
   fontSize: 12,
-  color: "#475569",
+  color: "rgba(255,255,255,0.62)",
   fontWeight: 600,
 };
 
@@ -2046,9 +2054,9 @@ const compareGrid: React.CSSProperties = {
 };
 
 const comparePanel: React.CSSProperties = {
-  border: "1px solid #dbe2ea",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 12,
-  background: "#fff",
+  background: "rgba(10,18,30,0.38)",
   padding: 12,
   display: "grid",
   gap: 6,
@@ -2057,14 +2065,14 @@ const comparePanel: React.CSSProperties = {
 
 const compareLine: React.CSSProperties = {
   fontSize: 13,
-  color: "#334155",
+  color: "rgba(255,255,255,0.82)",
   fontWeight: 700,
 };
 
 const counterEditorCard: React.CSSProperties = {
-  border: "1px solid #dbe2ea",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 8,
-  background: "#fff",
+  background: "rgba(10,18,30,0.34)",
   padding: 12,
   overflowX: "auto",
 };
@@ -2081,7 +2089,7 @@ const counterWorksheetHeader: React.CSSProperties = {
 
 const counterWorksheetHint: React.CSSProperties = {
   fontSize: 12,
-  color: "#475569",
+  color: "rgba(255,255,255,0.62)",
   fontWeight: 700,
 };
 
@@ -2090,27 +2098,27 @@ const counterWorksheet: React.CSSProperties = {
   gridTemplateColumns: "170px 140px 170px minmax(260px, 1fr)",
   alignItems: "center",
   minWidth: 720,
-  borderTop: "1px solid #cbd5e1",
-  borderLeft: "1px solid #e5e7eb",
+  borderTop: "1px solid rgba(255,255,255,0.1)",
+  borderLeft: "1px solid rgba(255,255,255,0.08)",
 };
 
 const counterHeaderCell: React.CSSProperties = {
-  background: "#f1f5f9",
-  borderRight: "1px solid #e5e7eb",
-  borderBottom: "1px solid #cbd5e1",
+  background: "rgba(255,255,255,0.06)",
+  borderRight: "1px solid rgba(255,255,255,0.08)",
+  borderBottom: "1px solid rgba(255,255,255,0.1)",
   padding: "7px 8px",
   fontSize: 12,
   fontWeight: 900,
-  color: "#0f172a",
+  color: "rgba(255,255,255,0.76)",
   textTransform: "uppercase",
 };
 
 const counterSectionLabel: React.CSSProperties = {
   gridColumn: "1 / -1",
-  background: "#e0f2fe",
-  borderRight: "1px solid #e5e7eb",
-  borderBottom: "1px solid #cbd5e1",
-  color: "#075985",
+  background: "rgba(70,205,255,0.12)",
+  borderRight: "1px solid rgba(255,255,255,0.08)",
+  borderBottom: "1px solid rgba(255,255,255,0.1)",
+  color: "#7de2ff",
   fontSize: 12,
   fontWeight: 900,
   letterSpacing: 0,
@@ -2119,12 +2127,12 @@ const counterSectionLabel: React.CSSProperties = {
 };
 
 const counterRowLabel: React.CSSProperties = {
-  borderRight: "1px solid #e5e7eb",
-  borderBottom: "1px solid #eef2f7",
-  background: "#fff",
+  borderRight: "1px solid rgba(255,255,255,0.08)",
+  borderBottom: "1px solid rgba(255,255,255,0.06)",
+  background: "rgba(10,18,30,0.2)",
   padding: "7px 8px",
   fontSize: 13,
-  color: "#334155",
+  color: "rgba(255,255,255,0.8)",
   fontWeight: 800,
   minHeight: 38,
   display: "flex",
@@ -2134,28 +2142,28 @@ const counterRowLabel: React.CSSProperties = {
 const counterReadOnlyCell: React.CSSProperties = {
   ...counterRowLabel,
   justifyContent: "flex-end",
-  color: "#475569",
+  color: "rgba(255,255,255,0.62)",
   fontVariantNumeric: "tabular-nums",
 };
 
 const counterCurrentCell: React.CSSProperties = {
   ...counterRowLabel,
-  background: "#fbfdff",
+  background: "rgba(255,255,255,0.03)",
   justifyContent: "flex-end",
-  color: "#111827",
+  color: "#f5f7fa",
   fontVariantNumeric: "tabular-nums",
 };
 
 const counterIssueText: React.CSSProperties = {
   ...counterRowLabel,
-  color: "#dc2626",
+  color: "#f87171",
   fontWeight: 900,
   justifyContent: "flex-start",
 };
 
 const counterIssueEmpty: React.CSSProperties = {
   ...counterIssueText,
-  color: "#64748b",
+  color: "rgba(255,255,255,0.52)",
 };
 
 const counterProductCell: React.CSSProperties = {
@@ -2171,7 +2179,7 @@ const counterInlineCheckbox: React.CSSProperties = {
   gap: 5,
   alignItems: "center",
   fontSize: 12,
-  color: "#334155",
+  color: "rgba(255,255,255,0.8)",
   fontWeight: 800,
 };
 
@@ -2183,7 +2191,7 @@ const counterWorksheetActions: React.CSSProperties = {
 };
 
 const editorInput: React.CSSProperties = {
-  border: "1px solid #d1d5db",
+  border: "1px solid rgba(255,255,255,0.1)",
   borderRadius: 8,
   padding: "6px 8px",
   fontSize: 13,
@@ -2195,15 +2203,15 @@ const editorInput: React.CSSProperties = {
 };
 
 const auditCard: React.CSSProperties = {
-  border: "1px solid #ececec",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 12,
   padding: 12,
-  background: "#fff",
+  background: "rgba(10,18,30,0.3)",
 };
 
 const auditLine: React.CSSProperties = {
   fontSize: 13,
-  color: "#444",
+  color: "rgba(255,255,255,0.78)",
 };
 
 const auditPreWrapLine: React.CSSProperties = {

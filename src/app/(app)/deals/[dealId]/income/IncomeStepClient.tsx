@@ -19,15 +19,16 @@ import {
 } from "@/lib/income/w2";
 
 const cardStyle: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 10,
   padding: 10,
-  background: "#fff",
+  background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+  boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
 };
 
 const labelStyle: React.CSSProperties = {
   fontSize: 12,
-  color: "#666",
+  color: "rgba(255,255,255,0.62)",
   marginBottom: 4,
 };
 
@@ -695,38 +696,38 @@ export default function IncomeStepClient({
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <h2 className="m-0 text-lg font-semibold">Step 2: Income</h2>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs uppercase tracking-[0.08em] text-muted-foreground/75">
             Add income sources and the system will save and update totals automatically.
           </div>
         </div>
 
         {loading ? (
-          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+          <span className="rounded-full border border-border/75 bg-background/40 px-2.5 py-1 text-xs font-medium text-muted-foreground">
             Loading…
           </span>
         ) : activeRoleSaving || savingHI ? (
-          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+          <span className="rounded-full border border-border/75 bg-background/40 px-2.5 py-1 text-xs font-medium text-muted-foreground">
             Saving…
           </span>
         ) : hasUnsavedIncomeChanges ? (
-          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+          <span className="rounded-full border border-warning/30 bg-warning/12 px-2.5 py-1 text-xs font-medium text-warning">
             Unsaved changes
           </span>
         ) : applying ? (
-          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+          <span className="rounded-full border border-border/75 bg-background/40 px-2.5 py-1 text-xs font-medium text-muted-foreground">
             Updating totals…
           </span>
         ) : appliedOk ? (
-          <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+          <span className="rounded-full border border-success/30 bg-success/12 px-2.5 py-1 text-xs font-medium text-success">
             Income ready
           </span>
         ) : (
-          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+          <span className="rounded-full border border-warning/30 bg-warning/12 px-2.5 py-1 text-xs font-medium text-warning">
             Waiting on totals
           </span>
         )}
 
-        {err ? <span className="text-sm text-red-600">{err}</span> : null}
+        {err ? <span className="text-sm text-destructive">{err}</span> : null}
 
         <div className="flex-1" />
 
@@ -739,8 +740,8 @@ export default function IncomeStepClient({
           onClick={onNext}
           disabled={nextDisabled}
           className={[
-            "rounded-xl px-3 py-2 text-sm font-semibold text-white",
-            nextDisabled ? "bg-gray-400 cursor-not-allowed" : "bg-black hover:opacity-90",
+            "rounded-xl px-3 py-2 text-sm font-semibold text-primary-foreground",
+            nextDisabled ? "cursor-not-allowed bg-muted text-muted-foreground" : "bg-primary hover:bg-primary/90",
           ].join(" ")}
           title={
             hasUnsavedIncomeChanges
@@ -756,7 +757,7 @@ export default function IncomeStepClient({
         </button>
       </div>
 
-      <div className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
         <label className="flex flex-wrap items-center gap-3">
           <input
             type="checkbox"
@@ -766,26 +767,26 @@ export default function IncomeStepClient({
             className="h-4 w-4"
           />
           <span className="font-semibold">Household Income?</span>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-muted-foreground/80">
             {householdIncome ? "Include Co-app income" : "Exclude Co-app income"}
           </span>
           {savingHI ? (
-            <span className="text-xs text-muted-foreground">Saving…</span>
+            <span className="text-xs text-muted-foreground/75">Saving…</span>
           ) : applying ? (
-            <span className="text-xs text-muted-foreground">Updating totals…</span>
+            <span className="text-xs text-muted-foreground/75">Updating totals…</span>
           ) : null}
         </label>
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <div className="rounded-full border bg-white px-3 py-2 text-sm shadow-sm">
+        <div className="rounded-full border border-border/75 bg-background/35 px-3 py-2 text-sm shadow-[0_8px_22px_rgba(0,0,0,0.12)]">
           Driver Income: <b>{money(totals.primary)}</b>
         </div>
-        <div className="rounded-full border bg-white px-3 py-2 text-sm shadow-sm">
+        <div className="rounded-full border border-border/75 bg-background/35 px-3 py-2 text-sm shadow-[0_8px_22px_rgba(0,0,0,0.12)]">
           Co-app Income: <b>{money(totals.co)}</b>{" "}
           {!householdIncome ? <span className="text-muted-foreground">(ignored)</span> : null}
         </div>
-        <div className="rounded-full border bg-white px-3 py-2 text-sm shadow-sm">
+        <div className="rounded-full border border-border/75 bg-background/35 px-3 py-2 text-sm shadow-[0_8px_22px_rgba(0,0,0,0.12)]">
           Total Income: <b>{money(totals.total)}</b>
         </div>
       </div>
@@ -793,11 +794,11 @@ export default function IncomeStepClient({
       {applyResult && (
         <div
           style={{
-            border: "1px solid #e5e5e5",
+            border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 12,
             padding: 16,
             marginTop: 12,
-            background: "#fafafa",
+            background: "rgba(10,18,30,0.35)",
           }}
         >
           <div style={{ fontWeight: 600, marginBottom: 12 }}>
@@ -858,8 +859,8 @@ export default function IncomeStepClient({
           className={[
             "rounded-xl border px-3 py-2 text-sm font-semibold",
             activeRole === "primary"
-              ? "bg-black text-white border-black"
-              : "bg-white hover:bg-gray-50",
+              ? "border-primary/30 bg-primary/12 text-primary"
+              : "border-border/75 bg-background/35 text-foreground hover:bg-accent/80",
           ].join(" ")}
         >
           Driver
@@ -870,8 +871,8 @@ export default function IncomeStepClient({
           className={[
             "rounded-xl border px-3 py-2 text-sm font-semibold",
             activeRole === "co"
-              ? "bg-black text-white border-black"
-              : "bg-white hover:bg-gray-50",
+              ? "border-primary/30 bg-primary/12 text-primary"
+              : "border-border/75 bg-background/35 text-foreground hover:bg-accent/80",
           ].join(" ")}
         >
           Co-app
@@ -887,7 +888,7 @@ export default function IncomeStepClient({
             void addIncome(activeRole, v);
             e.currentTarget.value = "";
           }}
-          className="rounded-xl border px-3 py-2 text-sm font-semibold"
+          className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm font-semibold text-foreground"
         >
           <option value="">+ Add Income Source…</option>
           <option value="w2">W2</option>
@@ -978,27 +979,27 @@ function IncomeCard({
   const canUseCalculated = row.income_type === "w2" && !!w2Calc && grossThis > 0;
 
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <div className="flex flex-wrap items-center gap-3">
         <div className="font-semibold">{labelType(row.income_type)}</div>
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-muted-foreground/80">
           ({role === "primary" ? "Driver" : "Co-app"})
         </div>
 
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-muted-foreground/80">
           Time on job: <b>{timeOnJob}</b>
         </div>
 
         {rowSaveState === "saving" ? (
-          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+          <span className="rounded-full border border-border/75 bg-background/40 px-2.5 py-1 text-xs font-medium text-muted-foreground">
             Saving…
           </span>
         ) : rowSaveState === "saved" ? (
-          <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+          <span className="rounded-full border border-success/30 bg-success/12 px-2.5 py-1 text-xs font-medium text-success">
             Saved
           </span>
         ) : rowSaveState === "error" ? (
-          <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
+          <span className="rounded-full border border-destructive/30 bg-destructive/12 px-2.5 py-1 text-xs font-medium text-destructive">
             Error
           </span>
         ) : null}
@@ -1008,7 +1009,7 @@ function IncomeCard({
         <button
           onClick={onSave}
           disabled={saving}
-          className="rounded-xl border border-black bg-black px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-gray-400 disabled:border-gray-400"
+          className="rounded-xl border border-primary bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-muted disabled:bg-muted disabled:text-muted-foreground"
         >
           {saving ? "Saving…" : "Save"}
         </button>
@@ -1016,7 +1017,7 @@ function IncomeCard({
         <button
           onClick={onDelete}
           disabled={deleting}
-          className="rounded-xl border px-3 py-2 text-sm font-semibold text-red-600 hover:bg-gray-50 disabled:cursor-not-allowed"
+          className="rounded-xl border border-destructive/35 px-3 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed"
         >
           {deleting ? "Deleting…" : "Delete"}
         </button>
@@ -1024,11 +1025,11 @@ function IncomeCard({
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <label className="grid gap-1">
-          <div className="text-xs text-muted-foreground">Income Type</div>
+          <div className="text-xs text-muted-foreground/80">Income Type</div>
           <select
             value={row.income_type}
             onChange={(e) => onChange({ ...row, income_type: e.target.value as IncomeType })}
-            className="rounded-xl border px-3 py-2 text-sm"
+            className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
           >
             <option value="w2">W2</option>
             <option value="self_employed">Self-Employed</option>
@@ -1038,20 +1039,20 @@ function IncomeCard({
         </label>
 
         <label className="grid gap-1">
-          <div className="text-xs text-muted-foreground">Start Date (hire/start)</div>
+          <div className="text-xs text-muted-foreground/80">Start Date (hire/start)</div>
           <input
             type="date"
             value={row.hire_date ?? ""}
             onChange={(e) => onChange({ ...row, hire_date: e.target.value || null })}
-            className="rounded-xl border px-3 py-2 text-sm"
+            className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
           />
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground/75">
             Used for time on job. Non-W2 uses today automatically.
           </div>
         </label>
 
         <label className="grid gap-1 md:col-span-2">
-          <div className="text-xs text-muted-foreground">Monthly Gross (manual)</div>
+          <div className="text-xs text-muted-foreground/80">Monthly Gross (manual)</div>
           <input
             value={row.monthly_gross_manual ?? ""}
             onChange={(e) =>
@@ -1061,9 +1062,9 @@ function IncomeCard({
               })
             }
             placeholder="1.00"
-            className="rounded-xl border px-3 py-2 text-sm"
+            className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
           />
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground/75">
             {row.monthly_gross_calculated ? (
               <>
                 Calculated present (preferred): <b>{money(row.monthly_gross_calculated)}</b>
@@ -1081,7 +1082,7 @@ function IncomeCard({
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="grid gap-1">
-              <div className="text-xs text-muted-foreground">Hire Date</div>
+              <div className="text-xs text-muted-foreground/80">Hire Date</div>
               <input
                 type="date"
                 value={w2Form.hireDate}
@@ -1090,12 +1091,12 @@ function IncomeCard({
                   onChangeW2({ ...w2Form, hireDate: v });
                   onChange({ ...row, hire_date: v || null });
                 }}
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
               />
             </label>
 
             <label className="grid gap-1">
-              <div className="text-xs text-muted-foreground">Pay Period End</div>
+              <div className="text-xs text-muted-foreground/80">Pay Period End</div>
               <input
                 type="date"
                 value={w2Form.payPeriodEnd}
@@ -1104,12 +1105,12 @@ function IncomeCard({
                   onChangeW2({ ...w2Form, payPeriodEnd: v });
                   onChange({ ...row, pay_period_end: v || null });
                 }}
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
               />
             </label>
 
             <label className="grid gap-1">
-              <div className="text-xs text-muted-foreground">Pay Frequency</div>
+              <div className="text-xs text-muted-foreground/80">Pay Frequency</div>
               <select
                 value={w2Form.payFrequency}
                 onChange={(e) => {
@@ -1117,7 +1118,7 @@ function IncomeCard({
                   onChangeW2({ ...w2Form, payFrequency: v });
                   onChange({ ...row, pay_frequency: v });
                 }}
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
               >
                 <option value="weekly">Weekly</option>
                 <option value="biweekly">Biweekly</option>
@@ -1128,7 +1129,7 @@ function IncomeCard({
             </label>
 
             <label className="grid gap-1">
-              <div className="text-xs text-muted-foreground">Gross This Period</div>
+              <div className="text-xs text-muted-foreground/80">Gross This Period</div>
               <input
                 value={w2Form.grossThisPeriod}
                 onChange={(e) => {
@@ -1137,12 +1138,12 @@ function IncomeCard({
                   onChange({ ...row, gross_per_pay: toNumOrNull(v) });
                 }}
                 placeholder="1.00"
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
               />
             </label>
 
             <label className="grid gap-1 md:col-span-2">
-              <div className="text-xs text-muted-foreground">YTD Gross (optional)</div>
+              <div className="text-xs text-muted-foreground/80">YTD Gross (optional)</div>
               <input
                 value={w2Form.ytdGross}
                 onChange={(e) => {
@@ -1151,9 +1152,9 @@ function IncomeCard({
                   onChange({ ...row, gross_ytd: toNumOrNull(v) });
                 }}
                 placeholder="1.00"
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm text-foreground"
               />
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-muted-foreground/75">
                 {w2Calc ? (
                   <>
                     Tenure: <b>{w2Calc.tenureLabel}</b> · YTD start: <b>{w2Calc.ytdStartISO}</b>
@@ -1166,11 +1167,11 @@ function IncomeCard({
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <div className="rounded-full border bg-gray-50 px-3 py-2 text-sm">
+            <div className="rounded-full border border-border/75 bg-background/25 px-3 py-2 text-sm">
               Monthly (annualized): <b>{w2Calc ? money(w2Calc.monthlyFromPaycheck) : "—"}</b>
             </div>
 
-            <div className="rounded-full border bg-gray-50 px-3 py-2 text-sm">
+            <div className="rounded-full border border-border/75 bg-background/25 px-3 py-2 text-sm">
               Monthly (YTD avg):{" "}
               <b>{w2Calc && w2Calc.monthlyFromYtd > 0 ? money(w2Calc.monthlyFromYtd) : "—"}</b>
             </div>
@@ -1201,8 +1202,8 @@ function IncomeCard({
               className={[
                 "rounded-xl border px-3 py-2 text-sm font-semibold text-white",
                 canUseCalculated
-                  ? "bg-black border-black hover:opacity-90"
-                  : "bg-gray-400 border-gray-400 cursor-not-allowed",
+                  ? "border-primary bg-primary hover:bg-primary/90"
+                  : "cursor-not-allowed border-muted bg-muted text-muted-foreground",
               ].join(" ")}
             >
               Use Calculated
@@ -1210,7 +1211,7 @@ function IncomeCard({
           </div>
 
           {row.monthly_gross_calculated ? (
-            <div className="mt-2 text-xs text-muted-foreground">
+            <div className="mt-2 text-xs text-muted-foreground/75">
               Current calc value (preferred): <b>{money(row.monthly_gross_calculated)}</b>
             </div>
           ) : null}
@@ -1221,4 +1222,4 @@ function IncomeCard({
 }
 
 const btnSecondaryClass =
-  "rounded-xl border px-3 py-2 text-sm font-semibold hover:bg-gray-50";
+  "rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/80";

@@ -93,9 +93,9 @@ export default async function DealLayout({
   const access = Object.fromEntries(accessEntries) as Partial<Record<DealStep, boolean>>;
 
   return (
-    <div style={{ padding: 16, width: "100%", maxWidth: 1800, margin: "0 auto" }}>
+    <div className="mx-auto w-full max-w-[1800px] px-4 py-4 sm:px-6">
       <DealStepNav dealId={dealId} tier={uwResult?.tier ?? null} access={access} />
-      <div style={{ marginTop: 12, width: "100%" }}>{children}</div>
+      <div className="mt-4 w-full">{children}</div>
     </div>
   );
 }

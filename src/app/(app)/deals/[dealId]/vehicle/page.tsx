@@ -553,7 +553,7 @@ export default function DealVehiclePage() {
 
   if (!dealId) {
     return (
-      <div style={{ padding: 16, color: "crimson" }}>
+      <div style={{ padding: 16, color: "#fca5a5" }}>
         Missing dealId in route params. (Check folder name: <code>deals/[dealId]/vehicle</code>)
       </div>
     );
@@ -585,7 +585,9 @@ export default function DealVehiclePage() {
           disabled={nextDisabled}
           style={{
             ...btnPrimary,
-            background: nextDisabled ? "#999" : "#111",
+            background: nextDisabled ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)",
+            borderColor: nextDisabled ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)",
+            color: nextDisabled ? "rgba(255,255,255,0.72)" : "rgb(10,18,30)",
             cursor: nextDisabled ? "not-allowed" : "pointer",
           }}
           title={
@@ -601,8 +603,8 @@ export default function DealVehiclePage() {
       </div>
 
       {!loading && !incomeAppliedOk ? (
-        <div style={{ ...card, border: "1px solid #f2c9c9", background: "#fff7f7" }}>
-          <div style={{ fontWeight: 900, color: "crimson" }}>Income totals are not ready yet.</div>
+        <div style={{ ...card, border: "1px solid rgba(248,113,113,0.28)", background: "rgba(127,29,29,0.2)" }}>
+          <div style={{ fontWeight: 900, color: "#fca5a5" }}>Income totals are not ready yet.</div>
           <div style={{ marginTop: 6, opacity: 0.85 }}>
             Go back to <b>Step 2</b> and let the income step finish saving and updating totals.
             Until then, vehicle options are locked.
@@ -611,7 +613,7 @@ export default function DealVehiclePage() {
       ) : null}
 
       {selected ? (
-        <div style={{ ...card, background: "#fafafa" }}>
+        <div style={{ ...card, background: "rgba(10,18,30,0.3)" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ fontWeight: 900 }}>Selected:</div>
             <div>
@@ -690,9 +692,9 @@ export default function DealVehiclePage() {
                 onClick={() => setVehicleCategory(item.key)}
                 style={{
                   ...filterBtn,
-                  background: active ? "#e8f0fe" : "#fff",
-                  border: `1px solid ${active ? "#7aa2e3" : "#d8d8d8"}`,
-                  color: active ? "#0f3d91" : "#222",
+                  background: active ? "rgba(70,205,255,0.14)" : "rgba(10,18,30,0.45)",
+                  border: `1px solid ${active ? "rgba(70,205,255,0.32)" : "rgba(255,255,255,0.1)"}`,
+                  color: active ? "#7de2ff" : "rgba(255,255,255,0.82)",
                   boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
                 }}
               >
@@ -714,7 +716,12 @@ export default function DealVehiclePage() {
         Trade Equity:{" "}
         <span
           style={{
-            color: tradeEquityPreview > 0 ? "green" : tradeEquityPreview < 0 ? "crimson" : "#444",
+            color:
+              tradeEquityPreview > 0
+                ? "#34d399"
+                : tradeEquityPreview < 0
+                  ? "#f87171"
+                  : "rgba(255,255,255,0.62)",
           }}
         >
           {money(tradeEquityPreview)}
@@ -722,16 +729,17 @@ export default function DealVehiclePage() {
       </div>
 
       {loading ? <div style={{ opacity: 0.8 }}>Loading…</div> : null}
-      {err ? <div style={{ color: "crimson" }}>{err}</div> : null}
+      {err ? <div style={{ color: "#fca5a5" }}>{err}</div> : null}
 
       {!loading && !err ? (
         <div
           style={{
-            border: "1px solid #eee",
+            border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 12,
             width: "100%",
             overflowX: "auto",
-            background: "#fff",
+            background: "rgba(10,18,30,0.32)",
+            boxShadow: "0 16px 36px rgba(0,0,0,0.18)",
           }}
         >
           <table
@@ -743,7 +751,7 @@ export default function DealVehiclePage() {
             }}
           >
             <thead>
-              <tr style={{ background: "#f3f4f6" }}>
+              <tr style={{ background: "rgba(255,255,255,0.05)" }}>
                 <th colSpan={7} style={{ ...th, textAlign: "center" }}>
                   Vehicle Information
                 </th>
@@ -751,7 +759,7 @@ export default function DealVehiclePage() {
                   Payment Information
                 </th>
               </tr>
-              <tr style={{ background: "#fafafa" }}>
+              <tr style={{ background: "rgba(255,255,255,0.03)" }}>
                 <th style={{ ...th, width: 42 }}>Age</th>
                 <th style={{ ...th, width: 88 }}>Stock #</th>
                 <th style={{ ...th, width: 62 }}>Year</th>
@@ -787,7 +795,11 @@ export default function DealVehiclePage() {
                         <tr
                           key={`${v.vehicle.id}-${opt.label}`}
                           style={{
-                            background: priceError ? "#fff7e6" : v.fitsNow ? "#f8fff9" : "#fff",
+                            background: priceError
+                              ? "rgba(245,158,11,0.12)"
+                              : v.fitsNow
+                                ? "rgba(16,185,129,0.08)"
+                                : "transparent",
                           }}
                         >
                           {idx === 0 ? (
@@ -819,7 +831,7 @@ export default function DealVehiclePage() {
                                     style={{
                                       fontSize: 12,
                                       fontWeight: 800,
-                                      color: "#b45309",
+                                      color: "#fbbf24",
                                     }}
                                   >
                                     No Price
@@ -829,7 +841,7 @@ export default function DealVehiclePage() {
                                     style={{
                                       fontSize: 12,
                                       fontWeight: 800,
-                                      color: "crimson",
+                                      color: "#f87171",
                                     }}
                                   >
                                     {normalizeReason(v.primaryBlock)}
@@ -839,7 +851,7 @@ export default function DealVehiclePage() {
                                     style={{
                                       fontSize: 12,
                                       fontWeight: 800,
-                                      color: "green",
+                                      color: "#34d399",
                                     }}
                                   >
                                     OK
@@ -871,7 +883,7 @@ export default function DealVehiclePage() {
                                 fontSize: 15,
                                 textDecoration: "underline",
                                 opacity: !incomeAppliedOk || priceError ? 0.35 : ok ? 1 : 0.7,
-                                color: ok ? "#111" : "#666",
+                                color: ok ? "#f5f7fa" : "rgba(255,255,255,0.62)",
                               }}
                               title={
                                 !incomeAppliedOk
@@ -888,7 +900,7 @@ export default function DealVehiclePage() {
                               style={{
                                 marginLeft: 6,
                                 fontWeight: 900,
-                                color: ok ? "green" : needsMoreDown ? "#d97706" : "crimson",
+                                color: ok ? "#34d399" : needsMoreDown ? "#fbbf24" : "#f87171",
                               }}
                             >
                               {ok ? "✓" : needsMoreDown ? "!" : "✕"}
@@ -899,7 +911,7 @@ export default function DealVehiclePage() {
                                 style={{
                                   fontSize: 11,
                                   fontWeight: 800,
-                                  color: "#111",
+                                  color: "#f5f7fa",
                                   marginTop: 2,
                                 }}
                               >
@@ -910,13 +922,13 @@ export default function DealVehiclePage() {
 
                           <td style={tdRight}>
                             {needsMoreDown ? (
-                              <span style={{ color: "#d97706", fontWeight: 800 }}>
+                              <span style={{ color: "#fbbf24", fontWeight: 800 }}>
                                 +{money(opt.additional_down_needed)}
                               </span>
                             ) : ok ? (
-                              <span style={{ color: "#666" }}>—</span>
+                              <span style={{ color: "rgba(255,255,255,0.52)" }}>—</span>
                             ) : (
-                              <span style={{ color: "crimson", fontWeight: 800 }}>—</span>
+                              <span style={{ color: "#f87171", fontWeight: 800 }}>—</span>
                             )}
                           </td>
                         </tr>
@@ -934,17 +946,20 @@ export default function DealVehiclePage() {
 }
 
 const card: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 14,
   padding: 14,
+  background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+  boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
 };
 
 const th: React.CSSProperties = {
   textAlign: "left",
   padding: "10px 8px",
-  borderBottom: "1px solid #eee",
+  borderBottom: "1px solid rgba(255,255,255,0.08)",
   fontWeight: 800,
   whiteSpace: "nowrap",
+  color: "rgba(255,255,255,0.72)",
 };
 
 const thCenter: React.CSSProperties = {
@@ -959,9 +974,10 @@ const thRight: React.CSSProperties = {
 
 const tdBase: React.CSSProperties = {
   padding: "6px 8px",
-  borderBottom: "1px solid #f2f2f2",
+  borderBottom: "1px solid rgba(255,255,255,0.06)",
   whiteSpace: "nowrap",
   verticalAlign: "middle",
+  color: "rgba(255,255,255,0.92)",
 };
 
 const tdTop: React.CSSProperties = {
@@ -984,24 +1000,27 @@ const input: React.CSSProperties = {
   width: 140,
   padding: "10px 12px",
   borderRadius: 10,
-  border: "1px solid #ddd",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.6)",
+  color: "#f5f7fa",
   outline: "none",
 };
 
 const btnPrimary: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 10,
-  border: "1px solid #111",
-  background: "#111",
-  color: "#fff",
+  border: "1px solid rgb(70,205,255)",
+  background: "rgb(70,205,255)",
+  color: "rgb(10,18,30)",
   fontWeight: 900,
 };
 
 const filterBtn: React.CSSProperties = {
   padding: "9px 14px",
   borderRadius: 12,
-  border: "1px solid #d8d8d8",
-  background: "#fff",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "rgba(255,255,255,0.88)",
   cursor: "pointer",
   fontWeight: 800,
   minWidth: 72,
@@ -1010,8 +1029,9 @@ const filterBtn: React.CSSProperties = {
 const btnSecondary: React.CSSProperties = {
   padding: "8px 12px",
   borderRadius: 10,
-  border: "1px solid #ddd",
-  background: "#fff",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "rgba(255,255,255,0.92)",
   cursor: "pointer",
   fontWeight: 900,
 };

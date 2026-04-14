@@ -482,7 +482,7 @@ export default function CustomerStepClient({
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-[220px]">
           <h2 className="m-0 text-lg font-semibold">Step 1: Customer</h2>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs uppercase tracking-[0.08em] text-muted-foreground/75">
             Required: Driver name + move-in date + Credit Bureau PDF.
           </div>
         </div>
@@ -492,30 +492,30 @@ export default function CustomerStepClient({
             className={[
               "rounded-full px-2.5 py-1 text-xs font-medium",
               activeRoleSaveState === "saving"
-                ? "bg-gray-100 text-gray-700"
+                ? "border border-border/75 bg-background/40 text-muted-foreground"
                 : activeRoleSaveState === "saved"
-                  ? "bg-green-100 text-green-700"
+                  ? "border border-success/30 bg-success/12 text-success"
                   : activeRoleSaveState === "error"
-                    ? "bg-red-100 text-red-700"
-                    : "text-muted-foreground",
+                    ? "border border-destructive/30 bg-destructive/12 text-destructive"
+                    : "text-muted-foreground/80",
             ].join(" ")}
           >
             {headerStatus}
           </span>
         ) : hasUnsavedActiveChanges ? (
-          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+          <span className="rounded-full border border-warning/30 bg-warning/12 px-2.5 py-1 text-xs font-medium text-warning">
             Unsaved changes
           </span>
         ) : null}
 
-        {error ? <span className="text-sm text-red-600">{error}</span> : null}
+        {error ? <span className="text-sm text-destructive">{error}</span> : null}
 
         <div className="flex-1" />
 
         <button
           type="button"
           onClick={onPrev}
-          className="rounded-xl border px-3 py-2 text-sm font-semibold hover:bg-gray-50"
+          className="rounded-xl border border-border/75 bg-background/35 px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/80"
         >
           ← Previous
         </button>
@@ -525,8 +525,8 @@ export default function CustomerStepClient({
           onClick={onNext}
           disabled={!canNext}
           className={[
-            "rounded-xl px-3 py-2 text-sm font-semibold text-white",
-            canNext ? "bg-black hover:opacity-90" : "bg-gray-400 cursor-not-allowed",
+            "rounded-xl px-3 py-2 text-sm font-semibold text-primary-foreground",
+            canNext ? "bg-primary hover:bg-primary/90" : "cursor-not-allowed bg-muted text-muted-foreground",
           ].join(" ")}
           title={!canNext ? nextBlockerMessage() ?? "" : ""}
         >
@@ -534,7 +534,7 @@ export default function CustomerStepClient({
         </button>
       </div>
 
-      <div className="rounded-2xl border bg-white p-4 shadow-sm grid gap-3">
+      <div className="grid gap-3 rounded-2xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
         <div className="flex flex-wrap items-center gap-2">
           {(["primary", "co"] as Role[]).map((r) => {
             const state = saveStateByRole[r];
@@ -547,8 +547,8 @@ export default function CustomerStepClient({
                 className={[
                   "rounded-xl border px-3 py-2 text-sm font-semibold",
                   activeRole === r
-                    ? "bg-black text-white border-black"
-                    : "bg-white hover:bg-gray-50",
+                    ? "border-primary/30 bg-primary/12 text-primary"
+                    : "border-border/75 bg-background/35 text-foreground hover:bg-accent/80",
                 ].join(" ")}
               >
                 {roleLabel(r)}
@@ -566,10 +566,10 @@ export default function CustomerStepClient({
             onClick={() => saveRole(activeRole)}
             disabled={loading || anySaving || navBusy}
             className={[
-              "rounded-xl px-3 py-2 text-sm font-semibold text-white",
+              "rounded-xl px-3 py-2 text-sm font-semibold text-primary-foreground",
               loading || anySaving || navBusy
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-black hover:opacity-90",
+                ? "cursor-not-allowed bg-muted text-muted-foreground"
+                : "bg-primary hover:bg-primary/90",
             ].join(" ")}
             title={
               activeRole === "primary" && !primaryOk
@@ -678,7 +678,7 @@ export default function CustomerStepClient({
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-white p-4 shadow-sm grid gap-3">
+      <div className="grid gap-3 rounded-2xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
         <CustomerDocuments
           dealId={dealId}
           onStatus={(s: { credit_app: boolean; credit_bureau: boolean }) => {
@@ -693,7 +693,7 @@ export default function CustomerStepClient({
         />
       </div>
 
-      <div className="text-xs text-muted-foreground">
+      <div className="text-xs uppercase tracking-[0.08em] text-muted-foreground/75">
         Required to continue:{" "}
         <b>
           Driver name {primaryOk ? "✓" : "✗"} · Move-in date{" "}
@@ -720,15 +720,15 @@ function Field({
 }) {
   return (
     <label className="grid gap-1">
-      <div className="text-xs text-muted-foreground">
-        {label} {required ? <span className="text-red-600 font-semibold">*</span> : null}
+      <div className="text-xs text-muted-foreground/80">
+        {label} {required ? <span className="font-semibold text-destructive">*</span> : null}
       </div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={[
-          "rounded-xl border px-3 py-2 text-sm outline-none",
-          invalid ? "border-red-400" : "border-gray-200",
+          "rounded-xl border bg-background/35 px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50",
+          invalid ? "border-destructive/60" : "border-border/75",
         ].join(" ")}
       />
     </label>
@@ -750,16 +750,16 @@ function DateField({
 }) {
   return (
     <label className="grid gap-1">
-      <div className="text-xs text-muted-foreground">
-        {label} {required ? <span className="text-red-600 font-semibold">*</span> : null}
+      <div className="text-xs text-muted-foreground/80">
+        {label} {required ? <span className="font-semibold text-destructive">*</span> : null}
       </div>
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={[
-          "rounded-xl border px-3 py-2 text-sm outline-none",
-          invalid ? "border-red-400" : "border-gray-200",
+          "rounded-xl border bg-background/35 px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50",
+          invalid ? "border-destructive/60" : "border-border/75",
         ].join(" ")}
       />
     </label>
@@ -775,11 +775,11 @@ function ReadonlyField({
 }) {
   return (
     <label className="grid gap-1">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground/80">{label}</div>
       <input
         value={value}
         readOnly
-        className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none"
+        className="rounded-xl border border-border/75 bg-background/25 px-3 py-2 text-sm text-foreground/90 outline-none"
       />
     </label>
   );

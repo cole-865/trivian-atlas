@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { CSSProperties } from "react";
 import type { DealStep } from "@/lib/deals/canAccessStep";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 type Step = { key: DealStep; label: string; href: (dealId: string) => string };
 
@@ -28,61 +29,45 @@ export function DealStepNav({
   const pathname = usePathname();
 
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: 10,
-        alignItems: "center",
-        padding: "10px 12px",
-        border: "1px solid #eee",
-        borderRadius: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <div style={{ fontWeight: 800 }}>Deal</div>
-      <div style={{ opacity: 0.6 }}>{dealId ? dealId.slice(0, 8) : "—"}…</div>
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] px-4 py-3 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
+      <div className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">
+        Deal
+      </div>
+      <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+        {dealId ? dealId.slice(0, 8) : "—"}…
+      </div>
 
-      {tier ? (
-        <div
-          style={{
-            padding: "4px 10px",
-            borderRadius: 999,
-            border: "1px solid #ddd",
-            fontWeight: 800,
-            background: "#fafafa",
-          }}
-        >
-          Tier {tier}
-        </div>
-      ) : null}
+      {tier ? <Badge variant="default">Tier {tier}</Badge> : null}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginLeft: 6 }}>
+      <div className="ml-0 flex flex-wrap gap-2 sm:ml-2">
         {steps.map((s, idx) => {
           const url = s.href(dealId);
           const active = pathname?.startsWith(url);
           const allowed = access?.[s.key] ?? true;
-          const style = {
-            textDecoration: "none",
-            padding: "6px 10px",
-            borderRadius: 999,
-            border: "1px solid #ddd",
-            fontWeight: 800,
-            opacity: active ? 1 : allowed ? 0.75 : 0.45,
-            background: active ? "#f3f4f6" : allowed ? "white" : "#f8f8f8",
-            color: allowed ? "#111" : "#777",
-            cursor: allowed ? "pointer" : "not-allowed",
-          } satisfies CSSProperties;
+          const stepClassName = cn(
+            "inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors",
+            active
+              ? "border-primary/30 bg-primary/12 text-primary"
+              : allowed
+                ? "border-border/75 bg-background/35 text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground"
+                : "cursor-not-allowed border-border/60 bg-background/20 text-muted-foreground/50"
+          );
 
           if (!allowed && !active) {
             return (
-              <span key={s.key} style={style} aria-disabled="true" title="Complete prior steps first">
+              <span
+                key={s.key}
+                className={stepClassName}
+                aria-disabled="true"
+                title="Complete prior steps first"
+              >
                 {idx + 1}. {s.label}
               </span>
             );
           }
 
           return (
-            <Link key={s.key} href={url} style={style}>
+            <Link key={s.key} href={url} className={stepClassName}>
               {idx + 1}. {s.label}
             </Link>
           );

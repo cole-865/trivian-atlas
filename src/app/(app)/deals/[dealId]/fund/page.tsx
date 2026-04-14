@@ -301,7 +301,7 @@ export default function DealFundPage() {
 
   if (!dealId) {
     return (
-      <div style={{ padding: 16, color: "crimson" }}>
+      <div style={{ padding: 16, color: "#fca5a5" }}>
         Missing dealId in route params. (Check folder name: <code>deals/[dealId]/fund</code>)
       </div>
     );
@@ -312,7 +312,7 @@ export default function DealFundPage() {
       <div style={headerRow}>
         <div>
           <h2 style={{ margin: "0 0 4px" }}>Step 6: Fund</h2>
-          <div style={{ fontSize: 13, color: "#666", fontWeight: 600 }}>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.62)", fontWeight: 600 }}>
             Verify stips, confirm the structure, and make the funding call.
           </div>
         </div>
@@ -326,8 +326,9 @@ export default function DealFundPage() {
           type="button"
           style={{
             ...btnPrimary,
-            background: !canFund || !!workingKey || loading ? "#999" : "#111",
-            borderColor: !canFund || !!workingKey || loading ? "#999" : "#111",
+            background: !canFund || !!workingKey || loading ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)",
+            borderColor: !canFund || !!workingKey || loading ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)",
+            color: !canFund || !!workingKey || loading ? "rgba(255,255,255,0.72)" : "rgb(10,18,30)",
             cursor: !canFund || !!workingKey || loading ? "not-allowed" : "pointer",
           }}
           disabled={!canFund || !!workingKey || loading}
@@ -419,7 +420,7 @@ export default function DealFundPage() {
                   <div style={v}>{yesNo(savedStructure.include_gap)}</div>
                 </div>
               ) : (
-                <div style={{ color: "#666", fontWeight: 700 }}>No saved structure found.</div>
+                <div style={{ color: "rgba(255,255,255,0.62)", fontWeight: 700 }}>No saved structure found.</div>
               )}
             </section>
           </div>
@@ -548,16 +549,16 @@ function statusPill(stip: FundingStip): React.CSSProperties {
     fontWeight: 900,
     padding: "3px 8px",
     borderRadius: 999,
-    background: isGood ? "#f2fff2" : isBad ? "#fff3f3" : "#f4f4f4",
-    color: isGood ? "green" : isBad ? "crimson" : "#666",
-    border: `1px solid ${isGood ? "#cfe9cf" : isBad ? "#f1c7c7" : "#e0e0e0"}`,
+    background: isGood ? "rgba(16,185,129,0.12)" : isBad ? "rgba(127,29,29,0.22)" : "rgba(255,255,255,0.04)",
+    color: isGood ? "#34d399" : isBad ? "#fca5a5" : "rgba(255,255,255,0.58)",
+    border: `1px solid ${isGood ? "rgba(16,185,129,0.28)" : isBad ? "rgba(248,113,113,0.28)" : "rgba(255,255,255,0.08)"}`,
   };
 }
 
 function CheckRow({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "22px 1fr", gap: 10, alignItems: "center" }}>
-      <div style={{ fontWeight: 900, color: ok ? "green" : "crimson" }}>{ok ? "Yes" : "No"}</div>
+      <div style={{ fontWeight: 900, color: ok ? "#34d399" : "#f87171" }}>{ok ? "Yes" : "No"}</div>
       <div style={{ fontWeight: 800 }}>{label}</div>
     </div>
   );
@@ -577,16 +578,18 @@ const gridTwo: React.CSSProperties = {
 };
 
 const card: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 8,
   padding: 16,
-  background: "#fff",
+  background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+  boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
 };
 
 const sectionTitle: React.CSSProperties = {
   fontWeight: 900,
   fontSize: 16,
   marginBottom: 12,
+  color: "#f5f7fa",
 };
 
 const kvGrid: React.CSSProperties = {
@@ -614,7 +617,7 @@ const vStrong: React.CSSProperties = {
 
 const helperText: React.CSSProperties = {
   fontSize: 12,
-  color: "#666",
+  color: "rgba(255,255,255,0.68)",
   marginTop: 8,
   lineHeight: 1.45,
 };
@@ -625,9 +628,9 @@ const stipRow: React.CSSProperties = {
   gap: 12,
   alignItems: "start",
   padding: 12,
-  border: "1px solid #ececec",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 8,
-  background: "#fcfcfc",
+  background: "rgba(10,18,30,0.28)",
 };
 
 const stipActions: React.CSSProperties = {
@@ -640,7 +643,7 @@ const stipActions: React.CSSProperties = {
 
 const targetLine: React.CSSProperties = {
   fontSize: 13,
-  color: "#333",
+  color: "rgba(255,255,255,0.86)",
   fontWeight: 700,
 };
 
@@ -648,9 +651,9 @@ const rejectReason: React.CSSProperties = {
   marginTop: 10,
   padding: 10,
   borderRadius: 8,
-  border: "1px solid #f1b5b5",
-  background: "#fff3f3",
-  color: "crimson",
+  border: "1px solid rgba(248,113,113,0.28)",
+  background: "rgba(127,29,29,0.22)",
+  color: "#fca5a5",
   fontSize: 13,
   fontWeight: 800,
 };
@@ -660,45 +663,46 @@ const docCard: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   alignItems: "center",
-  border: "1px solid #ececec",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 8,
   padding: 10,
-  background: "#fff",
+  background: "rgba(10,18,30,0.38)",
 };
 
 const docMeta: React.CSSProperties = {
   fontSize: 12,
-  color: "#666",
+  color: "rgba(255,255,255,0.68)",
   marginTop: 2,
 };
 
 const noteBox: React.CSSProperties = {
   minHeight: 110,
   whiteSpace: "pre-wrap",
-  border: "1px solid #ececec",
+  border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 8,
   padding: 12,
-  background: "#fcfcfc",
+  background: "rgba(10,18,30,0.28)",
   fontSize: 14,
   lineHeight: 1.5,
   fontWeight: 700,
-  color: "#333",
+  color: "rgba(255,255,255,0.9)",
 };
 
 const btnPrimary: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 8,
-  border: "1px solid #111",
-  background: "#111",
-  color: "#fff",
+  border: "1px solid rgb(70,205,255)",
+  background: "rgb(70,205,255)",
+  color: "rgb(10,18,30)",
   fontWeight: 900,
 };
 
 const btnSecondary: React.CSSProperties = {
   padding: "8px 12px",
   borderRadius: 8,
-  border: "1px solid #ddd",
-  background: "#fff",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(10,18,30,0.45)",
+  color: "rgba(255,255,255,0.92)",
   cursor: "pointer",
   fontWeight: 900,
 };
@@ -706,9 +710,9 @@ const btnSecondary: React.CSSProperties = {
 const btnDanger: React.CSSProperties = {
   padding: "8px 12px",
   borderRadius: 8,
-  border: "1px solid #f1b5b5",
-  background: "#fff3f3",
-  color: "crimson",
+  border: "1px solid rgba(248,113,113,0.28)",
+  background: "rgba(127,29,29,0.22)",
+  color: "#fca5a5",
   cursor: "pointer",
   fontWeight: 900,
 };
@@ -716,31 +720,32 @@ const btnDanger: React.CSSProperties = {
 const infoBox: React.CSSProperties = {
   padding: 12,
   borderRadius: 8,
-  border: "1px solid #e5e5e5",
-  background: "#fafafa",
+  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(10,18,30,0.35)",
+  color: "rgba(255,255,255,0.85)",
   fontWeight: 700,
 };
 
 const errorBox: React.CSSProperties = {
   padding: 12,
   borderRadius: 8,
-  border: "1px solid #f1b5b5",
-  background: "#fff3f3",
-  color: "crimson",
+  border: "1px solid rgba(248,113,113,0.28)",
+  background: "rgba(127,29,29,0.22)",
+  color: "#fca5a5",
   fontWeight: 900,
 };
 
 const successBox: React.CSSProperties = {
   padding: 12,
   borderRadius: 8,
-  border: "1px solid #cfe9cf",
-  background: "#f2fff2",
-  color: "green",
+  border: "1px solid rgba(16,185,129,0.28)",
+  background: "rgba(16,185,129,0.12)",
+  color: "#34d399",
   fontWeight: 900,
 };
 
 const statusBad: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 900,
-  color: "crimson",
+  color: "#f87171",
 };
