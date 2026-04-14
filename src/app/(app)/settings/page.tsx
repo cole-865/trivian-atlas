@@ -14,6 +14,7 @@ import {
 import { DEALERSHIP_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSION_PRESETS } from "@/lib/auth/permissionRegistry";
 import { SaveButton, SettingsForm } from "./SettingsForm";
 import { UnderwritingTierCards } from "./UnderwritingTierCards";
+import { VehicleTermPolicyCards } from "./VehicleTermPolicyCards";
 import { getResolvedDealershipPermissions } from "@/lib/auth/dealershipPermissions";
 import {
   DEFAULT_WORKFLOW_SETTINGS,
@@ -32,7 +33,6 @@ import {
   updateRolePermissionsAction,
   updateTrivianConfigAction,
   updateUserPermissionOverrideAction,
-  updateVehicleTermPolicyAction,
   updateWorkflowSettingsAction,
 } from "@/lib/settings/dealershipSettingsActions";
 
@@ -84,19 +84,6 @@ function name(user: { fullName?: string | null; email?: string | null; userId?: 
 
 function permissionLabel(permission: string) {
   return permission.replaceAll("_", " ");
-}
-
-function mileageText(value: number | null | undefined, fallback: string) {
-  return value === null || value === undefined ? fallback : new Intl.NumberFormat("en-US").format(value);
-}
-
-function PolicyGroup({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border bg-gray-50 p-4">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{children}</div>
-    </div>
-  );
 }
 
 function Banner({ tone, children }: { tone: "notice" | "error"; children: React.ReactNode }) {
@@ -398,51 +385,7 @@ function Underwriting({ data }: { data: DealershipSettingsData }) {
       </div>
       <div className="rounded-lg border bg-white p-6 shadow-sm">
         <Header title="Vehicle Term Policy" text="Term eligibility by vehicle age and mileage. Changes apply to new deals only." />
-        <div className="mt-5 grid gap-5">
-          {data.vehicleTermPolicies.map((policy) => (
-            <SettingsForm key={policy.id} action={updateVehicleTermPolicyAction} className="rounded-lg border bg-white p-5">
-              <input type="hidden" name="policy_id" value={policy.id} />
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-4 border-b pb-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="font-semibold">Policy {policy.sort_order}</div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${policy.active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
-                      {policy.active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    {mileageText(policy.min_mileage, "Any")}-{mileageText(policy.max_mileage, "any")} miles / {policy.max_term_months} months max
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 rounded-lg border bg-gray-50 px-3 py-2 text-sm">
-                  <input type="checkbox" name="active" defaultChecked={policy.active} />
-                  Active policy
-                </label>
-              </div>
-              <div className="grid gap-5">
-                <PolicyGroup title="Term">
-                  <Field label="Max term" name="max_term_months" type="number" min="1" max="60" suffix="mo" value={policy.max_term_months} helper="Longest allowed contract term. Maximum is 60 months." />
-                </PolicyGroup>
-                <PolicyGroup title="Mileage Range">
-                  <Field label="Min mileage" name="min_mileage" type="number" min="0" value={policy.min_mileage ?? ""} helper="Leave blank for no minimum." />
-                  <Field label="Max mileage" name="max_mileage" type="number" min="0" value={policy.max_mileage ?? ""} helper="Leave blank for no maximum." />
-                </PolicyGroup>
-                <PolicyGroup title="Vehicle Age">
-                  <Field label="Min age" name="min_vehicle_age" type="number" min="0" suffix="yrs" value={policy.min_vehicle_age ?? ""} helper="Leave blank for no minimum." />
-                  <Field label="Max age" name="max_vehicle_age" type="number" min="0" suffix="yrs" value={policy.max_vehicle_age ?? ""} helper="Leave blank for no maximum." />
-                </PolicyGroup>
-                <div className="rounded-lg border bg-gray-50 p-4">
-                  <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes</div>
-                  <Field label="Internal note" name="notes" value={policy.notes ?? ""} helper="Optional guidance for this vehicle band." />
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                <div className="text-xs text-muted-foreground">Saving updates policy {policy.sort_order} only.</div>
-                <Button>Save policy</Button>
-              </div>
-            </SettingsForm>
-          ))}
-        </div>
+        <VehicleTermPolicyCards policies={data.vehicleTermPolicies} />
       </div>
     </div>
   );
