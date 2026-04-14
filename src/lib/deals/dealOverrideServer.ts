@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Database, Json } from "@/lib/supabase/database.types";
+import type { Database, Json } from "@/lib/supabase/database.generated";
 import type { DealStructureInputsRecord } from "@/lib/deals/dealStructureEngine";
 import type {
   DealOverrideBlockerCode,

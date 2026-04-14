@@ -11,7 +11,7 @@ import {
 import { setStoredCurrentOrganizationId } from "@/lib/auth/organizationContext";
 import { sendOrganizationInviteEmail } from "@/lib/email/notifications";
 import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
-import type { Database } from "@/lib/supabase/database.types";
+import type { Database } from "@/lib/supabase/database.generated";
 export { ORG_MANAGED_ROLES } from "@/lib/auth/accessRules";
 
 export type OrgManagedRole = (typeof ORG_MANAGED_ROLES)[number];

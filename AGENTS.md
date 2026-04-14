@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Agent expectations
+
+- Follow this file strictly
+- If unsure, prefer existing patterns over new implementations
+- Do not invent new business logic
+- Ask for clarification instead of guessing
+
 ## Project
 Trivian Atlas is a multi-tenant loan origination and underwriting system for independent dealerships.
 
@@ -116,3 +123,36 @@ When finished, report:
 4. Schema or migration changes
 5. Assumptions or limitations
 6. Manual test steps
+
+## Underwriting domain rules
+
+- Max term: 60 months
+- Base PTI: 22%, but may be reduced based on risk tier
+- APR default: ~26.99%–28.99% depending on context
+- Taxes and fees must be included in amount financed
+- VSC and GAP affect term eligibility:
+  - With VSC + GAP → full term allowed
+  - Without → term may be reduced
+- LTV is based on JD Power book values
+- Payment must respect PTI cap derived from income step
+- All deal structures must pass:
+  - PTI
+  - LTV
+  - Max amount financed
+  - Max vehicle price
+
+- If a deal does not structure:
+  - Calculate additional down required
+  - Return normalized fail reasons:
+    - PTI
+    - LTV
+    - AMOUNT_FINANCED
+    - VEHICLE_PRICE
+
+## Data safety rules
+
+- Never expose cross-organization data
+- Always filter queries by organization_id
+- Never trust client-provided organization_id
+- Always derive organization from server-side context
+- Do not bypass RLS without explicit server-side reasoning

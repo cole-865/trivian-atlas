@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentOrganizationId } from "@/lib/auth/organizationContext";
-import type { Json } from "@/lib/supabase/database.types";
+import type { Json } from "@/lib/supabase/database.generated";
 
 export type AppNotificationType =
   | "deal_funded"

@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -14,6 +14,73 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_notifications: {
+        Row: {
+          body: string
+          created_at: string
+          deal_id: string | null
+          id: string
+          link_href: string | null
+          metadata_json: Json | null
+          organization_id: string
+          override_request_id: string | null
+          read_at: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deal_id?: string | null
+          id?: string
+          link_href?: string | null
+          metadata_json?: Json | null
+          organization_id: string
+          override_request_id?: string | null
+          read_at?: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deal_id?: string | null
+          id?: string
+          link_href?: string | null
+          metadata_json?: Json | null
+          organization_id?: string
+          override_request_id?: string | null
+          read_at?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_notifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_notifications_override_request_id_fkey"
+            columns: ["override_request_id"]
+            isOneToOne: false
+            referencedRelation: "deal_override_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_settings: {
         Row: {
           key: string
@@ -157,73 +224,6 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      app_notifications: {
-        Row: {
-          body: string
-          created_at: string
-          deal_id: string | null
-          id: string
-          link_href: string | null
-          metadata_json: Json | null
-          organization_id: string
-          override_request_id: string | null
-          read_at: string | null
-          title: string
-          type: string
-          user_id: string
-        }
-        Insert: {
-          body: string
-          created_at?: string
-          deal_id?: string | null
-          id?: string
-          link_href?: string | null
-          metadata_json?: Json | null
-          organization_id: string
-          override_request_id?: string | null
-          read_at?: string | null
-          title: string
-          type: string
-          user_id: string
-        }
-        Update: {
-          body?: string
-          created_at?: string
-          deal_id?: string | null
-          id?: string
-          link_href?: string | null
-          metadata_json?: Json | null
-          organization_id?: string
-          override_request_id?: string | null
-          read_at?: string | null
-          title?: string
-          type?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "app_notifications_deal_id_fkey"
-            columns: ["deal_id"]
-            isOneToOne: false
-            referencedRelation: "deals"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "app_notifications_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "app_notifications_override_request_id_fkey"
-            columns: ["override_request_id"]
-            isOneToOne: false
-            referencedRelation: "deal_override_requests"
             referencedColumns: ["id"]
           },
         ]
@@ -856,6 +856,97 @@ export type Database = {
           },
         ]
       }
+      deal_override_counter_offers: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          base_structure_fingerprint: string
+          counter_type: string
+          created_at: string
+          deal_id: string
+          deal_override_request_id: string
+          id: string
+          inputs_json: Json
+          organization_id: string
+          outputs_snapshot_json: Json
+          proposal_structure_fingerprint: string
+          rejection_reason: string | null
+          review_note: string
+          reviewed_at: string
+          reviewed_by: string | null
+          stale_reason: string | null
+          status: string
+          updated_at: string
+          version_number: number
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          base_structure_fingerprint: string
+          counter_type: string
+          created_at?: string
+          deal_id: string
+          deal_override_request_id: string
+          id?: string
+          inputs_json: Json
+          organization_id: string
+          outputs_snapshot_json: Json
+          proposal_structure_fingerprint: string
+          rejection_reason?: string | null
+          review_note: string
+          reviewed_at?: string
+          reviewed_by?: string | null
+          stale_reason?: string | null
+          status?: string
+          updated_at?: string
+          version_number: number
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          base_structure_fingerprint?: string
+          counter_type?: string
+          created_at?: string
+          deal_id?: string
+          deal_override_request_id?: string
+          id?: string
+          inputs_json?: Json
+          organization_id?: string
+          outputs_snapshot_json?: Json
+          proposal_structure_fingerprint?: string
+          rejection_reason?: string | null
+          review_note?: string
+          reviewed_at?: string
+          reviewed_by?: string | null
+          stale_reason?: string | null
+          status?: string
+          updated_at?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_override_counter_offers_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_override_counter_offers_deal_override_request_id_fkey"
+            columns: ["deal_override_request_id"]
+            isOneToOne: false
+            referencedRelation: "deal_override_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_override_counter_offers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deal_override_requests: {
         Row: {
           amount_financed_snapshot: number | null
@@ -942,97 +1033,6 @@ export type Database = {
           },
           {
             foreignKeyName: "deal_override_requests_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      deal_override_counter_offers: {
-        Row: {
-          accepted_at: string | null
-          accepted_by: string | null
-          base_structure_fingerprint: string
-          counter_type: string
-          created_at: string
-          deal_id: string
-          deal_override_request_id: string
-          id: string
-          inputs_json: Json
-          organization_id: string
-          outputs_snapshot_json: Json
-          proposal_structure_fingerprint: string
-          rejection_reason: string | null
-          review_note: string
-          reviewed_at: string
-          reviewed_by: string | null
-          stale_reason: string | null
-          status: string
-          updated_at: string
-          version_number: number
-        }
-        Insert: {
-          accepted_at?: string | null
-          accepted_by?: string | null
-          base_structure_fingerprint: string
-          counter_type: string
-          created_at?: string
-          deal_id: string
-          deal_override_request_id: string
-          id?: string
-          inputs_json: Json
-          organization_id: string
-          outputs_snapshot_json: Json
-          proposal_structure_fingerprint: string
-          rejection_reason?: string | null
-          review_note: string
-          reviewed_at: string
-          reviewed_by?: string | null
-          stale_reason?: string | null
-          status?: string
-          updated_at?: string
-          version_number: number
-        }
-        Update: {
-          accepted_at?: string | null
-          accepted_by?: string | null
-          base_structure_fingerprint?: string
-          counter_type?: string
-          created_at?: string
-          deal_id?: string
-          deal_override_request_id?: string
-          id?: string
-          inputs_json?: Json
-          organization_id?: string
-          outputs_snapshot_json?: Json
-          proposal_structure_fingerprint?: string
-          rejection_reason?: string | null
-          review_note?: string
-          reviewed_at?: string
-          reviewed_by?: string | null
-          stale_reason?: string | null
-          status?: string
-          updated_at?: string
-          version_number?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "deal_override_counter_offers_deal_id_fkey"
-            columns: ["deal_id"]
-            isOneToOne: false
-            referencedRelation: "deals"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "deal_override_counter_offers_deal_override_request_id_fkey"
-            columns: ["deal_override_request_id"]
-            isOneToOne: false
-            referencedRelation: "deal_override_requests"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "deal_override_counter_offers_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -1235,70 +1235,6 @@ export type Database = {
           },
         ]
       }
-      deal_vehicle_selection: {
-        Row: {
-          cash_down: number | null
-          created_at: string
-          deal_id: string
-          include_gap: boolean
-          include_vsc: boolean
-          monthly_payment: number
-          option_label: string
-          organization_id: string | null
-          term_months: number
-          updated_at: string
-          vehicle_id: string
-        }
-        Insert: {
-          cash_down?: number | null
-          created_at?: string
-          deal_id: string
-          include_gap?: boolean
-          include_vsc?: boolean
-          monthly_payment: number
-          option_label: string
-          organization_id?: string | null
-          term_months: number
-          updated_at?: string
-          vehicle_id: string
-        }
-        Update: {
-          cash_down?: number | null
-          created_at?: string
-          deal_id?: string
-          include_gap?: boolean
-          include_vsc?: boolean
-          monthly_payment?: number
-          option_label?: string
-          organization_id?: string | null
-          term_months?: number
-          updated_at?: string
-          vehicle_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "deal_vehicle_selection_deal_id_fkey"
-            columns: ["deal_id"]
-            isOneToOne: true
-            referencedRelation: "deals"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "deal_vehicle_selection_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "deal_vehicle_selection_vehicle_id_fkey"
-            columns: ["vehicle_id"]
-            isOneToOne: false
-            referencedRelation: "trivian_inventory"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       deal_structure_inputs: {
         Row: {
           cash_down: number | null
@@ -1380,6 +1316,70 @@ export type Database = {
           },
           {
             foreignKeyName: "deal_structure_inputs_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "trivian_inventory"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deal_vehicle_selection: {
+        Row: {
+          cash_down: number | null
+          created_at: string
+          deal_id: string
+          include_gap: boolean
+          include_vsc: boolean
+          monthly_payment: number
+          option_label: string
+          organization_id: string | null
+          term_months: number
+          updated_at: string
+          vehicle_id: string
+        }
+        Insert: {
+          cash_down?: number | null
+          created_at?: string
+          deal_id: string
+          include_gap?: boolean
+          include_vsc?: boolean
+          monthly_payment: number
+          option_label: string
+          organization_id?: string | null
+          term_months: number
+          updated_at?: string
+          vehicle_id: string
+        }
+        Update: {
+          cash_down?: number | null
+          created_at?: string
+          deal_id?: string
+          include_gap?: boolean
+          include_vsc?: boolean
+          monthly_payment?: number
+          option_label?: string
+          organization_id?: string | null
+          term_months?: number
+          updated_at?: string
+          vehicle_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_vehicle_selection_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: true
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_vehicle_selection_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_vehicle_selection_vehicle_id_fkey"
             columns: ["vehicle_id"]
             isOneToOne: false
             referencedRelation: "trivian_inventory"
@@ -1619,6 +1619,65 @@ export type Database = {
           },
         ]
       }
+      organization_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by_user_id: string | null
+          created_at: string
+          email: string
+          expires_at: string
+          full_name: string | null
+          id: string
+          invited_by_user_id: string | null
+          organization_id: string
+          revoked_at: string | null
+          role: string
+          status: string
+          token_hash: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          created_at?: string
+          email: string
+          expires_at: string
+          full_name?: string | null
+          id?: string
+          invited_by_user_id?: string | null
+          organization_id: string
+          revoked_at?: string | null
+          role: string
+          status?: string
+          token_hash: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+          full_name?: string | null
+          id?: string
+          invited_by_user_id?: string | null
+          organization_id?: string
+          revoked_at?: string | null
+          role?: string
+          status?: string
+          token_hash?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_invitations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_settings: {
         Row: {
           key: string
@@ -1679,65 +1738,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "organization_users_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      organization_invitations: {
-        Row: {
-          accepted_at: string | null
-          accepted_by_user_id: string | null
-          created_at: string
-          email: string
-          expires_at: string
-          full_name: string | null
-          id: string
-          invited_by_user_id: string | null
-          organization_id: string
-          revoked_at: string | null
-          role: string
-          status: string
-          token_hash: string
-          updated_at: string
-        }
-        Insert: {
-          accepted_at?: string | null
-          accepted_by_user_id?: string | null
-          created_at?: string
-          email: string
-          expires_at: string
-          full_name?: string | null
-          id?: string
-          invited_by_user_id?: string | null
-          organization_id: string
-          revoked_at?: string | null
-          role: string
-          status?: string
-          token_hash: string
-          updated_at?: string
-        }
-        Update: {
-          accepted_at?: string | null
-          accepted_by_user_id?: string | null
-          created_at?: string
-          email?: string
-          expires_at?: string
-          full_name?: string | null
-          id?: string
-          invited_by_user_id?: string | null
-          organization_id?: string
-          revoked_at?: string | null
-          role?: string
-          status?: string
-          token_hash?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "organization_invitations_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -2343,6 +2343,14 @@ export type Database = {
     }
     Functions: {
       atlas_dashboard_metrics: { Args: never; Returns: Json }
+      atlas_has_deal_override_authority: {
+        Args: { target_organization_id: string }
+        Returns: boolean
+      }
+      atlas_is_active_organization_member: {
+        Args: { target_organization_id: string }
+        Returns: boolean
+      }
       bhph_evaluate_bureau: { Args: { p_deal_id: string }; Returns: undefined }
       create_deal_with_seed_data:
         | {

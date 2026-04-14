@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "../../../src/lib/supabase/database.types.js";
+import type { Database } from "../../../src/lib/supabase/database.generated.js";
 
 const integrationEnabled = process.env.RUN_SUPABASE_INTEGRATION === "1";
 
