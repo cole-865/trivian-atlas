@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth/userRole";
+import { hasDealershipPermission } from "@/lib/auth/dealershipPermissions";
 import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
 import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
 import {
@@ -46,6 +47,9 @@ export async function loadDealStructurePageData(args: {
   }
 
   const authContext = await getAuthContext(supabase);
+  const canApproveOverrides =
+    authContext.currentOrganizationId === context.organizationId &&
+    (await hasDealershipPermission(authContext, "approve_overrides"));
   const overrides = await loadDealOverrideSnapshot({
     organizationId: context.organizationId,
     dealId: args.dealId,
@@ -88,7 +92,7 @@ export async function loadDealStructurePageData(args: {
     },
     structureInputs: inputs,
     overrides: {
-      canApprove: !!authContext.currentOrganizationMembership?.canApproveDealOverrides,
+      canApprove: canApproveOverrides,
       canAcceptCounterOffers:
         authContext.currentOrganizationMembership?.organizationId === context.organizationId,
       currentFingerprint: overrides.currentFingerprint,

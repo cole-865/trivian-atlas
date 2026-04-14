@@ -6,6 +6,7 @@ import {
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { getAuthContext } from "@/lib/auth/userRole";
+import { hasDealershipPermission } from "@/lib/auth/dealershipPermissions";
 import { buildOverrideStructureSnapshot, normalizeDealOverrideBlockerCode } from "@/lib/deals/dealOverrideWorkflow";
 import { buildDealOverrideRequestNote } from "@/lib/deals/dealOverrideSummary";
 import { createDealOverrideRequest } from "@/lib/deals/dealOverrideServer";
@@ -103,7 +104,7 @@ export async function POST(
 
   const canApprove =
     authContext.currentOrganizationMembership?.organizationId === organizationId &&
-    !!authContext.currentOrganizationMembership?.canApproveDealOverrides;
+    (await hasDealershipPermission(authContext, "approve_overrides"));
 
   if (action === "approve" && !canApprove) {
     return NextResponse.json(

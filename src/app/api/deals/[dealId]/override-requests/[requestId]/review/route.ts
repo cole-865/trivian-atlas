@@ -5,6 +5,7 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { getAuthContext } from "@/lib/auth/userRole";
+import { hasDealershipPermission } from "@/lib/auth/dealershipPermissions";
 import { buildDealStructureInputFingerprint, type DealStructureInputsRecord } from "@/lib/deals/dealStructureEngine";
 import { loadDealStructurePageData } from "@/lib/deals/dealStructureLoader";
 import {
@@ -67,10 +68,11 @@ export async function POST(
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });
   }
 
-  if (
-    authContext.currentOrganizationMembership?.organizationId !== organizationId ||
-    !authContext.currentOrganizationMembership.canApproveDealOverrides
-  ) {
+  const canApprove =
+    authContext.currentOrganizationMembership?.organizationId === organizationId &&
+    (await hasDealershipPermission(authContext, "approve_overrides"));
+
+  if (!canApprove) {
     return NextResponse.json(
       { error: "You do not have override approval authority in this account." },
       { status: 403 }

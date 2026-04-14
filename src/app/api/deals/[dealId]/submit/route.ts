@@ -11,6 +11,7 @@ import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow
 import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
 import { sendDealApprovalRequestEmail } from "@/lib/email/notifications";
 import { createDealFundingReviewNotifications } from "@/lib/notifications/appNotifications";
+import { getSubmitRequirementSettings } from "@/lib/deals/workflowAccess";
 
 const REQUIRED_DOC_TYPES = [
     "proof_of_income",
@@ -204,7 +205,12 @@ export async function POST(
         blockers.push("Selected vehicle is no longer in inventory");
     }
 
-    if (!bureauDocs || bureauDocs.length === 0) {
+    const submitRequirements = await getSubmitRequirementSettings(supabase);
+
+    if (
+        submitRequirements.requireCreditBureauBeforeSubmit &&
+        (!bureauDocs || bureauDocs.length === 0)
+    ) {
         blockers.push("Credit bureau missing");
     }
 

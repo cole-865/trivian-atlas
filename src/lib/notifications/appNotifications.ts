@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentOrganizationId } from "@/lib/auth/organizationContext";
 import type { Json } from "@/lib/supabase/database.generated";
+import { getNotificationSettingsForOrganization } from "@/lib/settings/dealershipSettings";
 
 export type AppNotificationType =
   | "deal_funded"
@@ -78,6 +79,11 @@ export async function createDealFundingReviewNotifications(args: {
   dealId: string;
   customerName: string | null;
 }) {
+  const settings = await getNotificationSettingsForOrganization(args.organizationId);
+  if (!settings.dealSubmittedAlerts && !settings.fundingReadyAlerts) {
+    return;
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organization_users")
@@ -116,6 +122,11 @@ export async function createDealFundingOutcomeNotifications(args: {
   outcome: "funded" | "rejected";
   reason?: string | null;
 }) {
+  const settings = await getNotificationSettingsForOrganization(args.organizationId);
+  if (!settings.fundingReadyAlerts) {
+    return;
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organization_users")

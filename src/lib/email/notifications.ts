@@ -1,5 +1,6 @@
 import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
 import { sendEmail, type EmailSendResult } from "@/lib/email/mailer";
+import { listActiveOrganizationUsersWithPermission } from "@/lib/auth/dealershipPermissions";
 
 type UserProfileRow = {
   id: string;
@@ -15,7 +16,6 @@ type OrganizationRow = {
 };
 
 type MembershipRow = {
-  can_approve_deal_overrides?: boolean;
   user_id: string;
   role: string;
   is_active: boolean;
@@ -122,33 +122,24 @@ async function getOverrideAuthorityRecipients(organizationId: string) {
     return [] as Array<{ email: string; fullName: string | null; userId: string }>;
   }
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("organization_users")
-    .select("user_id, is_active, can_approve_deal_overrides")
-    .eq("organization_id", organizationId)
-    .eq("is_active", true)
-    .eq("can_approve_deal_overrides", true);
+  const userIds = await listActiveOrganizationUsersWithPermission(
+    organizationId,
+    "approve_overrides"
+  );
+  const profileLookup = await getUserProfilesByIds(userIds);
 
-  if (error) {
-    throw new Error(`Failed to load override authority recipients: ${error.message}`);
-  }
-
-  const memberships = (data ?? []) as MembershipRow[];
-  const profileLookup = await getUserProfilesByIds(memberships.map((row) => row.user_id));
-
-  return memberships
-    .map((membership) => {
-      const profile = profileLookup.get(membership.user_id);
+  return userIds
+    .map((userId) => {
+      const profile = profileLookup.get(userId);
       const email = profile?.email?.trim() ?? "";
       const isActive = profile?.is_active ?? true;
 
-      if (!membership.can_approve_deal_overrides || !email || !isActive) {
+      if (!email || !isActive) {
         return null;
       }
 
       return {
-        userId: membership.user_id,
+        userId,
         email,
         fullName: profile?.full_name ?? null,
       };

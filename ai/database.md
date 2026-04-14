@@ -40,7 +40,6 @@ Links users to organizations.
 - organization_id
 - role (sales | management | admin)
 - is_active
-- can_approve_deal_overrides
 
 ---
 

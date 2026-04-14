@@ -22,6 +22,8 @@ import {
   sendDealOverrideRequestedEmail,
   sendDealOverrideStaleEmail,
 } from "@/lib/email/notifications";
+import { listActiveOrganizationUsersWithPermission } from "@/lib/auth/dealershipPermissions";
+import { getNotificationSettingsForOrganization } from "@/lib/settings/dealershipSettings";
 
 export type DealOverrideRequestRecord = {
   id: string;
@@ -174,19 +176,10 @@ function getCounterOfferOverrideSnapshot(
 }
 
 export async function loadOverrideAuthorityRecipients(organizationId: string) {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("organization_users")
-    .select("user_id, can_approve_deal_overrides, is_active")
-    .eq("organization_id", organizationId)
-    .eq("is_active", true)
-    .eq("can_approve_deal_overrides", true);
-
-  if (error) {
-    throw new Error(`Failed to load override authority recipients: ${error.message}`);
-  }
-
-  const userIds = (data ?? []).map((row) => String(row.user_id));
+  const userIds = await listActiveOrganizationUsersWithPermission(
+    organizationId,
+    "approve_overrides"
+  );
   const profileLookup = await getUserProfiles(userIds);
 
   return userIds
@@ -590,22 +583,25 @@ export async function createDealOverrideRequest(args: {
   const request = data as DealOverrideRequestRecord;
 
   if (!isDirectApproval) {
+    const notificationSettings = await getNotificationSettingsForOrganization(args.organizationId);
     const recipients = await loadOverrideAuthorityRecipients(args.organizationId);
 
-    await createAppNotifications({
-      organizationId: args.organizationId,
-      userIds: recipients.map((recipient) => recipient.userId),
-      type: "deal_override_requested",
-      dealId: args.dealId,
-      overrideRequestId: request.id,
-      title: `${args.blockerCode} override requested`,
-      body: `${args.customerName?.trim() || "Deal"} needs ${args.blockerCode} review.`,
-      linkHref: `/deals/${encodeURIComponent(args.dealId)}/deal`,
-      metadata: {
-        blockerCode: args.blockerCode,
-        requestedBy: args.requestedByUserId,
-      },
-    });
+    if (notificationSettings.overrideRequestAlerts) {
+      await createAppNotifications({
+        organizationId: args.organizationId,
+        userIds: recipients.map((recipient) => recipient.userId),
+        type: "deal_override_requested",
+        dealId: args.dealId,
+        overrideRequestId: request.id,
+        title: `${args.blockerCode} override requested`,
+        body: `${args.customerName?.trim() || "Deal"} needs ${args.blockerCode} review.`,
+        linkHref: `/deals/${encodeURIComponent(args.dealId)}/deal`,
+        metadata: {
+          blockerCode: args.blockerCode,
+          requestedBy: args.requestedByUserId,
+        },
+      });
+    }
 
     await sendDealOverrideRequestedEmail({
       organizationId: args.organizationId,

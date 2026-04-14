@@ -18,6 +18,10 @@ import {
   updateOrganizationMembership,
 } from "@/lib/auth/organizationManagement";
 import { getAuthContext } from "@/lib/auth/userRole";
+import {
+  clearDealershipPermissionCache,
+  requireDealershipPermission,
+} from "@/lib/auth/dealershipPermissions";
 
 const inviteFormSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required."),
@@ -36,7 +40,6 @@ const updateMembershipSchema = z.object({
   userId: z.string().uuid(),
   role: z.enum(ORG_MANAGED_ROLES).optional(),
   isActive: z.boolean().optional(),
-  canApproveDealOverrides: z.boolean().optional(),
 });
 
 function toBoolean(value: FormDataEntryValue | null) {
@@ -131,6 +134,15 @@ export async function createOrganizationInviteAction(formData: FormData) {
   if (!canManageCurrentOrganization(authContext) || !authContext.currentOrganizationId) {
     redirectWithMessage("/settings", "error", "You cannot invite users into this account.");
   }
+  try {
+    await requireDealershipPermission(authContext, "manage_users");
+  } catch (error) {
+    redirectWithMessage(
+      "/settings",
+      "error",
+      error instanceof Error ? error.message : "You cannot invite users into this account."
+    );
+  }
 
   const parsed = inviteFormSchema.safeParse({
     fullName: String(formData.get("full_name") ?? ""),
@@ -174,6 +186,15 @@ export async function resendOrganizationInviteAction(formData: FormData) {
   if (!canManageCurrentOrganization(authContext) || !inviteId) {
     redirectWithMessage("/settings", "error", "You cannot resend this invitation.");
   }
+  try {
+    await requireDealershipPermission(authContext, "manage_users");
+  } catch (error) {
+    redirectWithMessage(
+      "/settings",
+      "error",
+      error instanceof Error ? error.message : "You cannot resend this invitation."
+    );
+  }
 
   if (!authContext.realUser || !authContext.currentOrganizationId) {
     redirectWithMessage("/settings", "error", "Missing account management context.");
@@ -202,6 +223,15 @@ export async function revokeOrganizationInviteAction(formData: FormData) {
   if (!canManageCurrentOrganization(authContext) || !inviteId) {
     redirectWithMessage("/settings", "error", "You cannot revoke this invitation.");
   }
+  try {
+    await requireDealershipPermission(authContext, "manage_users");
+  } catch (error) {
+    redirectWithMessage(
+      "/settings",
+      "error",
+      error instanceof Error ? error.message : "You cannot revoke this invitation."
+    );
+  }
 
   if (!authContext.currentOrganizationId) {
     redirectWithMessage("/settings", "error", "Missing account management context.");
@@ -219,6 +249,15 @@ export async function updateOrganizationMembershipAction(formData: FormData) {
   if (!canManageCurrentOrganization(authContext) || !authContext.currentOrganizationId) {
     redirectWithMessage("/settings", "error", "You cannot update users in this account.");
   }
+  try {
+    await requireDealershipPermission(authContext, "manage_users");
+  } catch (error) {
+    redirectWithMessage(
+      "/settings",
+      "error",
+      error instanceof Error ? error.message : "You cannot update users in this account."
+    );
+  }
 
   const rawRole = String(formData.get("role") ?? "").trim();
   const parsed = updateMembershipSchema.safeParse({
@@ -226,10 +265,6 @@ export async function updateOrganizationMembershipAction(formData: FormData) {
     role: rawRole ? rawRole : undefined,
     isActive:
       formData.get("is_active") === null ? undefined : toBoolean(formData.get("is_active")),
-    canApproveDealOverrides:
-      formData.get("can_approve_deal_overrides") === null
-        ? undefined
-        : toBoolean(formData.get("can_approve_deal_overrides")),
   });
 
   if (!parsed.success) {
@@ -239,6 +274,10 @@ export async function updateOrganizationMembershipAction(formData: FormData) {
   await updateOrganizationMembership({
     organizationId: authContext.currentOrganizationId,
     ...parsed.data,
+  });
+  clearDealershipPermissionCache({
+    organizationId: authContext.currentOrganizationId,
+    userId: parsed.data.userId,
   });
 
   revalidatePath("/settings");

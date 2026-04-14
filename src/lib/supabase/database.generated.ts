@@ -103,26 +103,44 @@ export type Database = {
         Row: {
           action: string
           actor_id: string | null
+          after: Json | null
+          before: Json | null
+          change_type: string | null
+          changed_by_user_id: string | null
           created_at: string
           deal_id: string | null
+          entity_type: string | null
           id: string
           meta: Json
+          organization_id: string | null
         }
         Insert: {
           action: string
           actor_id?: string | null
+          after?: Json | null
+          before?: Json | null
+          change_type?: string | null
+          changed_by_user_id?: string | null
           created_at?: string
           deal_id?: string | null
+          entity_type?: string | null
           id?: string
           meta?: Json
+          organization_id?: string | null
         }
         Update: {
           action?: string
           actor_id?: string | null
+          after?: Json | null
+          before?: Json | null
+          change_type?: string | null
+          changed_by_user_id?: string | null
           created_at?: string
           deal_id?: string | null
+          entity_type?: string | null
           id?: string
           meta?: Json
+          organization_id?: string | null
         }
         Relationships: [
           {
@@ -130,6 +148,13 @@ export type Database = {
             columns: ["deal_id"]
             isOneToOne: false
             referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -1678,6 +1703,106 @@ export type Database = {
           },
         ]
       }
+      organization_profile_settings: {
+        Row: {
+          address_line1: string | null
+          address_line2: string | null
+          city: string | null
+          country: string | null
+          created_at: string
+          dba_name: string | null
+          legal_business_name: string | null
+          logo_storage_path: string | null
+          main_email: string | null
+          organization_id: string
+          phone: string | null
+          postal_code: string | null
+          state: string | null
+          timezone: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          address_line1?: string | null
+          address_line2?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          dba_name?: string | null
+          legal_business_name?: string | null
+          logo_storage_path?: string | null
+          main_email?: string | null
+          organization_id: string
+          phone?: string | null
+          postal_code?: string | null
+          state?: string | null
+          timezone?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          address_line1?: string | null
+          address_line2?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          dba_name?: string | null
+          legal_business_name?: string | null
+          logo_storage_path?: string | null
+          main_email?: string | null
+          organization_id?: string
+          phone?: string | null
+          postal_code?: string | null
+          state?: string | null
+          timezone?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_profile_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_role_permissions: {
+        Row: {
+          allowed: boolean
+          created_at: string
+          organization_id: string
+          permission_key: string
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          allowed?: boolean
+          created_at?: string
+          organization_id: string
+          permission_key: string
+          role: string
+          updated_at?: string
+        }
+        Update: {
+          allowed?: boolean
+          created_at?: string
+          organization_id?: string
+          permission_key?: string
+          role?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_role_permissions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_settings: {
         Row: {
           key: string
@@ -1707,9 +1832,43 @@ export type Database = {
           },
         ]
       }
+      organization_user_permission_overrides: {
+        Row: {
+          allowed: boolean
+          created_at: string
+          organization_id: string
+          permission_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          allowed: boolean
+          created_at?: string
+          organization_id: string
+          permission_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          allowed?: boolean
+          created_at?: string
+          organization_id?: string
+          permission_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_user_permission_overrides_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_users: {
         Row: {
-          can_approve_deal_overrides: boolean
           created_at: string
           is_active: boolean
           organization_id: string
@@ -1718,7 +1877,6 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          can_approve_deal_overrides?: boolean
           created_at?: string
           is_active?: boolean
           organization_id: string
@@ -1727,7 +1885,6 @@ export type Database = {
           user_id: string
         }
         Update: {
-          can_approve_deal_overrides?: boolean
           created_at?: string
           is_active?: boolean
           organization_id?: string

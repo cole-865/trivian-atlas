@@ -692,7 +692,7 @@ Request fields:
 Rules:
 - requester must be authenticated
 - current org membership must match the deal org
-- direct approval requires `canApproveDealOverrides`
+- direct approval requires dealership permission `approve_overrides`
 - override notes are required except for authorized counter-offer drafts
 
 Response:
@@ -722,7 +722,7 @@ Allowed `counter_type` values:
 - `pricing_adjustment`
 
 Rules:
-- reviewer must have `canApproveDealOverrides`
+- reviewer must have dealership permission `approve_overrides`
 - denied and countered reviews require a note
 - counter offers preview a structure without persisting, then store inputs/output snapshots
 
