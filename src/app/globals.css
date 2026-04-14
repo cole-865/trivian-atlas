@@ -1,30 +1,93 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --background: oklch(0.14 0.02 248);
+  --foreground: oklch(0.96 0.01 240);
+  --card: oklch(0.19 0.02 248);
+  --card-foreground: oklch(0.96 0.01 240);
+  --popover: oklch(0.18 0.02 248);
+  --popover-foreground: oklch(0.96 0.01 240);
+  --primary: oklch(0.74 0.15 209);
+  --primary-foreground: oklch(0.16 0.02 248);
+  --secondary: oklch(0.26 0.02 248);
+  --secondary-foreground: oklch(0.94 0.01 240);
+  --muted: oklch(0.23 0.02 248);
+  --muted-foreground: oklch(0.72 0.02 245);
+  --accent: oklch(0.3 0.03 240);
+  --accent-foreground: oklch(0.97 0.01 240);
+  --destructive: oklch(0.63 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 240);
+  --border: oklch(0.29 0.02 248);
+  --input: oklch(0.24 0.02 248);
+  --ring: oklch(0.74 0.15 209);
+  --success: oklch(0.69 0.14 160);
+  --success-foreground: oklch(0.14 0.02 160);
+  --warning: oklch(0.78 0.15 78);
+  --warning-foreground: oklch(0.21 0.03 78);
+  --radius: 0.85rem;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, color-mix(in oklab, var(--primary) 16%, transparent) 0%, transparent 34%),
+    linear-gradient(180deg, oklch(0.17 0.02 248) 0%, var(--background) 42%, oklch(0.12 0.02 248) 100%);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 38%, transparent);
+  color: var(--foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
 }

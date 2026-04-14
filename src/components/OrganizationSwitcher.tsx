@@ -3,6 +3,14 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setCurrentOrganizationAction } from "@/lib/auth/organizationActions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 type OrganizationOption = {
   id: string;
@@ -39,28 +47,28 @@ export function OrganizationSwitcher({
 
   return (
     <div className={compact ? "min-w-56" : "grid gap-3"}>
-      <label className={compact ? "grid gap-1" : "grid gap-2"}>
-        <span className="text-xs font-medium text-muted-foreground">
+      <div className={compact ? "grid gap-1.5" : "grid gap-2"}>
+        <Label className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {compact ? "Account" : "Switch account"}
-        </span>
-        <select
-          name="organization_id"
-          value={currentOrganizationId ?? ""}
-          onChange={(event) => onChange(event.target.value)}
+        </Label>
+        <Select
+          value={currentOrganizationId ?? undefined}
+          onValueChange={onChange}
           disabled={isPending}
-          className="rounded-xl border bg-white px-3 py-2 text-sm disabled:opacity-60"
         >
-          <option value="" disabled>
-            Select account
-          </option>
-          {organizations.map((organization) => (
-            <option key={organization.id} value={organization.id}>
-              {organization.name}
-              {organization.isActive ? "" : " [inactive]"} ({organization.roleLabel})
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger className="bg-card/80">
+            <SelectValue placeholder="Select account" />
+          </SelectTrigger>
+          <SelectContent>
+            {organizations.map((organization) => (
+              <SelectItem key={organization.id} value={organization.id}>
+                {organization.name}
+                {organization.isActive ? "" : " [inactive]"} ({organization.roleLabel})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

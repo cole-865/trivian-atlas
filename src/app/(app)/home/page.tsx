@@ -1,7 +1,18 @@
 import Link from "next/link";
+import { ArrowUpRight, Plus } from "lucide-react";
 import { createClient } from "@/utils/supabase/server";
 import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 import { getCurrentOrganizationIdForDeals } from "@/lib/deals/organizationScope";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 type DashboardMetrics = {
   deals_created_30d: number;
@@ -12,96 +23,129 @@ type DashboardMetrics = {
   credit_reports_processing: number;
 };
 
+function formatMetric(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
 function StatCard({
   title,
   value,
   subtitle,
   href,
+  tone = "default",
 }: {
   title: string;
-  value: string;
+  value: number;
   subtitle?: string;
   href?: string;
+  tone?: "default" | "primary" | "warning";
 }) {
-  const card = (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm hover:shadow transition">
-      <div className="text-sm text-muted-foreground">{title}</div>
-      <div className="mt-2 text-3xl font-semibold tracking-tight">{value}</div>
+  const content = (
+    <Card className="group h-full border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.22)] transition-colors hover:border-primary/35">
+      <CardHeader className="gap-3 pb-1.5">
+        <div className="flex items-start justify-between gap-3">
+          <CardDescription className="text-[0.66rem] font-semibold uppercase tracking-[0.15em] text-muted-foreground/72">
+            {title}
+          </CardDescription>
+          {href ? (
+            <ArrowUpRight className="mt-0.5 size-4 text-muted-foreground/75 transition-colors group-hover:text-primary" />
+          ) : null}
+        </div>
+        <CardTitle
+          className={[
+            "text-[3.4rem] font-semibold tracking-[-0.05em] sm:text-[4rem]",
+            tone === "primary"
+              ? "text-primary"
+              : tone === "warning"
+                ? "text-warning"
+                : "text-foreground",
+          ].join(" ")}
+        >
+          {formatMetric(value)}
+        </CardTitle>
+      </CardHeader>
       {subtitle ? (
-        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+        <CardContent className="pt-0">
+          <p className="text-[11px] text-muted-foreground/72">{subtitle}</p>
+        </CardContent>
       ) : null}
-    </div>
+    </Card>
   );
 
-  return href ? <Link href={href}>{card}</Link> : card;
+  return href ? (
+    <Link href={href} className="block h-full">
+      {content}
+    </Link>
+  ) : (
+    content
+  );
 }
 
 function statusBadge(statusRaw: string) {
   const status = (statusRaw || "unknown").toLowerCase();
 
-  // simple “good enough” mapping for now
   const map: Record<
     string,
-    { label: string; className: string }
+    { label: string; variant: "secondary" | "warning" | "success" | "destructive" | "default" }
   > = {
     draft: {
       label: "Draft",
-      className: "bg-gray-100 text-gray-700 border-gray-200",
+      variant: "secondary",
     },
     review: {
       label: "Review",
-      className: "bg-yellow-50 text-yellow-800 border-yellow-200",
+      variant: "warning",
     },
     approved: {
       label: "Approved",
-      className: "bg-green-50 text-green-800 border-green-200",
+      variant: "success",
     },
     declined: {
       label: "Declined",
-      className: "bg-red-50 text-red-800 border-red-200",
+      variant: "destructive",
     },
     submitted: {
       label: "Submitted",
-      className: "bg-blue-50 text-blue-800 border-blue-200",
+      variant: "default",
     },
   };
 
-  const chosen =
-    map[status] ??
-    ({
-      label: statusRaw || "Unknown",
-      className: "bg-gray-50 text-gray-700 border-gray-200",
-    } as const);
+  const chosen = map[status] ?? {
+    label: statusRaw || "Unknown",
+    variant: "secondary" as const,
+  };
 
-  return (
-    <span
-      className={[
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        chosen.className,
-      ].join(" ")}
-    >
-      {chosen.label}
-    </span>
-  );
+  return <Badge variant={chosen.variant}>{chosen.label}</Badge>;
 }
 
 function SectionCard({
+  eyebrow,
   title,
   children,
   right,
 }: {
+  eyebrow?: string;
   title: string;
   children: React.ReactNode;
   right?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="shrink-0">{right}</div>
-      </div>
-      <div className="mt-3">{children}</div>
-    </div>
+    <Card className="border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
+      <CardHeader className="gap-2 pb-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            {eyebrow ? (
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-primary">
+                {eyebrow}
+              </div>
+            ) : null}
+            <CardTitle className="mt-1.5 text-lg">{title}</CardTitle>
+          </div>
+          {right ? <div className="shrink-0">{right}</div> : null}
+        </div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
@@ -209,135 +253,161 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-6">
-      {/* Page header (layout provides topbar; this is the page title block) */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xl font-semibold">Home</div>
-          <div className="text-xs text-muted-foreground">
-            Last 30 days + current queues.
+      <SectionCard
+        eyebrow="Overview"
+        title="Home"
+        right={
+          <Button asChild size="lg" className="shadow-[0_0_24px_rgba(0,190,255,0.18)]">
+            <Link href="/deals/new">
+              <Plus />
+              New Deal
+            </Link>
+          </Button>
+        }
+      >
+        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
+          <div>
+            <p className="text-sm text-muted-foreground/85">
+              Last 30 days and current operational queues for the active account.
+            </p>
+          </div>
+          <div className="grid gap-2 text-sm">
+            <div className="flex items-center justify-between rounded-lg border border-border/75 bg-background/45 px-4 py-1.5">
+              <span className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground/76">Pending approvals</span>
+              <span className="text-lg font-semibold text-warning">
+                {formatMetric(metrics.pending_approvals)}
+              </span>
+            </div>
           </div>
         </div>
+      </SectionCard>
 
-        <Link
-          href="/deals/new"
-          className="rounded-xl bg-black px-3 py-2 text-sm text-white hover:opacity-90"
-        >
-          New Deal
-        </Link>
-      </div>
-
-      {/* KPI grid */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Deals created (30 days)"
-          value={String(metrics.deals_created_30d)}
+          value={metrics.deals_created_30d}
           subtitle="New deals entered Atlas"
           href="/deals?range=30d"
         />
         <StatCard
           title="Deals worked (30 days)"
-          value={String(metrics.deals_worked_30d)}
+          value={metrics.deals_worked_30d}
           subtitle="Deals updated in last 30 days"
           href="/deals?range=30d&sort=updated"
+          tone="primary"
         />
         <StatCard
           title="Pending approvals"
-          value={String(metrics.pending_approvals)}
+          value={metrics.pending_approvals}
           subtitle="Needs a decision"
           href="/approvals"
+          tone="warning"
         />
         <StatCard
           title="Vehicles in inventory"
-          value={String(metrics.vehicles_inventory)}
+          value={metrics.vehicles_inventory}
           subtitle="Current inventory count"
           href="/inventory"
         />
       </div>
 
-      {/* Second row: queues/alerts */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <SectionCard
+          eyebrow="Queue"
           title="Risk review queue"
           right={
-            <Link
-              className="text-xs text-muted-foreground hover:underline"
-              href="/approvals?filter=review"
-            >
-              View
-            </Link>
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/approvals?filter=review">View</Link>
+            </Button>
           }
         >
-          <div className="text-sm">
-            <span className="font-semibold">{metrics.risk_review_queue}</span>{" "}
-            deal(s) need manual review.
-          </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            These are deals Atlas won’t auto-approve.
+          <div className="space-y-4">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <div className="text-5xl font-semibold tracking-[-0.04em] text-warning">
+                  {formatMetric(metrics.risk_review_queue)}
+                </div>
+                <div className="mt-1.5 text-sm text-foreground">
+                  deal(s) currently need manual review.
+                </div>
+              </div>
+              <Badge variant="warning">Manual review</Badge>
+            </div>
+            <Separator />
+            <p className="text-xs text-muted-foreground/80">
+              These are deals Atlas won’t auto-approve.
+            </p>
           </div>
         </SectionCard>
 
         <SectionCard
+          eyebrow="Pipeline"
           title="Credit reports processing"
           right={
-            <Link
-              className="text-xs text-muted-foreground hover:underline"
-              href="/credit-reports?filter=processing"
-            >
-              View
-            </Link>
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/credit-reports?filter=processing">View</Link>
+            </Button>
           }
         >
-          <div className="text-sm">
-            <span className="font-semibold">
-              {metrics.credit_reports_processing}
-            </span>{" "}
-            job(s) in queue.
-          </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            If this spikes, the parser pipeline is choking.
+          <div className="space-y-4">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <div className="text-5xl font-semibold tracking-[-0.04em] text-primary">
+                  {formatMetric(metrics.credit_reports_processing)}
+                </div>
+                <div className="mt-1.5 text-sm text-foreground">
+                  job(s) currently in queue.
+                </div>
+              </div>
+              <Badge variant="default">Active</Badge>
+            </div>
+            <Separator />
+            <p className="text-xs text-muted-foreground/80">
+              If this spikes, the parser pipeline is choking.
+            </p>
           </div>
         </SectionCard>
       </div>
 
-      {/* Recent deals */}
       <SectionCard
+        eyebrow="Activity"
         title="Recent deal activity"
         right={
-          <Link
-            className="text-xs text-muted-foreground hover:underline"
-            href="/deals"
-          >
-            View all
-          </Link>
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/deals">View all</Link>
+          </Button>
         }
       >
         {recentDeals.length === 0 ? (
-          <div className="text-sm text-muted-foreground">No deals found.</div>
+          <div className="rounded-lg border border-dashed border-border/80 bg-background/30 px-4 py-8 text-sm text-muted-foreground/85">
+            No deals found.
+          </div>
         ) : (
-          <div className="divide-y">
-            {recentDeals.map((d) => (
-              <Link
-                key={d.id}
-                // ✅ Avoid the 404 by linking to an existing step page
-                href={`/deals/${encodeURIComponent(d.id)}/customer`}
-                className="flex items-center justify-between gap-3 py-3 hover:bg-gray-50 rounded-xl px-2"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="text-sm font-medium truncate">
-                      {d.customer_name}
+          <div className="overflow-hidden rounded-xl border border-border/75 bg-background/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+            {recentDeals.map((d, index) => (
+              <div key={d.id}>
+                <Link
+                  href={`/deals/${encodeURIComponent(d.id)}/customer`}
+                  className="flex items-center justify-between gap-4 px-4 py-4.5 transition-colors hover:bg-accent/55"
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        {d.customer_name}
+                      </div>
+                      {statusBadge(d.status)}
                     </div>
-                    {statusBadge(d.status)}
+                    <div className="mt-1 truncate text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+                      {d.id}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {d.id}
-                  </div>
-                </div>
 
-                <div className="text-xs text-muted-foreground shrink-0">
-                  {timeAgo(d.updated_at)}
-                </div>
-              </Link>
+                  <div className="shrink-0 text-[11px] font-medium text-muted-foreground/70">
+                    {timeAgo(d.updated_at)}
+                  </div>
+                </Link>
+                {index < recentDeals.length - 1 ? <Separator /> : null}
+              </div>
             ))}
           </div>
         )}
