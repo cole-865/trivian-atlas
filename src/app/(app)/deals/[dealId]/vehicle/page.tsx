@@ -1,7 +1,10 @@
 "use client";
 
-import React, { Fragment, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import type { DealStep } from "@/lib/deals/canAccessStep";
 
 type VehicleCategory = "all" | "car" | "suv" | "truck" | "van";
@@ -152,7 +155,6 @@ function optionSortValue(label: PayOption["label"]) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getOptionReasonSummary(opt: PayOption) {
   if (opt.fits_cap) return null;
 
@@ -162,7 +164,6 @@ function getOptionReasonSummary(opt: PayOption) {
   return reasons.slice(0, 2).join(" • ");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getOptionReasonDetail(opt: PayOption) {
   if (opt.fits_cap) return null;
 
@@ -439,6 +440,8 @@ export default function DealVehiclePage() {
     });
   }, [vehicles, query, vehicleCategory]);
 
+  const bestVehicleId = filtered[0]?.vehicle.id ?? null;
+
   async function handleApplyDealInputs() {
     const cashDown = Number(cashDownInput || 0);
     const tradeValue = Number(tradeValueInput || 0);
@@ -564,32 +567,27 @@ export default function DealVehiclePage() {
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0 }}>Step 3: Vehicle</h2>
-
-        {header ? (
-          <div style={{ marginLeft: 6, fontSize: 14, opacity: 0.85 }}>
-            APR: <b>{Number(header.apr ?? 0).toFixed(2)}%</b> • Vehicle terms are capped by
-            mileage/age policy • Max Payment: <b>{money(header.max_payment_cap)}</b>
-          </div>
-        ) : null}
+        <div>
+          <h2 style={{ margin: 0 }}>Step 3: Vehicle</h2>
+          {header ? (
+            <div style={{ marginTop: 4, fontSize: 13, color: "rgba(255,255,255,0.62)", fontWeight: 600 }}>
+              APR <b style={{ color: "#f5f7fa" }}>{Number(header.apr ?? 0).toFixed(2)}%</b> • Max payment{" "}
+              <b style={{ color: "#7de2ff" }}>{money(header.max_payment_cap)}</b> • Terms capped by mileage and age policy
+            </div>
+          ) : null}
+        </div>
 
         <div style={{ flex: 1 }} />
 
-        <button type="button" onClick={onPrev} style={btnSecondary}>
+        <Button type="button" variant="outline" onClick={onPrev} className="border-border/75 bg-background/35 text-foreground hover:bg-accent/80">
           ← Previous
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
           onClick={onNext}
           disabled={nextDisabled}
-          style={{
-            ...btnPrimary,
-            background: nextDisabled ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)",
-            borderColor: nextDisabled ? "rgba(148,163,184,0.45)" : "rgb(70,205,255)",
-            color: nextDisabled ? "rgba(255,255,255,0.72)" : "rgb(10,18,30)",
-            cursor: nextDisabled ? "not-allowed" : "pointer",
-          }}
+          className="font-semibold"
           title={
             !incomeAppliedOk
               ? "Wait for Step 2 income totals to finish updating"
@@ -599,7 +597,7 @@ export default function DealVehiclePage() {
           }
         >
           Next →
-        </button>
+        </Button>
       </div>
 
       {!loading && !incomeAppliedOk ? (
@@ -635,7 +633,8 @@ export default function DealVehiclePage() {
         </div>
       ) : null}
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ ...card, display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <div style={{ fontSize: 14, fontWeight: 800 }}>Cash Down</div>
           <input
@@ -710,181 +709,177 @@ export default function DealVehiclePage() {
           placeholder="Search stock / year / make / model / VIN..."
           style={{ ...input, flex: 1, minWidth: 260 }}
         />
-      </div>
+        </div>
 
-      <div style={{ fontSize: 13, fontWeight: 800, opacity: 0.85 }}>
-        Trade Equity:{" "}
-        <span
-          style={{
-            color:
-              tradeEquityPreview > 0
-                ? "#34d399"
-                : tradeEquityPreview < 0
-                  ? "#f87171"
-                  : "rgba(255,255,255,0.62)",
-          }}
-        >
-          {money(tradeEquityPreview)}
-        </span>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={miniStat}>
+            Results <span style={miniStatValue}>{filtered.length}</span>
+          </div>
+          <div style={miniStat}>
+            Trade Equity{" "}
+            <span
+              style={{
+                ...miniStatValue,
+                color:
+                  tradeEquityPreview > 0
+                    ? "#34d399"
+                    : tradeEquityPreview < 0
+                      ? "#f87171"
+                      : "rgba(255,255,255,0.72)",
+              }}
+            >
+              {money(tradeEquityPreview)}
+            </span>
+          </div>
+          {filtered[0] ? (
+            <div style={miniStat}>
+              Best Match <span style={miniStatValue}>{filtered[0].vehicle.stock_number ?? "—"}</span>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {loading ? <div style={{ opacity: 0.8 }}>Loading…</div> : null}
       {err ? <div style={{ color: "#fca5a5" }}>{err}</div> : null}
 
       {!loading && !err ? (
-        <div
-          style={{
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 12,
-            width: "100%",
-            overflowX: "auto",
-            background: "rgba(10,18,30,0.32)",
-            boxShadow: "0 16px 36px rgba(0,0,0,0.18)",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              minWidth: 1320,
-              borderCollapse: "collapse",
-              fontSize: 14,
-            }}
-          >
-            <thead>
-              <tr style={{ background: "rgba(255,255,255,0.05)" }}>
-                <th colSpan={7} style={{ ...th, textAlign: "center" }}>
-                  Vehicle Information
-                </th>
-                <th colSpan={5} style={{ ...th, textAlign: "center" }}>
-                  Payment Information
-                </th>
-              </tr>
-              <tr style={{ background: "rgba(255,255,255,0.03)" }}>
-                <th style={{ ...th, width: 42 }}>Age</th>
-                <th style={{ ...th, width: 88 }}>Stock #</th>
-                <th style={{ ...th, width: 62 }}>Year</th>
-                <th style={{ ...th, width: 95 }}>Make</th>
-                <th style={{ ...th, width: 145 }}>Model</th>
-                <th style={{ ...th, width: 105 }}>Mileage</th>
-                <th style={{ ...th, width: 82 }}>Block</th>
+        <div style={{ display: "grid", gap: 14 }}>
+          {filtered.map((v) => {
+            const age = daysSince(v.vehicle.date_in_stock);
+            const priceError = hasPriceError(v.vehicle);
+            const isBest = v.vehicle.id === bestVehicleId;
+            const bestOption = v.options[0];
 
-                <th style={{ ...thCenter, width: 42, paddingLeft: 4, paddingRight: 4 }}>VSC</th>
-                <th style={{ ...thCenter, width: 42, paddingLeft: 4, paddingRight: 4 }}>GAP</th>
-                <th style={{ ...thCenter, width: 60 }}>Term</th>
-                <th style={{ ...thRight, width: 170 }}>Monthly Payment</th>
-                <th style={{ ...thRight, width: 170 }}>Additional Down</th>
-              </tr>
-            </thead>
+            return (
+              <Card
+                key={v.vehicle.id}
+                className={isBest
+                  ? "border-primary/30 bg-[linear-gradient(180deg,rgba(70,205,255,0.08),rgba(255,255,255,0.02))] shadow-[0_18px_40px_rgba(24,182,230,0.16)]"
+                  : "border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.18)]"}
+              >
+                <CardContent className="p-0">
+                  <div style={{ ...vehicleHeader, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        {isBest ? <Badge className="bg-primary text-primary-foreground">Best Match</Badge> : null}
+                        {priceError ? (
+                          <Badge variant="outline" className="border-amber-400/30 bg-amber-500/10 text-amber-300">No Price</Badge>
+                        ) : v.fitsNow ? (
+                          <Badge variant="outline" className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300">Fits Now</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-red-400/30 bg-red-500/10 text-red-300">
+                            {normalizeReason(v.primaryBlock)}
+                          </Badge>
+                        )}
+                        {bestOption?.term_months ? (
+                          <span style={headerHint}>Best term {bestOption.term_months} mo</span>
+                        ) : null}
+                      </div>
 
-            <tbody>
-              {filtered.map((v) => {
-                const age = daysSince(v.vehicle.date_in_stock);
-                const rowSpan = v.options.length;
-                const priceError = hasPriceError(v.vehicle);
+                      <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1.1 }}>
+                        {v.vehicle.stock_number ?? "—"} • {v.vehicle.year ?? "—"} {v.vehicle.make ?? "—"} {v.vehicle.model ?? "—"}
+                      </div>
 
-                return (
-                  <Fragment key={v.vehicle.id}>
-                    {v.options.map((opt, idx) => {
+                      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                        <span style={headerMeta}>Mileage {v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}</span>
+                        <span style={headerMeta}>Age {age == null ? "—" : `${age} days`}</span>
+                        <span style={headerMeta}>Ask {money(v.vehicle.asking_price)}</span>
+                        {v.vehicle.vehicle_category ? (
+                          <span style={headerMeta}>{v.vehicle.vehicle_category.toUpperCase()}</span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 8, justifyItems: "end", minWidth: 180 }}>
+                      <div style={summaryLabel}>Fastest path</div>
+                      <div style={summaryPayment}>{money(bestOption?.monthly_payment)}</div>
+                      <div style={summarySubtle}>
+                        Down {bestOption && bestOption.additional_down_needed > 0 ? `+${money(bestOption.additional_down_needed)}` : "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={vehicleBody}>
+                    {v.options.map((opt) => {
                       const ok = opt.fits_cap;
                       const needsMoreDown = !ok && (opt.additional_down_needed ?? 0) > 0;
                       const isSelected =
                         selected?.vehicleId === v.vehicle.id &&
                         selected?.option?.label === opt.label;
+                      const reasonSummary = getOptionReasonSummary(opt);
+                      const reasonDetail = getOptionReasonDetail(opt);
 
                       return (
-                        <tr
+                        <div
                           key={`${v.vehicle.id}-${opt.label}`}
                           style={{
-                            background: priceError
-                              ? "rgba(245,158,11,0.12)"
-                              : v.fitsNow
-                                ? "rgba(16,185,129,0.08)"
-                                : "transparent",
+                            ...optionCard,
+                            border: isSelected
+                              ? "1px solid rgba(70,205,255,0.32)"
+                              : ok
+                                ? "1px solid rgba(16,185,129,0.2)"
+                                : "1px solid rgba(255,255,255,0.08)",
+                            background: isSelected
+                              ? "rgba(70,205,255,0.08)"
+                              : ok
+                                ? "rgba(16,185,129,0.06)"
+                                : "rgba(10,18,30,0.28)",
                           }}
                         >
-                          {idx === 0 ? (
-                            <>
-                              <td
-                                rowSpan={rowSpan}
-                                style={{ ...tdTop, width: 42, paddingLeft: 6, paddingRight: 6 }}
-                              >
-                                {age == null ? "—" : age}
-                              </td>
-                              <td rowSpan={rowSpan} style={tdTop}>
-                                {v.vehicle.stock_number ?? "—"}
-                              </td>
-                              <td rowSpan={rowSpan} style={tdTop}>
-                                {v.vehicle.year ?? "—"}
-                              </td>
-                              <td rowSpan={rowSpan} style={tdTop}>
-                                {v.vehicle.make ?? "—"}
-                              </td>
-                              <td rowSpan={rowSpan} style={tdTop}>
-                                {v.vehicle.model ?? "—"}
-                              </td>
-                              <td rowSpan={rowSpan} style={tdTop}>
-                                {v.vehicle.odometer != null ? num(v.vehicle.odometer) : "—"}
-                              </td>
-                              <td rowSpan={rowSpan} style={tdTop}>
-                                {priceError ? (
-                                  <span
-                                    style={{
-                                      fontSize: 12,
-                                      fontWeight: 800,
-                                      color: "#fbbf24",
-                                    }}
-                                  >
-                                    No Price
-                                  </span>
-                                ) : v.primaryBlock ? (
-                                  <span
-                                    style={{
-                                      fontSize: 12,
-                                      fontWeight: 800,
-                                      color: "#f87171",
-                                    }}
-                                  >
-                                    {normalizeReason(v.primaryBlock)}
-                                  </span>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                            <div style={{ display: "grid", gap: 8 }}>
+                              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                <div style={optionLabel}>{opt.label}</div>
+                                {isSelected ? (
+                                  <Badge className="bg-primary text-primary-foreground">Selected</Badge>
+                                ) : null}
+                                {ok ? (
+                                  <Badge variant="outline" className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300">Works</Badge>
+                                ) : needsMoreDown ? (
+                                  <Badge variant="outline" className="border-amber-400/30 bg-amber-500/10 text-amber-300">More Down Needed</Badge>
                                 ) : (
-                                  <span
-                                    style={{
-                                      fontSize: 12,
-                                      fontWeight: 800,
-                                      color: "#34d399",
-                                    }}
-                                  >
-                                    OK
-                                  </span>
+                                  <Badge variant="outline" className="border-red-400/30 bg-red-500/10 text-red-300">{reasonSummary ?? "Blocked"}</Badge>
                                 )}
-                              </td>
-                            </>
-                          ) : null}
+                              </div>
 
-                          <td style={{ ...tdCenter, paddingLeft: 4, paddingRight: 4 }}>
-                            {opt.include_vsc ? "✓" : ""}
-                          </td>
-                          <td style={{ ...tdCenter, paddingLeft: 4, paddingRight: 4 }}>
-                            {opt.include_gap ? "✓" : ""}
-                          </td>
-                          <td style={tdCenter}>{opt.term_months ?? "—"}</td>
+                              <div style={metricGrid}>
+                                <div style={metricBlock}>
+                                  <div style={metricLabel}>Payment</div>
+                                  <div style={paymentValue}>{money(opt.monthly_payment)}</div>
+                                </div>
+                                <div style={metricBlock}>
+                                  <div style={metricLabel}>Required Down</div>
+                                  <div style={{ ...secondaryMetricValue, color: needsMoreDown ? "#fbbf24" : "rgba(255,255,255,0.72)" }}>
+                                    {needsMoreDown ? `+${money(opt.additional_down_needed)}` : "—"}
+                                  </div>
+                                </div>
+                                <div style={metricBlock}>
+                                  <div style={metricLabel}>Term</div>
+                                  <div style={secondaryMetricValue}>{opt.term_months ?? "—"} mo</div>
+                                </div>
+                              </div>
 
-                          <td style={tdRight}>
-                            <button
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <span style={pillChip(opt.include_vsc)}>VSC {opt.include_vsc ? "On" : "Off"}</span>
+                                <span style={pillChip(opt.include_gap)}>GAP {opt.include_gap ? "On" : "Off"}</span>
+                              </div>
+
+                              {!ok ? (
+                                <div style={failureBox}>
+                                  <div style={failureTitle}>{reasonSummary ?? "Does not fit"}</div>
+                                  {reasonDetail ? <div style={failureDetail}>{reasonDetail}</div> : null}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <Button
                               type="button"
                               disabled={!incomeAppliedOk || priceError}
                               onClick={() => onPick(v, opt)}
-                              style={{
-                                border: "none",
-                                background: "transparent",
-                                padding: 0,
-                                cursor: !incomeAppliedOk || priceError ? "not-allowed" : "pointer",
-                                fontWeight: 900,
-                                fontSize: 15,
-                                textDecoration: "underline",
-                                opacity: !incomeAppliedOk || priceError ? 0.35 : ok ? 1 : 0.7,
-                                color: ok ? "#f5f7fa" : "rgba(255,255,255,0.62)",
-                              }}
+                              variant={isSelected ? "default" : "outline"}
+                              className={isSelected
+                                ? "min-w-[128px]"
+                                : "min-w-[128px] border-border/75 bg-background/35 text-foreground hover:bg-accent/80"}
                               title={
                                 !incomeAppliedOk
                                   ? "Income totals not ready"
@@ -893,52 +888,17 @@ export default function DealVehiclePage() {
                                     : getOptionHoverText(opt)
                               }
                             >
-                              {money(opt.monthly_payment)}
-                            </button>
-
-                            <span
-                              style={{
-                                marginLeft: 6,
-                                fontWeight: 900,
-                                color: ok ? "#34d399" : needsMoreDown ? "#fbbf24" : "#f87171",
-                              }}
-                            >
-                              {ok ? "✓" : needsMoreDown ? "!" : "✕"}
-                            </span>
-
-                            {isSelected ? (
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  fontWeight: 800,
-                                  color: "#f5f7fa",
-                                  marginTop: 2,
-                                }}
-                              >
-                                selected
-                              </div>
-                            ) : null}
-                          </td>
-
-                          <td style={tdRight}>
-                            {needsMoreDown ? (
-                              <span style={{ color: "#fbbf24", fontWeight: 800 }}>
-                                +{money(opt.additional_down_needed)}
-                              </span>
-                            ) : ok ? (
-                              <span style={{ color: "rgba(255,255,255,0.52)" }}>—</span>
-                            ) : (
-                              <span style={{ color: "#f87171", fontWeight: 800 }}>—</span>
-                            )}
-                          </td>
-                        </tr>
+                              {isSelected ? "Selected" : "Choose"}
+                            </Button>
+                          </div>
+                        </div>
                       );
                     })}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -953,49 +913,6 @@ const card: React.CSSProperties = {
   boxShadow: "0 16px 36px rgba(0,0,0,0.2)",
 };
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "10px 8px",
-  borderBottom: "1px solid rgba(255,255,255,0.08)",
-  fontWeight: 800,
-  whiteSpace: "nowrap",
-  color: "rgba(255,255,255,0.72)",
-};
-
-const thCenter: React.CSSProperties = {
-  ...th,
-  textAlign: "center",
-};
-
-const thRight: React.CSSProperties = {
-  ...th,
-  textAlign: "right",
-};
-
-const tdBase: React.CSSProperties = {
-  padding: "6px 8px",
-  borderBottom: "1px solid rgba(255,255,255,0.06)",
-  whiteSpace: "nowrap",
-  verticalAlign: "middle",
-  color: "rgba(255,255,255,0.92)",
-};
-
-const tdTop: React.CSSProperties = {
-  ...tdBase,
-  verticalAlign: "top",
-  paddingTop: 8,
-};
-
-const tdCenter: React.CSSProperties = {
-  ...tdBase,
-  textAlign: "center",
-};
-
-const tdRight: React.CSSProperties = {
-  ...tdBase,
-  textAlign: "right",
-};
-
 const input: React.CSSProperties = {
   width: 140,
   padding: "10px 12px",
@@ -1004,15 +921,6 @@ const input: React.CSSProperties = {
   background: "rgba(10,18,30,0.6)",
   color: "#f5f7fa",
   outline: "none",
-};
-
-const btnPrimary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 10,
-  border: "1px solid rgb(70,205,255)",
-  background: "rgb(70,205,255)",
-  color: "rgb(10,18,30)",
-  fontWeight: 900,
 };
 
 const filterBtn: React.CSSProperties = {
@@ -1035,3 +943,148 @@ const btnSecondary: React.CSSProperties = {
   cursor: "pointer",
   fontWeight: 900,
 };
+
+const miniStat: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "8px 10px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(10,18,30,0.28)",
+  fontSize: 12,
+  fontWeight: 800,
+  color: "rgba(255,255,255,0.62)",
+};
+
+const miniStatValue: React.CSSProperties = {
+  color: "#f5f7fa",
+  fontWeight: 900,
+};
+
+const vehicleHeader: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 16,
+  padding: 18,
+  flexWrap: "wrap",
+};
+
+const vehicleBody: React.CSSProperties = {
+  display: "grid",
+  gap: 12,
+  padding: 18,
+};
+
+const headerMeta: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "rgba(255,255,255,0.58)",
+};
+
+const headerHint: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#7de2ff",
+};
+
+const summaryLabel: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "rgba(255,255,255,0.52)",
+};
+
+const summaryPayment: React.CSSProperties = {
+  fontSize: 28,
+  lineHeight: 1,
+  fontWeight: 950,
+  color: "#f5f7fa",
+};
+
+const summarySubtle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "rgba(255,255,255,0.62)",
+};
+
+const optionCard: React.CSSProperties = {
+  borderRadius: 14,
+  padding: 14,
+  boxShadow: "0 10px 24px rgba(0,0,0,0.14)",
+};
+
+const optionLabel: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 900,
+  color: "#f5f7fa",
+};
+
+const metricGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+  gap: 12,
+};
+
+const metricBlock: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+};
+
+const metricLabel: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "rgba(255,255,255,0.48)",
+};
+
+const paymentValue: React.CSSProperties = {
+  fontSize: 30,
+  lineHeight: 1,
+  fontWeight: 950,
+  color: "#f5f7fa",
+};
+
+const secondaryMetricValue: React.CSSProperties = {
+  fontSize: 18,
+  lineHeight: 1.1,
+  fontWeight: 900,
+  color: "#f5f7fa",
+};
+
+const failureBox: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  padding: 10,
+  borderRadius: 12,
+  border: "1px solid rgba(248,113,113,0.22)",
+  background: "rgba(127,29,29,0.16)",
+};
+
+const failureTitle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#fca5a5",
+};
+
+const failureDetail: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "rgba(255,255,255,0.72)",
+};
+
+function pillChip(active: boolean): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "4px 8px",
+    borderRadius: 999,
+    border: `1px solid ${active ? "rgba(70,205,255,0.22)" : "rgba(255,255,255,0.08)"}`,
+    background: active ? "rgba(70,205,255,0.08)" : "rgba(255,255,255,0.03)",
+    color: active ? "#7de2ff" : "rgba(255,255,255,0.58)",
+    fontSize: 11,
+    fontWeight: 800,
+  };
+}
