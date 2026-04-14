@@ -1,11 +1,22 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
+import { ArrowUpRight, Bell } from "lucide-react";
 import { createClient } from "@/utils/supabase/server";
 import { getAuthContext } from "@/lib/auth/userRole";
 import {
   listCurrentUserNotifications,
   markCurrentUserNotificationsRead,
 } from "@/lib/notifications/appNotifications";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -42,65 +53,92 @@ async function markAllNotificationsRead() {
 export default async function MessagesPage() {
   const supabase = await createClient();
   const notifications = await listCurrentUserNotifications(supabase, 100);
+  const unreadCount = notifications.filter((notification) => !notification.read_at).length;
 
   return (
     <div className="grid gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xl font-semibold">Messages</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            Override requests and status notifications for your current account.
-          </div>
-        </div>
-
-        <form action={markAllNotificationsRead}>
-          <button
-            type="submit"
-            className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
-          >
-            Mark all read
-          </button>
-        </form>
-      </div>
-
-      <div className="rounded-2xl border bg-white shadow-sm">
-        <div className="border-b px-4 py-3 text-sm font-medium">
-          Recent notifications
-        </div>
-        <div className="divide-y">
-          {notifications.length ? (
-            notifications.map((notification) => (
-              <div key={notification.id} className="px-4 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="font-medium">{notification.title}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">
-                      {notification.body}
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      {formatDate(notification.created_at)}
-                      {notification.read_at ? " • Read" : " • Unread"}
-                    </div>
-                  </div>
-
-                  {notification.link_href ? (
-                    <Link
-                      href={notification.link_href}
-                      className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
-                    >
-                      Open
-                    </Link>
-                  ) : null}
-                </div>
+      <Card className="border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
+        <CardHeader className="gap-3 pb-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-primary">
+                Notifications
               </div>
-            ))
+              <CardTitle className="mt-1.5 text-xl">Messages</CardTitle>
+              <CardDescription className="mt-1 text-sm text-muted-foreground/80">
+                Override requests and status notifications for your current account.
+              </CardDescription>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={unreadCount ? "default" : "secondary"}>
+                {unreadCount ? `${unreadCount} unread` : "All caught up"}
+              </Badge>
+              <form action={markAllNotificationsRead}>
+                <Button type="submit" variant="secondary">
+                  Mark all read
+                </Button>
+              </form>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
+      <Card className="border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg">Recent notifications</CardTitle>
+              <CardDescription className="mt-1 text-xs uppercase tracking-[0.08em] text-muted-foreground/75">
+                Latest account activity
+              </CardDescription>
+            </div>
+            <Bell className="size-4 text-muted-foreground/70" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {notifications.length ? (
+            <div className="overflow-hidden rounded-xl border border-border/75 bg-background/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+              {notifications.map((notification, index) => (
+                <div key={notification.id}>
+                  <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-foreground">
+                          {notification.title}
+                        </div>
+                        <Badge variant={notification.read_at ? "secondary" : "default"}>
+                          {notification.read_at ? "Read" : "Unread"}
+                        </Badge>
+                      </div>
+                      <div className="mt-1.5 text-sm text-muted-foreground/82">
+                        {notification.body}
+                      </div>
+                      <div className="mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+                        {formatDate(notification.created_at)}
+                      </div>
+                    </div>
+
+                    {notification.link_href ? (
+                      <Button asChild variant="secondary" size="sm">
+                        <Link href={notification.link_href}>
+                          Open
+                          <ArrowUpRight />
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
+                  {index < notifications.length - 1 ? <Separator /> : null}
+                </div>
+              ))}
+            </div>
           ) : (
-            <div className="px-4 py-6 text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-border/80 bg-background/30 px-4 py-10 text-sm text-muted-foreground/80">
               No messages yet for this account.
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

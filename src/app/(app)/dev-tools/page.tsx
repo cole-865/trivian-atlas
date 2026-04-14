@@ -16,6 +16,16 @@ import {
 import { getAuthContext, type UserProfile } from "@/lib/auth/userRole";
 import { CreateOrganizationForm } from "@/components/CreateOrganizationForm";
 import { isEmailDeliveryConfigured } from "@/lib/email/mailer";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 type OrganizationUserRow = {
   user_id: string;
@@ -51,11 +61,11 @@ function FlashBanner({
 }) {
   const className =
     tone === "error"
-      ? "border-red-200 bg-red-50 text-red-900"
-      : "border-emerald-200 bg-emerald-50 text-emerald-900";
+      ? "border-destructive/35 bg-destructive/10 text-destructive"
+      : "border-success/35 bg-success/10 text-success";
 
   return (
-    <div className={`rounded-2xl border px-4 py-3 text-sm ${className}`}>
+    <div className={`rounded-xl border px-4 py-3 text-sm ${className}`}>
       {message}
     </div>
   );
@@ -67,6 +77,44 @@ function displayProfileName(profile: {
   role?: string | null;
 }) {
   return profile.fullName || profile.email || profile.role || "Unknown user";
+}
+
+function SectionCard({
+  eyebrow,
+  title,
+  description,
+  children,
+  right,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  right?: React.ReactNode;
+}) {
+  return (
+    <Card className="border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
+      <CardHeader className="gap-3 pb-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            {eyebrow ? (
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-primary">
+                {eyebrow}
+              </div>
+            ) : null}
+            <CardTitle className="mt-1.5 text-xl">{title}</CardTitle>
+            {description ? (
+              <CardDescription className="mt-1 text-sm text-muted-foreground/80">
+                {description}
+              </CardDescription>
+            ) : null}
+          </div>
+          {right ? <div className="flex shrink-0 items-center gap-2">{right}</div> : null}
+        </div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
 }
 
 export default async function DevToolsPage({
@@ -106,27 +154,26 @@ export default async function DevToolsPage({
           />
         ) : null}
 
-        <div className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="text-xl font-semibold">Dev Tools</div>
-        <div className="mt-2 text-sm text-muted-foreground">
-            Select or create an account before using account-scoped dev tools.
-        </div>
-
+        <SectionCard
+          eyebrow="Platform"
+          title="Dev Tools"
+          description="Select or create an account before using account-scoped dev tools."
+        >
           {canCreateOrganizations(authContext) && adminAccessAvailable ? (
-            <div className="mt-6 rounded-2xl border border-gray-200 p-4">
-              <div className="text-base font-semibold">Create account</div>
-              <div className="mt-1 text-sm text-muted-foreground">
+            <div className="rounded-xl border border-border/75 bg-background/30 p-5">
+              <div className="text-base font-semibold text-foreground">Create account</div>
+              <div className="mt-1 text-sm text-muted-foreground/80">
                 New dealership accounts clone defaults from 865-autos and seed an initial admin invite.
               </div>
 
               <CreateOrganizationForm action={createOrganizationAction} />
 
-              <div className="mt-4 text-xs text-muted-foreground">
-                Platform dev can switch into any account. {switchableOrganizations.length} accounts are visible in the top-right switcher.
+              <div className="mt-4 text-xs uppercase tracking-[0.08em] text-muted-foreground/75">
+                Platform dev can switch into any account. {switchableOrganizations.length} accounts are visible in the header switcher.
               </div>
             </div>
           ) : null}
-        </div>
+        </SectionCard>
       </div>
     );
   }
@@ -183,89 +230,103 @@ export default async function DevToolsPage({
       {notice ? <FlashBanner tone="notice" message={notice} /> : null}
       {errorMessage ? <FlashBanner tone="error" message={errorMessage} /> : null}
 
-      <div className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="text-xl font-semibold">Dev Tools</div>
-        <div className="mt-2 text-sm text-muted-foreground">
-          Platform-only account creation and impersonation tools.
-        </div>
+      <SectionCard
+        eyebrow="Platform"
+        title="Dev Tools"
+        description="Platform-only account creation and impersonation tools."
+        right={
+          authContext.currentOrganization?.name ? (
+            <Badge variant="secondary">{authContext.currentOrganization.name}</Badge>
+          ) : null
+        }
+      >
+        <div className="space-y-6">
+          {!adminAccessAvailable ? (
+            <FlashBanner
+              tone="error"
+              message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation still needs that key even though the page can render."
+            />
+          ) : !emailDeliveryConfigured ? (
+            <FlashBanner
+              tone="error"
+              message="Account creation still works, but initial admin invites will not send until RESEND_API_KEY and EMAIL_FROM are configured."
+            />
+          ) : null}
 
-        {!adminAccessAvailable ? (
-          <FlashBanner
-            tone="error"
-            message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation still needs that key even though the page can render."
-          />
-        ) : !emailDeliveryConfigured ? (
-          <FlashBanner
-            tone="error"
-            message="Account creation still works, but initial admin invites will not send until RESEND_API_KEY and EMAIL_FROM are configured."
-          />
-        ) : null}
+          {canCreateOrganizations(authContext) && adminAccessAvailable ? (
+            <div className="rounded-xl border border-border/75 bg-background/30 p-5">
+              <div className="text-base font-semibold text-foreground">Create account</div>
+              <div className="mt-1 text-sm text-muted-foreground/80">
+                Seed a dealership account from 865-autos defaults and issue the first admin invite.
+              </div>
 
-        {canCreateOrganizations(authContext) && adminAccessAvailable ? (
-          <div className="mt-6 rounded-2xl border border-gray-200 p-4">
-            <div className="text-base font-semibold">Create account</div>
-            <div className="mt-1 text-sm text-muted-foreground">
-              Seed a dealership account from 865-autos defaults and issue the first admin invite.
+              <CreateOrganizationForm action={createOrganizationAction} />
             </div>
+          ) : null}
 
-            <CreateOrganizationForm action={createOrganizationAction} />
+          <div className="rounded-xl border border-border/75 bg-background/30 px-4 py-3 text-sm">
+            Current account:{" "}
+            <span className="font-semibold text-foreground">
+              {authContext.currentOrganization?.name ?? "Unknown account"}
+            </span>
           </div>
-        ) : null}
-
-        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
-          Current account:{" "}
-          <span className="font-medium">
-            {authContext.currentOrganization?.name ?? "Unknown account"}
-          </span>
         </div>
+      </SectionCard>
 
-        {canCreateOrganizations(authContext) && adminAccessAvailable ? (
-          <div className="mt-6 rounded-2xl border border-gray-200 bg-white">
-            <div className="border-b px-4 py-3 text-sm font-medium">Accounts</div>
-            <div className="divide-y">
-              {switchableOrganizations.map((account) => (
-                <div
-                  key={account.id}
-                  className="flex items-center justify-between gap-3 px-4 py-4 text-sm"
-                >
+      {canCreateOrganizations(authContext) && adminAccessAvailable ? (
+        <SectionCard
+          eyebrow="Accounts"
+          title="Visible accounts"
+          description="Organizations available to the current platform developer."
+        >
+          <div className="overflow-hidden rounded-xl border border-border/75 bg-background/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+            {switchableOrganizations.map((account, index) => (
+              <div key={account.id}>
+                <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="font-medium">{account.name}</div>
-                    <div className="text-muted-foreground">
-                      {account.slug} {account.isActive ? "" : "(inactive)"}
+                    <div className="font-medium text-foreground">{account.name}</div>
+                    <div className="mt-1 text-sm text-muted-foreground/80">
+                      {account.slug}
                     </div>
                   </div>
-                  <form action={setOrganizationActiveStateAction} className="flex items-center gap-2">
-                    <input type="hidden" name="organization_id" value={account.id} />
-                    <input
-                      type="hidden"
-                      name="is_active"
-                      value={account.isActive ? "false" : "true"}
-                    />
-                    <button
-                      type="submit"
-                      className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
-                    >
-                      {account.isActive ? "Deactivate account" : "Reactivate account"}
-                    </button>
-                  </form>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={account.isActive ? "success" : "secondary"}>
+                      {account.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                    <form action={setOrganizationActiveStateAction}>
+                      <input type="hidden" name="organization_id" value={account.id} />
+                      <input
+                        type="hidden"
+                        name="is_active"
+                        value={account.isActive ? "false" : "true"}
+                      />
+                      <Button type="submit" variant="secondary" size="sm">
+                        {account.isActive ? "Deactivate account" : "Reactivate account"}
+                      </Button>
+                    </form>
+                  </div>
                 </div>
-              ))}
-            </div>
+                {index < switchableOrganizations.length - 1 ? <Separator /> : null}
+              </div>
+            ))}
           </div>
-        ) : null}
+        </SectionCard>
+      ) : null}
 
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <div className="text-base font-semibold text-amber-950">User impersonation</div>
-          <div className="mt-2 text-sm text-amber-900/80">
-            Act as an active staff user for role and workflow testing while keeping your real
-            authenticated session intact.
-          </div>
-
-          <div className="mt-4 grid gap-3 rounded-2xl border border-amber-200 bg-white/70 p-4">
-            <div className="text-sm font-medium text-amber-900">
+      <SectionCard
+        eyebrow="Impersonation"
+        title="User impersonation"
+        description="Act as an active staff user for role and workflow testing while keeping your real session intact."
+        right={
+          authContext.isImpersonating ? <Badge variant="warning">Impersonating</Badge> : null
+        }
+      >
+        <div className="space-y-5">
+          <div className="grid gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4">
+            <div className="text-sm font-medium text-warning-foreground">
               Real user: {authContext.realUser?.email ?? "Unknown user"}
             </div>
-            <div className="text-sm text-amber-900/80">
+            <div className="text-sm text-warning-foreground/85">
               Effective user:{" "}
               {authContext.isImpersonating && authContext.impersonatedProfile
                 ? displayProfileName(authContext.impersonatedProfile)
@@ -277,13 +338,13 @@ export default async function DevToolsPage({
             </div>
           </div>
 
-          <form action={startImpersonationAction} className="mt-4 grid gap-3 md:max-w-xl">
+          <form action={startImpersonationAction} className="grid gap-3 md:max-w-xl">
             <label className="grid gap-2">
-              <span className="text-sm font-medium text-amber-950">Act as user</span>
+              <span className="text-sm font-medium text-foreground">Act as user</span>
               <select
                 name="impersonated_user_id"
                 defaultValue={authContext.impersonatedUserId ?? ""}
-                className="rounded-xl border px-3 py-2 text-sm"
+                className="h-10 rounded-lg border border-input bg-input/45 px-3 py-2 text-sm text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">Select an active staff user</option>
                 {activeStaff.map((staff) => (
@@ -295,56 +356,40 @@ export default async function DevToolsPage({
             </label>
 
             <div className="flex flex-wrap gap-3">
-              <button
-                type="submit"
-                className="rounded-xl bg-black px-4 py-2 text-sm text-white hover:opacity-90"
-              >
-                Start impersonating
-              </button>
+              <Button type="submit">Start impersonating</Button>
             </div>
 
-            <div className="text-xs text-amber-900/70">
-              Only active users in the current account appear here. Non-dev users cannot start
-              or stop impersonation.
+            <div className="text-xs uppercase tracking-[0.08em] text-muted-foreground/75">
+              Only active users in the current account appear here. Non-dev users cannot start or stop impersonation.
             </div>
           </form>
 
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white">
-            <div className="border-b px-4 py-3 text-sm font-medium">
-              Active staff users in this account
-            </div>
-            <div className="divide-y">
-              {activeStaff.map((staff) => (
-                <div
-                  key={staff.id}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                >
-                  <div>
-                    <div className="font-medium">
-                      {staff.full_name || staff.email || staff.id}
-                    </div>
-                    <div className="text-muted-foreground">{staff.email || staff.id}</div>
-                  </div>
-                  <div className="rounded-full border px-2 py-1 text-xs uppercase tracking-wide">
-                    {staff.role}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {authContext.isImpersonating ? (
-            <form action={stopImpersonationAction} className="mt-3">
-              <button
-                type="submit"
-                className="rounded-xl border px-4 py-2 text-sm hover:bg-white"
-              >
+            <form action={stopImpersonationAction}>
+              <Button type="submit" variant="secondary">
                 Stop impersonating
-              </button>
+              </Button>
             </form>
           ) : null}
+
+          <div className="overflow-hidden rounded-xl border border-border/75 bg-background/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+            {activeStaff.map((staff, index) => (
+              <div key={staff.id}>
+                <div className="flex items-center justify-between gap-3 px-4 py-3.5 text-sm">
+                  <div>
+                    <div className="font-medium text-foreground">
+                      {staff.full_name || staff.email || staff.id}
+                    </div>
+                    <div className="text-muted-foreground/80">{staff.email || staff.id}</div>
+                  </div>
+                  <Badge variant="secondary">{staff.role}</Badge>
+                </div>
+                {index < activeStaff.length - 1 ? <Separator /> : null}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </SectionCard>
     </div>
   );
 }
