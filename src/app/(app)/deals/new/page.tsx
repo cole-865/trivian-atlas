@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { PageHeader, SectionCard, NoticeBanner } from "@/components/atlas/page";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { createClient } from "@/utils/supabase/server";
 import {
   getCurrentOrganizationIdForDeals,
@@ -48,58 +52,50 @@ export default async function NewDealPage({
   const error = sp.error ? decodeURIComponent(sp.error) : null;
 
   return (
-    <div className="max-w-xl">
-      <div className="rounded-2xl border bg-white p-6 shadow-sm">
-        <div className="text-xl font-semibold">New Deal</div>
-        <div className="mt-1 text-sm text-muted-foreground">
-          Enter the customer name to start a deal.
-        </div>
+    <div className="max-w-3xl space-y-6">
+      <PageHeader
+        eyebrow="Pipeline"
+        title="New Deal"
+        description="Enter the customer name to start a deal in the current organization."
+      />
 
-        {error ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
+      <SectionCard
+        title="Customer details"
+        description="Atlas uses the customer name to seed the new deal shell before the workflow begins."
+      >
+        {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
 
         <form action={createDeal} className="mt-5 space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-sm font-medium">First name</label>
-              <input
+            <div className="grid gap-2">
+              <Label htmlFor="first_name">First name</Label>
+              <Input
+                id="first_name"
                 name="first_name"
                 placeholder="e.g., Cole"
-                className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
                 autoFocus
               />
             </div>
 
-            <div>
-              <label className="text-sm font-medium">Last name</label>
-              <input
+            <div className="grid gap-2">
+              <Label htmlFor="last_name">Last name</Label>
+              <Input
+                id="last_name"
                 name="last_name"
                 placeholder="e.g., Hitchcox"
-                className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
               />
             </div>
           </div>
 
           <div className="flex items-center justify-between">
-            <Link
-              href="/home"
-              className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
-            >
-              Cancel
-            </Link>
+            <Button asChild variant="secondary">
+              <Link href="/home">Cancel</Link>
+            </Button>
 
-            <button
-              type="submit"
-              className="rounded-xl bg-black px-4 py-2 text-sm text-white hover:opacity-90"
-            >
-              Create deal
-            </button>
+            <Button type="submit">Create deal</Button>
           </div>
         </form>
-      </div>
+      </SectionCard>
     </div>
   );
 }

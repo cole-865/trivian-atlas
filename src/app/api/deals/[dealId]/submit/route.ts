@@ -24,6 +24,18 @@ type InventoryStatusRow = {
     status: string | null;
 };
 
+function num(value: unknown): number | null {
+    if (value == null || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getSnapshotPti(snapshot: unknown) {
+    if (!snapshot || typeof snapshot !== "object") return null;
+    const structure = (snapshot as { structure?: { pti?: unknown } }).structure;
+    return num(structure?.pti);
+}
+
 export async function POST(
     req: Request,
     { params }: { params: Promise<{ dealId: string }> }
@@ -88,7 +100,8 @@ export async function POST(
       apr,
       fits_program,
       ltv,
-      fail_reasons
+      fail_reasons,
+      snapshot_json
     `),
         organizationId
     )
@@ -190,7 +203,7 @@ export async function POST(
                 monthlyPayment: dealStructure.monthly_payment,
                 termMonths: dealStructure.term_months,
                 ltv: dealStructure.ltv ?? null,
-                pti: null,
+                pti: getSnapshotPti(dealStructure.snapshot_json),
             }),
         })
         : null;

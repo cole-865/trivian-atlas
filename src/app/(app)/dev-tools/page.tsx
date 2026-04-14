@@ -18,14 +18,10 @@ import { CreateOrganizationForm } from "@/components/CreateOrganizationForm";
 import { isEmailDeliveryConfigured } from "@/lib/email/mailer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
+import { EmptyState, NoticeBanner, PageHeader, SectionCard } from "@/components/atlas/page";
 
 type OrganizationUserRow = {
   user_id: string;
@@ -52,69 +48,12 @@ function getSearchParam(
   return Array.isArray(value) ? value[0] : value;
 }
 
-function FlashBanner({
-  tone,
-  message,
-}: {
-  tone: "notice" | "error";
-  message: string;
-}) {
-  const className =
-    tone === "error"
-      ? "border-destructive/35 bg-destructive/10 text-destructive"
-      : "border-success/35 bg-success/10 text-success";
-
-  return (
-    <div className={`rounded-xl border px-4 py-3 text-sm ${className}`}>
-      {message}
-    </div>
-  );
-}
-
 function displayProfileName(profile: {
   fullName?: string | null;
   email?: string | null;
   role?: string | null;
 }) {
   return profile.fullName || profile.email || profile.role || "Unknown user";
-}
-
-function SectionCard({
-  eyebrow,
-  title,
-  description,
-  children,
-  right,
-}: {
-  eyebrow?: string;
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-  right?: React.ReactNode;
-}) {
-  return (
-    <Card className="border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
-      <CardHeader className="gap-3 pb-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            {eyebrow ? (
-              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-primary">
-                {eyebrow}
-              </div>
-            ) : null}
-            <CardTitle className="mt-1.5 text-xl">{title}</CardTitle>
-            {description ? (
-              <CardDescription className="mt-1 text-sm text-muted-foreground/80">
-                {description}
-              </CardDescription>
-            ) : null}
-          </div>
-          {right ? <div className="flex shrink-0 items-center gap-2">{right}</div> : null}
-        </div>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  );
 }
 
 export default async function DevToolsPage({
@@ -140,25 +79,25 @@ export default async function DevToolsPage({
   if (!currentOrganizationId) {
     return (
       <div className="grid gap-6">
-        {notice ? <FlashBanner tone="notice" message={notice} /> : null}
-        {errorMessage ? <FlashBanner tone="error" message={errorMessage} /> : null}
+        {notice ? <NoticeBanner tone="notice">{notice}</NoticeBanner> : null}
+        {errorMessage ? <NoticeBanner tone="error">{errorMessage}</NoticeBanner> : null}
         {!adminAccessAvailable ? (
-          <FlashBanner
-            tone="error"
-            message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation and cross-account admin tools are unavailable until it is configured."
-          />
+          <NoticeBanner tone="error">
+            Dev account management requires `SUPABASE_SERVICE_ROLE_KEY`. Account creation and cross-account admin tools are unavailable until it is configured.
+          </NoticeBanner>
         ) : !emailDeliveryConfigured ? (
-          <FlashBanner
-            tone="error"
-            message="Account creation still works, but initial admin invites will not send until RESEND_API_KEY and EMAIL_FROM are configured."
-          />
+          <NoticeBanner tone="error">
+            Account creation still works, but initial admin invites will not send until `RESEND_API_KEY` and `EMAIL_FROM` are configured.
+          </NoticeBanner>
         ) : null}
 
-        <SectionCard
+        <PageHeader
           eyebrow="Platform"
           title="Dev Tools"
           description="Select or create an account before using account-scoped dev tools."
-        >
+        />
+
+        <SectionCard title="Account setup" description="Create an account before using account-scoped platform tools.">
           {canCreateOrganizations(authContext) && adminAccessAvailable ? (
             <div className="rounded-xl border border-border/75 bg-background/30 p-5">
               <div className="text-base font-semibold text-foreground">Create account</div>
@@ -172,7 +111,12 @@ export default async function DevToolsPage({
                 Platform dev can switch into any account. {switchableOrganizations.length} accounts are visible in the header switcher.
               </div>
             </div>
-          ) : null}
+          ) : (
+            <EmptyState
+              title="Account creation unavailable"
+              description="Platform-only account creation requires service-role admin access."
+            />
+          )}
         </SectionCard>
       </div>
     );
@@ -227,14 +171,14 @@ export default async function DevToolsPage({
 
   return (
     <div className="grid gap-6">
-      {notice ? <FlashBanner tone="notice" message={notice} /> : null}
-      {errorMessage ? <FlashBanner tone="error" message={errorMessage} /> : null}
+      {notice ? <NoticeBanner tone="notice">{notice}</NoticeBanner> : null}
+      {errorMessage ? <NoticeBanner tone="error">{errorMessage}</NoticeBanner> : null}
 
       <SectionCard
         eyebrow="Platform"
         title="Dev Tools"
         description="Platform-only account creation and impersonation tools."
-        right={
+        actions={
           authContext.currentOrganization?.name ? (
             <Badge variant="secondary">{authContext.currentOrganization.name}</Badge>
           ) : null
@@ -242,15 +186,13 @@ export default async function DevToolsPage({
       >
         <div className="space-y-6">
           {!adminAccessAvailable ? (
-            <FlashBanner
-              tone="error"
-              message="Dev account management requires SUPABASE_SERVICE_ROLE_KEY. Account creation still needs that key even though the page can render."
-            />
+            <NoticeBanner tone="error">
+              Dev account management requires `SUPABASE_SERVICE_ROLE_KEY`. Account creation still needs that key even though the page can render.
+            </NoticeBanner>
           ) : !emailDeliveryConfigured ? (
-            <FlashBanner
-              tone="error"
-              message="Account creation still works, but initial admin invites will not send until RESEND_API_KEY and EMAIL_FROM are configured."
-            />
+            <NoticeBanner tone="error">
+              Account creation still works, but initial admin invites will not send until `RESEND_API_KEY` and `EMAIL_FROM` are configured.
+            </NoticeBanner>
           ) : null}
 
           {canCreateOrganizations(authContext) && adminAccessAvailable ? (
@@ -317,7 +259,7 @@ export default async function DevToolsPage({
         eyebrow="Impersonation"
         title="User impersonation"
         description="Act as an active staff user for role and workflow testing while keeping your real session intact."
-        right={
+        actions={
           authContext.isImpersonating ? <Badge variant="warning">Impersonating</Badge> : null
         }
       >
@@ -340,11 +282,10 @@ export default async function DevToolsPage({
 
           <form action={startImpersonationAction} className="grid gap-3 md:max-w-xl">
             <label className="grid gap-2">
-              <span className="text-sm font-medium text-foreground">Act as user</span>
-              <select
+              <Label>Act as user</Label>
+              <NativeSelect
                 name="impersonated_user_id"
                 defaultValue={authContext.impersonatedUserId ?? ""}
-                className="h-10 rounded-lg border border-input bg-input/45 px-3 py-2 text-sm text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">Select an active staff user</option>
                 {activeStaff.map((staff) => (
@@ -352,7 +293,7 @@ export default async function DevToolsPage({
                     {staff.full_name || staff.email || staff.id} ({staff.role})
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
 
             <div className="flex flex-wrap gap-3">
@@ -373,7 +314,7 @@ export default async function DevToolsPage({
           ) : null}
 
           <div className="overflow-hidden rounded-xl border border-border/75 bg-background/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-            {activeStaff.map((staff, index) => (
+            {activeStaff.length ? activeStaff.map((staff, index) => (
               <div key={staff.id}>
                 <div className="flex items-center justify-between gap-3 px-4 py-3.5 text-sm">
                   <div>
@@ -386,7 +327,13 @@ export default async function DevToolsPage({
                 </div>
                 {index < activeStaff.length - 1 ? <Separator /> : null}
               </div>
-            ))}
+            )) : (
+              <EmptyState
+                className="m-4 min-h-32"
+                title="No active staff users"
+                description="Only active users in the current organization can be impersonated from this screen."
+              />
+            )}
           </div>
         </div>
       </SectionCard>

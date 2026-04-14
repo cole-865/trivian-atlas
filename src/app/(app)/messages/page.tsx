@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { EmptyState } from "@/components/atlas/page";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -133,9 +134,11 @@ export default async function MessagesPage() {
               ))}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border/80 bg-background/30 px-4 py-10 text-sm text-muted-foreground/80">
-              No messages yet for this account.
-            </div>
+            <EmptyState
+              className="min-h-36"
+              title="No messages yet"
+              description="There are no notifications for this account right now."
+            />
           )}
         </CardContent>
       </Card>

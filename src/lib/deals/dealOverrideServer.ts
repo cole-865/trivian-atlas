@@ -99,6 +99,7 @@ type CounterOfferOutputSnapshot = {
     cash_down_effective?: number | null;
     ltv?: number | null;
     monthly_payment?: number | null;
+    pti?: number | null;
     term_months?: number | null;
   } | null;
   vehicle?: {
@@ -153,25 +154,8 @@ function getCounterOfferEmailStructure(outputsSnapshot: Record<string, unknown>)
     cashDown: structure?.cash_down_effective ?? null,
     ltv: structure?.ltv ?? null,
     monthlyPayment: structure?.monthly_payment ?? null,
-    pti: null,
+    pti: structure?.pti ?? null,
     termMonths: structure?.term_months ?? null,
-  };
-}
-
-function getCounterOfferOverrideSnapshot(
-  outputsSnapshot: Record<string, unknown>
-): DealOverrideStructureSnapshot {
-  const snapshot = outputsSnapshot as CounterOfferOutputSnapshot;
-  const structure = snapshot.structure ?? null;
-
-  return {
-    vehicleId: snapshot.vehicle?.id ?? null,
-    cashDown: structure?.cash_down_effective ?? null,
-    amountFinanced: structure?.amount_financed ?? null,
-    monthlyPayment: structure?.monthly_payment ?? null,
-    termMonths: structure?.term_months ?? null,
-    ltv: structure?.ltv ?? null,
-    pti: null,
   };
 }
 
@@ -918,22 +902,29 @@ export async function acceptLatestDealOverrideCounterOffer(args: {
     throw new Error("This counter offer was already handled or is no longer active.");
   }
 
-  const acceptedOffer = data as DealOverrideCounterOfferRecord;
-  const acceptedSnapshot = getCounterOfferOverrideSnapshot(
-    acceptedOffer.outputs_snapshot_json
-  );
+  return data as DealOverrideCounterOfferRecord;
+}
+
+export async function approveAcceptedDealOverrideCounterOffer(args: {
+  organizationId: string;
+  dealId: string;
+  requestId: string;
+  liveStructure: DealOverrideStructureSnapshot;
+}) {
+  const admin = createAdminClient();
+  const timestamp = new Date().toISOString();
   const { error: requestErr } = await admin
     .from("deal_override_requests")
     .update({
       status: "approved",
-      structure_fingerprint: buildDealOverrideFingerprint(acceptedSnapshot),
-      vehicle_id: acceptedSnapshot.vehicleId,
-      cash_down_snapshot: acceptedSnapshot.cashDown,
-      amount_financed_snapshot: acceptedSnapshot.amountFinanced,
-      monthly_payment_snapshot: acceptedSnapshot.monthlyPayment,
-      term_months_snapshot: acceptedSnapshot.termMonths,
-      ltv_snapshot: acceptedSnapshot.ltv,
-      pti_snapshot: acceptedSnapshot.pti,
+      structure_fingerprint: buildDealOverrideFingerprint(args.liveStructure),
+      vehicle_id: args.liveStructure.vehicleId,
+      cash_down_snapshot: args.liveStructure.cashDown,
+      amount_financed_snapshot: args.liveStructure.amountFinanced,
+      monthly_payment_snapshot: args.liveStructure.monthlyPayment,
+      term_months_snapshot: args.liveStructure.termMonths,
+      ltv_snapshot: args.liveStructure.ltv,
+      pti_snapshot: args.liveStructure.pti,
       stale_reason: null,
       status_changed_at: timestamp,
       updated_at: timestamp,
@@ -945,6 +936,4 @@ export async function acceptLatestDealOverrideCounterOffer(args: {
   if (requestErr) {
     throw new Error(`Failed to approve accepted counter offer: ${requestErr.message}`);
   }
-
-  return acceptedOffer;
 }

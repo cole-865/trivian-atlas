@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 function slugify(value: string) {
   return value
@@ -23,8 +26,8 @@ export function CreateOrganizationForm({
   return (
     <form action={action} className="mt-4 grid gap-4 md:grid-cols-2">
       <label className="grid gap-2">
-        <span className="text-sm font-medium">Account name</span>
-        <input
+        <Label>Account name</Label>
+        <Input
           name="name"
           required
           value={name}
@@ -35,14 +38,13 @@ export function CreateOrganizationForm({
               setSlug(slugify(nextName));
             }
           }}
-          className="rounded-xl border px-3 py-2 text-sm"
           placeholder="River City Motors"
         />
       </label>
 
       <label className="grid gap-2">
-        <span className="text-sm font-medium">Slug</span>
-        <input
+        <Label>Slug</Label>
+        <Input
           name="slug"
           required
           value={slug}
@@ -50,39 +52,33 @@ export function CreateOrganizationForm({
             setSlugTouched(true);
             setSlug(slugify(event.target.value));
           }}
-          className="rounded-xl border px-3 py-2 text-sm"
           placeholder="river-city-motors"
         />
       </label>
 
       <label className="grid gap-2">
-        <span className="text-sm font-medium">Initial account admin name</span>
-        <input
+        <Label>Initial account admin name</Label>
+        <Input
           name="initial_admin_name"
           required
-          className="rounded-xl border px-3 py-2 text-sm"
           placeholder="Taylor Admin"
         />
       </label>
 
       <label className="grid gap-2">
-        <span className="text-sm font-medium">Initial account admin email</span>
-        <input
+        <Label>Initial account admin email</Label>
+        <Input
           name="initial_admin_email"
           type="email"
           required
-          className="rounded-xl border px-3 py-2 text-sm"
           placeholder="taylor@example.com"
         />
       </label>
 
       <div className="md:col-span-2">
-        <button
-          type="submit"
-          className="rounded-xl bg-black px-4 py-2 text-sm text-white hover:opacity-90"
-        >
+        <Button type="submit">
           Create account
-        </button>
+        </Button>
       </div>
     </form>
   );

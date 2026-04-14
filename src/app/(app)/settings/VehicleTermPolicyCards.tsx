@@ -4,6 +4,12 @@ import { useState, type ReactNode } from "react";
 import type { VehicleTermPolicyRow } from "@/lib/settings/dealershipSettings";
 import { updateVehicleTermPolicyAction } from "@/lib/settings/dealershipSettingsActions";
 import { SaveButton, SettingsForm } from "./SettingsForm";
+import { EmptyState } from "@/components/atlas/page";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 function mileageValue(value: number | null | undefined) {
   if (value === null || value === undefined) return null;
@@ -48,6 +54,7 @@ function Field({
   max,
   step,
   suffix,
+  multiline = false,
 }: {
   label: string;
   name: string;
@@ -58,45 +65,47 @@ function Field({
   max?: string | number;
   step?: string | number;
   suffix?: string;
+  multiline?: boolean;
 }) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-medium">{label}</span>
-      {suffix ? (
-        <span className="flex overflow-hidden rounded-lg border bg-white focus-within:ring-1 focus-within:ring-black">
-          <input
+      <Label>{label}</Label>
+      {multiline ? (
+        <Textarea name={name} defaultValue={String(value ?? "")} className="min-h-24" />
+      ) : suffix ? (
+        <span className="flex overflow-hidden rounded-lg border border-input bg-input/45 shadow-sm focus-within:ring-2 focus-within:ring-ring">
+          <Input
             name={name}
             type={type}
             min={min}
             max={max}
             step={step}
             defaultValue={value ?? ""}
-            className="min-w-0 flex-1 border-0 px-3 py-2 text-sm outline-none"
+            className="min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
           />
-          <span className="border-l bg-gray-50 px-3 py-2 text-sm text-muted-foreground">
+          <span className="border-l border-border/80 bg-background/35 px-3 py-2 text-sm text-muted-foreground">
             {suffix}
           </span>
         </span>
       ) : (
-        <input
+        <Input
           name={name}
           type={type}
           min={min}
           max={max}
           step={step}
           defaultValue={value ?? ""}
-          className="rounded-lg border px-3 py-2 text-sm"
         />
       )}
-      {helper ? <span className="text-xs text-muted-foreground">{helper}</span> : null}
+      {helper ? <span className="text-xs text-muted-foreground/78">{helper}</span> : null}
     </label>
   );
 }
 
 function PolicyGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-xl border border-border/75 bg-background/20 p-4">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/72">
         {title}
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{children}</div>
@@ -108,23 +117,19 @@ function PolicySummary({ policy }: { policy: VehicleTermPolicyRow }) {
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="text-base font-semibold">Policy {policy.sort_order}</div>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            policy.active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"
-          }`}
-        >
+        <div className="text-base font-semibold text-foreground">Policy {policy.sort_order}</div>
+        <Badge variant={policy.active ? "success" : "secondary"}>
           {policy.active ? "Active" : "Inactive"}
-        </span>
+        </Badge>
       </div>
-      <div className="mt-2 text-sm text-muted-foreground">
+      <div className="mt-2 text-sm text-muted-foreground/82">
         {mileageRange(policy.min_mileage, policy.max_mileage)} / {policy.max_term_months} months max
       </div>
-      <div className="mt-1 text-sm text-muted-foreground">
+      <div className="mt-1 text-sm text-muted-foreground/82">
         {ageRange(policy.min_vehicle_age, policy.max_vehicle_age)}
       </div>
       {policy.notes ? (
-        <div className="mt-1 truncate text-xs text-muted-foreground">{policy.notes}</div>
+        <div className="mt-1 truncate text-xs text-muted-foreground/72">{policy.notes}</div>
       ) : null}
     </div>
   );
@@ -139,9 +144,11 @@ export function VehicleTermPolicyCards({
 
   if (!policies.length) {
     return (
-      <div className="text-sm text-muted-foreground">
-        No vehicle term policies are configured for this account.
-      </div>
+      <EmptyState
+        className="mt-5 min-h-32"
+        title="No vehicle term policies"
+        description="No vehicle term policies are configured for this account."
+      />
     );
   }
 
@@ -151,14 +158,14 @@ export function VehicleTermPolicyCards({
         const expanded = expandedPolicyId === policy.id;
 
         return (
-          <div key={policy.id} className="rounded-lg border bg-white shadow-sm">
+          <div key={policy.id} className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] shadow-[0_16px_36px_rgba(0,0,0,0.18)]">
             <div className="flex flex-wrap items-start justify-between gap-4 p-5">
               <PolicySummary policy={policy} />
               <button
                 type="button"
                 onClick={() => setExpandedPolicyId(expanded ? null : policy.id)}
                 aria-expanded={expanded}
-                className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+                className="rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               >
                 {expanded ? "Collapse" : "Edit"}
               </button>
@@ -170,17 +177,17 @@ export function VehicleTermPolicyCards({
               }`}
             >
               <div className="overflow-hidden">
-                <SettingsForm action={updateVehicleTermPolicyAction} className="border-t p-5">
+                <SettingsForm action={updateVehicleTermPolicyAction} className="border-t border-border/70 p-5">
                   <input type="hidden" name="policy_id" value={policy.id} />
                   <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
                     <div>
-                      <div className="font-medium">Edit Policy {policy.sort_order}</div>
+                      <div className="font-medium text-foreground">Edit Policy {policy.sort_order}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
                         Changes apply to this policy only.
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 rounded-lg border bg-gray-50 px-3 py-2 text-sm">
-                      <input type="checkbox" name="active" defaultChecked={policy.active} />
+                    <label className="flex items-center gap-2 rounded-lg border border-border/75 bg-background/20 px-3 py-2 text-sm text-foreground">
+                      <Checkbox type="checkbox" name="active" defaultChecked={policy.active} />
                       Active policy
                     </label>
                   </div>
@@ -236,19 +243,19 @@ export function VehicleTermPolicyCards({
                       />
                     </PolicyGroup>
                     <PolicyGroup title="Notes">
-                      <Field label="Notes" name="notes" value={policy.notes ?? ""} />
+                      <Field label="Notes" name="notes" value={policy.notes ?? ""} multiline />
                     </PolicyGroup>
                   </div>
 
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                    <div className="text-xs text-muted-foreground">
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
+                    <div className="text-xs text-muted-foreground/72">
                       Saving updates policy {policy.sort_order} only.
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() => setExpandedPolicyId(null)}
-                        className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+                        className="rounded-lg border border-border bg-secondary px-4 py-2 text-sm text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                       >
                         Cancel
                       </button>

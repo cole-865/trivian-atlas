@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import { hasAdminAccess } from "@/lib/supabase/admin";
 import { isEmailDeliveryConfigured } from "@/lib/email/mailer";
 import { createClient } from "@/utils/supabase/server";
@@ -35,6 +36,13 @@ import {
   updateUserPermissionOverrideAction,
   updateWorkflowSettingsAction,
 } from "@/lib/settings/dealershipSettingsActions";
+import { EmptyState, NoticeBanner, PageHeader, SectionCard } from "@/components/atlas/page";
+import { Badge } from "@/components/ui/badge";
+import { Button as UiButton } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 
 const SECTIONS = [
   ["general", "General"],
@@ -75,7 +83,11 @@ function lastAuditDate(data: DealershipSettingsData, entityTypes: string[]) {
 }
 
 function EffectNote({ children }: { children: React.ReactNode }) {
-  return <div className="mt-2 text-xs text-muted-foreground">{children}</div>;
+  return (
+    <div className="mt-2 rounded-lg border border-border/70 bg-background/25 px-4 py-3 text-xs text-muted-foreground/82">
+      {children}
+    </div>
+  );
 }
 
 function name(user: { fullName?: string | null; email?: string | null; userId?: string }) {
@@ -87,19 +99,19 @@ function permissionLabel(permission: string) {
 }
 
 function Banner({ tone, children }: { tone: "notice" | "error"; children: React.ReactNode }) {
-  return (
-    <div className={`rounded-lg border px-4 py-3 text-sm ${tone === "error" ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
-      {children}
-    </div>
-  );
+  return <NoticeBanner tone={tone}>{children}</NoticeBanner>;
 }
 
 function Header({ title, text, meta }: { title: string; text: string; meta?: string }) {
   return (
     <div className="mb-5">
-      <div className="text-lg font-semibold">{title}</div>
-      <div className="mt-1 text-sm text-muted-foreground">{text}</div>
-      {meta ? <div className="mt-2 text-xs text-muted-foreground">{meta}</div> : null}
+      <div className="text-lg font-semibold text-foreground">{title}</div>
+      <div className="mt-1 text-sm text-muted-foreground/82">{text}</div>
+      {meta ? (
+        <div className="mt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/72">
+          {meta}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -129,16 +141,35 @@ function Field({
 }) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-medium">{label}</span>
+      <Label>{label}</Label>
       {suffix ? (
-        <span className="flex overflow-hidden rounded-lg border bg-white focus-within:ring-1 focus-within:ring-black">
-          <input name={name} type={type} required={required} min={min} max={max} step={step} defaultValue={value ?? ""} className="min-w-0 flex-1 border-0 px-3 py-2 text-sm outline-none" />
-          <span className="border-l bg-gray-50 px-3 py-2 text-sm text-muted-foreground">{suffix}</span>
+        <span className="flex overflow-hidden rounded-lg border border-input bg-input/45 shadow-sm focus-within:ring-2 focus-within:ring-ring">
+          <Input
+            name={name}
+            type={type}
+            required={required}
+            min={min}
+            max={max}
+            step={step}
+            defaultValue={value ?? ""}
+            className="min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+          />
+          <span className="border-l border-border/80 bg-background/35 px-3 py-2 text-sm text-muted-foreground">
+            {suffix}
+          </span>
         </span>
       ) : (
-        <input name={name} type={type} required={required} min={min} max={max} step={step} defaultValue={value ?? ""} className="rounded-lg border px-3 py-2 text-sm" />
+        <Input
+          name={name}
+          type={type}
+          required={required}
+          min={min}
+          max={max}
+          step={step}
+          defaultValue={value ?? ""}
+        />
       )}
-      {helper ? <span className="text-xs text-muted-foreground">{helper}</span> : null}
+      {helper ? <span className="text-xs text-muted-foreground/78">{helper}</span> : null}
     </label>
   );
 }
@@ -155,12 +186,33 @@ function Toggle({
   checked: boolean;
 }) {
   return (
-    <label className="flex items-start gap-3 rounded-lg border px-3 py-3">
-      <input type="checkbox" name={name} defaultChecked={checked} className="mt-1 h-4 w-4 rounded border-gray-300" />
+    <label className="flex items-start gap-3 rounded-xl border border-border/75 bg-background/20 px-4 py-3.5">
+      <Checkbox type="checkbox" name={name} defaultChecked={checked} className="mt-0.5" />
       <span>
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="block text-sm text-muted-foreground">{text}</span>
+        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-sm text-muted-foreground/82">{text}</span>
       </span>
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  name,
+  value,
+  children,
+}: {
+  label: string;
+  name: string;
+  value?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="grid gap-2">
+      <Label>{label}</Label>
+      <NativeSelect name={name} defaultValue={value}>
+        {children}
+      </NativeSelect>
     </label>
   );
 }
@@ -173,7 +225,7 @@ function General({ data }: { data: DealershipSettingsData }) {
   const org = data.organization;
   const profile = data.profile;
   return (
-    <SettingsForm action={updateGeneralSettingsAction} className="rounded-lg border bg-white p-6 shadow-sm">
+    <SettingsForm action={updateGeneralSettingsAction} className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <Header title="General" text="Dealership identity, contact details, and account defaults." meta={`Last updated: ${date(org?.updated_at)}`} />
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Dealership display name" name="display_name" value={org?.name} required />
@@ -191,7 +243,7 @@ function General({ data }: { data: DealershipSettingsData }) {
         <Field label="Postal code" name="postal_code" value={profile?.postal_code} />
         <Field label="Country" name="country" value={profile?.country ?? "US"} />
       </div>
-      <div className="mt-5 rounded-lg border bg-gray-50 px-4 py-3 text-sm text-muted-foreground">Logo upload placeholder: storage path support exists in the model, but upload plumbing is intentionally not wired in this pass.</div>
+      <div className="mt-5 rounded-xl border border-border/70 bg-background/25 px-4 py-3 text-sm text-muted-foreground/82">Logo upload placeholder: storage path support exists in the model, but upload plumbing is intentionally not wired in this pass.</div>
       <div className="mt-5"><Button /></div>
     </SettingsForm>
   );
@@ -199,15 +251,12 @@ function General({ data }: { data: DealershipSettingsData }) {
 
 function InviteForm() {
   return (
-    <SettingsForm action={createOrganizationInviteAction} disableSaveUntilDirty={false} className="grid gap-4 rounded-lg border p-4 md:grid-cols-4">
+    <SettingsForm action={createOrganizationInviteAction} disableSaveUntilDirty={false} className="grid gap-4 rounded-xl border border-border/75 bg-background/20 p-4 md:grid-cols-4">
       <Field label="Name" name="full_name" required />
       <Field label="Email" name="email" type="email" required />
-      <label className="grid gap-2">
-        <span className="text-sm font-medium">Role</span>
-        <select name="role" defaultValue="sales" className="rounded-lg border px-3 py-2 text-sm">
+      <SelectField label="Role" name="role" value="sales">
           {ORG_MANAGED_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-        </select>
-      </label>
+      </SelectField>
       <div className="flex items-end"><Button disabledWhenPristine={false}>Send invite</Button></div>
     </SettingsForm>
   );
@@ -215,28 +264,35 @@ function InviteForm() {
 
 function Users({ data }: { data: ManagementData | null }) {
   if (!data) {
-    return <div className="rounded-lg border bg-white p-6 shadow-sm"><Header title="Users & Roles" text="User management is unavailable without account management permission." /></div>;
+    return (
+      <SectionCard title="Users & Roles" description="User management is unavailable without account management permission.">
+        <EmptyState
+          title="User management unavailable"
+          description="Atlas could not load organization members because your account does not have the required management access in the current organization."
+        />
+      </SectionCard>
+    );
   }
 
   return (
-    <div className="rounded-lg border bg-white p-6 shadow-sm">
+    <div className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <Header title="Users & Roles" text="Invite staff and manage active, pending, and inactive account access." />
       <InviteForm />
       <div className="mt-6 grid gap-5">
-        <div className="rounded-lg border">
-          <div className="border-b px-4 py-3 text-sm font-medium">Active</div>
+        <div className="overflow-hidden rounded-xl border border-border/75 bg-background/20">
+          <div className="border-b border-border/70 px-4 py-3 text-sm font-medium text-foreground">Active</div>
           {data.activeUsers.length ? data.activeUsers.map((member) => (
             <div key={member.userId} className="grid gap-4 border-b px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_180px_140px]">
               <div>
-                <div className="font-medium">{name(member)}</div>
-                <div className="text-sm text-muted-foreground">{member.email || member.userId}</div>
-                <div className="mt-2 text-xs text-muted-foreground">Last active: not available. Member since {date(member.createdAt)}.</div>
+                <div className="font-medium text-foreground">{name(member)}</div>
+                <div className="text-sm text-muted-foreground/82">{member.email || member.userId}</div>
+                <div className="mt-2 text-xs text-muted-foreground/72">Last active: not available. Member since {date(member.createdAt)}.</div>
               </div>
               <SettingsForm action={updateOrganizationMembershipAction} className="grid content-start gap-2">
                 <input type="hidden" name="user_id" value={member.userId} />
-                <select name="role" defaultValue={member.role} className="rounded-lg border px-3 py-2 text-sm">
+                <NativeSelect name="role" defaultValue={member.role}>
                   {ORG_MANAGED_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-                </select>
+                </NativeSelect>
                 <Button variant="secondary">Save role</Button>
               </SettingsForm>
               <SettingsForm action={updateOrganizationMembershipAction} disableSaveUntilDirty={false} className="flex items-start lg:justify-end">
@@ -245,16 +301,16 @@ function Users({ data }: { data: ManagementData | null }) {
                 <Button variant="secondary" disabledWhenPristine={false}>Deactivate</Button>
               </SettingsForm>
             </div>
-          )) : <div className="px-4 py-6 text-sm text-muted-foreground">No active users are assigned to this account yet.</div>}
+          )) : <EmptyState className="m-4 min-h-32" title="No active users" description="No active users are assigned to this account yet." />}
         </div>
 
-        <div className="rounded-lg border">
-          <div className="border-b px-4 py-3 text-sm font-medium">Pending</div>
+        <div className="overflow-hidden rounded-xl border border-border/75 bg-background/20">
+          <div className="border-b border-border/70 px-4 py-3 text-sm font-medium text-foreground">Pending</div>
           {data.pendingInvites.length ? data.pendingInvites.map((invite) => (
             <div key={invite.id} className="grid gap-4 border-b px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_180px]">
               <div>
-                <div className="font-medium">{invite.fullName || invite.email}</div>
-                <div className="text-sm text-muted-foreground">{invite.email}</div>
+                <div className="font-medium text-foreground">{invite.fullName || invite.email}</div>
+                <div className="text-sm text-muted-foreground/82">{invite.email}</div>
                 <div className="mt-2 text-xs text-muted-foreground">{invite.role} · Sent {date(invite.sentAt)} · Expires {date(invite.expiresAt)}</div>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -268,17 +324,23 @@ function Users({ data }: { data: ManagementData | null }) {
                 </SettingsForm>
               </div>
             </div>
-          )) : <div className="px-4 py-6 text-sm text-muted-foreground">No pending invites for this account.</div>}
+          )) : <EmptyState className="m-4 min-h-32" title="No pending invites" description="No pending invites for this account." />}
         </div>
 
-        <div className="rounded-lg border">
-          <div className="border-b px-4 py-3 text-sm font-medium">Inactive</div>
+        <details className="group overflow-hidden rounded-xl border border-border/75 bg-background/20">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-foreground">
+            <span>Inactive</span>
+            <span className="flex items-center gap-2 text-xs uppercase tracking-[0.08em] text-muted-foreground/72">
+              Hidden by default
+              <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+            </span>
+          </summary>
           {data.inactiveUsers.length ? data.inactiveUsers.map((member) => (
             <div key={member.userId} className="grid gap-4 border-b px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_160px]">
               <div>
-                <div className="font-medium">{name(member)}</div>
-                <div className="text-sm text-muted-foreground">{member.email || member.userId}</div>
-                <div className="mt-2 text-xs text-muted-foreground">Role on deactivated membership: {member.role}. Last changed {date(member.updatedAt)}.</div>
+                <div className="font-medium text-foreground">{name(member)}</div>
+                <div className="text-sm text-muted-foreground/82">{member.email || member.userId}</div>
+                <div className="mt-2 text-xs text-muted-foreground/72">Role on deactivated membership: {member.role}. Last changed {date(member.updatedAt)}.</div>
               </div>
               <SettingsForm action={updateOrganizationMembershipAction} disableSaveUntilDirty={false} className="flex items-start lg:justify-end">
                 <input type="hidden" name="user_id" value={member.userId} />
@@ -286,8 +348,8 @@ function Users({ data }: { data: ManagementData | null }) {
                 <Button variant="secondary" disabledWhenPristine={false}>Reactivate</Button>
               </SettingsForm>
             </div>
-          )) : <div className="px-4 py-6 text-sm text-muted-foreground">No inactive memberships for this account.</div>}
-        </div>
+          )) : <EmptyState className="m-4 min-h-32" title="No inactive memberships" description="No inactive memberships for this account." />}
+        </details>
       </div>
     </div>
   );
@@ -297,11 +359,11 @@ function Permissions({ data, managementData }: { data: DealershipSettingsData; m
   const matrix = buildRolePermissionMatrix(data.rolePermissions);
   const overrides = new Map(data.userPermissionOverrides.map((row) => [`${row.user_id}:${row.permission_key}`, row.allowed]));
   return (
-    <div className="rounded-lg border bg-white p-6 shadow-sm">
+    <div className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <Header title="Permissions" text="Defines what each role can do. User overrides take priority." />
       <div className="grid gap-4 lg:grid-cols-3">
         {ORG_MANAGED_ROLES.map((role) => (
-          <SettingsForm key={role} action={updateRolePermissionsAction} className="rounded-lg border p-4">
+          <SettingsForm key={role} action={updateRolePermissionsAction} className="rounded-xl border border-border/75 bg-background/20 p-4">
             <input type="hidden" name="role" value={role} />
             {DEALERSHIP_PERMISSION_KEYS.filter((permission) => permission === "approve_overrides").map((permission) => (
               matrix.get(`${role}:${permission}`) ?? DEFAULT_ROLE_PERMISSION_PRESETS[role].includes(permission)
@@ -309,13 +371,13 @@ function Permissions({ data, managementData }: { data: DealershipSettingsData; m
                 : null
             ))}
             <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="font-medium capitalize">{role}</div>
-              <div className="text-xs text-muted-foreground">Role preset</div>
+              <div className="font-medium capitalize text-foreground">{role}</div>
+              <Badge variant="secondary">{role}</Badge>
             </div>
             <div className="grid gap-2">
               {VISIBLE_PERMISSION_KEYS.map((permission) => (
-                <label key={permission} className="flex items-center gap-2 text-sm">
-                  <input
+                <label key={permission} className="flex items-center gap-3 rounded-lg border border-border/70 bg-background/20 px-3 py-2 text-sm text-foreground">
+                  <Checkbox
                     type="checkbox"
                     name={permission}
                     defaultChecked={matrix.get(`${role}:${permission}`) ?? DEFAULT_ROLE_PERMISSION_PRESETS[role].includes(permission)}
@@ -328,9 +390,9 @@ function Permissions({ data, managementData }: { data: DealershipSettingsData; m
           </SettingsForm>
         ))}
       </div>
-      <div className="mt-6 rounded-lg border p-4">
-        <div className="font-medium">User overrides</div>
-        <div className="mt-1 text-sm text-muted-foreground">Set exceptions for one user. Inherited means the role preset controls access.</div>
+      <div className="mt-6 rounded-xl border border-border/75 bg-background/20 p-4">
+        <div className="font-medium text-foreground">User overrides</div>
+        <div className="mt-1 text-sm text-muted-foreground/82">Set exceptions for one user. Inherited means the role preset controls access.</div>
         <div className="mt-4 grid gap-4">
           {(managementData?.activeUsers ?? []).map((member) => {
             const selectedPermission = VISIBLE_PERMISSION_KEYS[0];
@@ -340,34 +402,34 @@ function Permissions({ data, managementData }: { data: DealershipSettingsData; m
               (row) => row.user_id === member.userId && row.permission_key !== "approve_overrides"
             );
             return (
-            <SettingsForm key={member.userId} action={updateUserPermissionOverrideAction} className="grid gap-3 rounded-lg border bg-gray-50 p-3 md:grid-cols-[minmax(0,1fr)_240px_190px_110px]">
+            <SettingsForm key={member.userId} action={updateUserPermissionOverrideAction} className="grid gap-3 rounded-xl border border-border/75 bg-background/20 p-3 md:grid-cols-[minmax(0,1fr)_240px_190px_110px]">
               <input type="hidden" name="user_id" value={member.userId} />
               <div className="text-sm">
-                <div className="font-medium">{name(member)}</div>
-                <div className="text-muted-foreground">Current role: {member.role}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="font-medium text-foreground">{name(member)}</div>
+                <div className="text-muted-foreground/82">Current role: {member.role}</div>
+                <div className="mt-1 text-xs text-muted-foreground/78">
                   {overrideAllowed === undefined
                     ? `Inherited ${roleAllowed ? "allowed" : "denied"} from role for ${permissionLabel(selectedPermission)}.`
                     : `Explicitly ${overrideAllowed ? "allowed" : "denied"} for ${permissionLabel(selectedPermission)}.`}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="mt-1 text-xs text-muted-foreground/78">
                   {memberOverrides.length
                     ? `Explicit overrides: ${memberOverrides.map((row) => `${permissionLabel(row.permission_key)} ${row.allowed ? "allowed" : "denied"}`).join(", ")}.`
                     : "No explicit overrides; all permissions inherit from role."}
                 </div>
               </div>
-              <select name="permission" className="rounded-lg border px-3 py-2 text-sm">
+              <NativeSelect name="permission">
                 {VISIBLE_PERMISSION_KEYS.map((permission) => <option key={permission} value={permission}>{permissionLabel(permission)}</option>)}
-              </select>
-              <select name="value" defaultValue={overrideAllowed === undefined ? "inherit" : String(overrideAllowed)} className="rounded-lg border px-3 py-2 text-sm">
+              </NativeSelect>
+              <NativeSelect name="value" defaultValue={overrideAllowed === undefined ? "inherit" : String(overrideAllowed)}>
                 <option value="inherit">Inherit from role</option>
                 <option value="true">Allow</option>
                 <option value="false">Deny</option>
-              </select>
+              </NativeSelect>
               <Button variant="secondary">Save override</Button>
             </SettingsForm>
           )})}
-          {(managementData?.activeUsers ?? []).length ? null : <div className="text-sm text-muted-foreground">No active users are available for overrides.</div>}
+          {(managementData?.activeUsers ?? []).length ? null : <EmptyState className="min-h-32" title="No active users available" description="Atlas cannot apply user-specific permission overrides until at least one active organization member exists." />}
         </div>
       </div>
     </div>
@@ -378,12 +440,12 @@ function Underwriting({ data }: { data: DealershipSettingsData }) {
   const lastUpdated = lastAuditDate(data, ["underwriting_tier_policy", "vehicle_term_policy"]);
   return (
     <div className="grid gap-6">
-      <div className="rounded-lg border bg-white p-6 shadow-sm">
+      <div className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
         <Header title="Underwriting" text="These rules control deal approvals and limits. Changes apply to new deals only." meta={`Last updated: ${date(lastUpdated)}`} />
         <EffectNote>Existing deals will not be recalculated until they are restructured.</EffectNote>
         <UnderwritingTierCards policies={data.tierPolicies} />
       </div>
-      <div className="rounded-lg border bg-white p-6 shadow-sm">
+      <div className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
         <Header title="Vehicle Term Policy" text="Term eligibility by vehicle age and mileage. Changes apply to new deals only." />
         <VehicleTermPolicyCards policies={data.vehicleTermPolicies} />
       </div>
@@ -394,7 +456,7 @@ function Underwriting({ data }: { data: DealershipSettingsData }) {
 function Workflow({ settings, data }: { settings: WorkflowSettings; data: DealershipSettingsData }) {
   const lastUpdated = lastAuditDate(data, ["organization_settings"]);
   return (
-    <SettingsForm action={updateWorkflowSettingsAction} className="rounded-lg border bg-white p-6 shadow-sm">
+    <SettingsForm action={updateWorkflowSettingsAction} className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <Header title="Deal Workflow" text="Controls what steps are required before a deal can move forward." meta={`Last updated: ${date(lastUpdated)}`} />
       <EffectNote>Changes apply to new workflow checks and do not rewrite completed deal history.</EffectNote>
       <div className="grid gap-3 md:grid-cols-2">
@@ -413,9 +475,18 @@ function Workflow({ settings, data }: { settings: WorkflowSettings; data: Dealer
 
 function Products({ data }: { data: DealershipSettingsData }) {
   const config = data.trivianConfig;
-  if (!config) return <div className="rounded-lg border bg-white p-6 shadow-sm"><Header title="Products & Pricing" text="No Trivian config row exists for this account yet." /></div>;
+  if (!config) {
+    return (
+      <SectionCard title="Products & Pricing" description="No Trivian config row exists for this account yet.">
+        <EmptyState
+          title="No pricing config found"
+          description="Atlas could not find an organization-scoped Trivian config row for the current account."
+        />
+      </SectionCard>
+    );
+  }
   return (
-    <SettingsForm action={updateTrivianConfigAction} className="rounded-lg border bg-white p-6 shadow-sm">
+    <SettingsForm action={updateTrivianConfigAction} className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <input type="hidden" name="config_id" value={config.id} />
       <Header title="Products & Pricing" text="Defaults that feed future deal structures and restructures." meta={`Last updated: ${date(config.updated_at)}`} />
       <EffectNote>Existing deals keep their current structure until they are restructured.</EffectNote>
@@ -439,7 +510,7 @@ function Products({ data }: { data: DealershipSettingsData }) {
 function Notifications({ data }: { data: DealershipSettingsData }) {
   const s = data.notifications;
   return (
-    <SettingsForm action={updateNotificationsAction} className="rounded-lg border bg-white p-6 shadow-sm">
+    <SettingsForm action={updateNotificationsAction} className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <Header title="Notifications" text="Controls which account alerts Atlas sends through configured delivery channels." />
       <div className="grid gap-3 md:grid-cols-2">
         <Toggle name="deal_submitted_alerts" label="Deal submitted alerts" text="Controls existing funding-review alerts where wired." checked={s.dealSubmittedAlerts} />
@@ -455,11 +526,11 @@ function Notifications({ data }: { data: DealershipSettingsData }) {
 
 function Integrations({ data, emailConfigured }: { data: DealershipSettingsData; emailConfigured: boolean }) {
   return (
-    <SettingsForm action={updateIntegrationsAction} className="rounded-lg border bg-white p-6 shadow-sm">
+    <SettingsForm action={updateIntegrationsAction} className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <Header title="Integrations" text="Connection status and account-level integration switches. Secrets are not shown here." />
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border p-4"><div className="font-medium">Email delivery</div><div className="mt-1 text-sm text-muted-foreground">{emailConfigured ? "Configured" : "Not configured"}</div></div>
-        <div className="rounded-lg border p-4"><div className="font-medium">Storage / document processing</div><div className="mt-1 text-sm text-muted-foreground">Supabase storage routes are present; secrets are not shown.</div></div>
+        <div className="rounded-xl border border-border/75 bg-background/20 p-4"><div className="font-medium text-foreground">Email delivery</div><div className="mt-1 text-sm text-muted-foreground/82">{emailConfigured ? "Configured" : "Not configured"}</div></div>
+        <div className="rounded-xl border border-border/75 bg-background/20 p-4"><div className="font-medium text-foreground">Storage / document processing</div><div className="mt-1 text-sm text-muted-foreground/82">Supabase storage routes are present; secrets are not shown.</div></div>
         <Toggle name="inventory_import_enabled" label="DMS / inventory import" text="Stored account flag for future import scheduling." checked={data.integrations.inventoryImportEnabled} />
         <Toggle name="webhook_placeholders_enabled" label="Webhook/API placeholders" text="Stored account flag; no secret material is captured." checked={data.integrations.webhookPlaceholdersEnabled} />
       </div>
@@ -470,18 +541,18 @@ function Integrations({ data, emailConfigured }: { data: DealershipSettingsData;
 
 function Audit({ data }: { data: DealershipSettingsData }) {
   return (
-    <div className="rounded-lg border bg-white p-6 shadow-sm">
+    <div className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
       <Header title="Audit / Compliance" text="Recent account-scoped settings changes." />
-      <div className="rounded-lg border">
+      <div className="overflow-hidden rounded-xl border border-border/75 bg-background/20">
         {data.auditLogs.length ? data.auditLogs.map((log) => (
-          <div key={log.id} className="border-b px-4 py-3 last:border-b-0">
+          <div key={log.id} className="border-b border-border/70 px-4 py-3 last:border-b-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="font-medium">{log.change_type ?? "Settings change"}</div>
-              <div className="text-xs text-muted-foreground">{date(log.created_at)}</div>
+              <div className="font-medium text-foreground">{log.change_type ?? "Settings change"}</div>
+              <div className="text-xs text-muted-foreground/72">{date(log.created_at)}</div>
             </div>
-            <div className="mt-1 text-sm text-muted-foreground">Entity: {log.entity_type ?? "unknown"} · Changed by: {log.changed_by_user_id ?? "unknown"}</div>
+            <div className="mt-1 text-sm text-muted-foreground/82">Entity: {log.entity_type ?? "unknown"} · Changed by: {log.changed_by_user_id ?? "unknown"}</div>
           </div>
-        )) : <div className="px-4 py-6 text-sm text-muted-foreground">No settings audit history yet. Future changes made here will be logged.</div>}
+        )) : <EmptyState className="m-4 min-h-32" title="No settings audit history" description="Future changes made here will be logged." />}
       </div>
     </div>
   );
@@ -538,40 +609,51 @@ export default async function SettingsPage({
       {!adminAccess ? <Banner tone="error">Dealership settings require SUPABASE_SERVICE_ROLE_KEY for account-scoped administration.</Banner> : null}
       {canManageUsers && adminAccess && !emailConfigured ? <Banner tone="error">Invitations can be created, but email delivery is not configured yet.</Banner> : null}
 
-      <div className="rounded-lg border bg-white p-6 shadow-sm">
-        <div className="text-xl font-semibold">Settings</div>
-        <div className="mt-2 text-sm text-muted-foreground">
-          Editing {authContext.currentOrganization?.name ?? "no selected account"}
-          {authContext.currentOrganization?.slug ? ` (${authContext.currentOrganization.slug})` : ""}.
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Administration"
+        title="Settings"
+        description={`Editing ${authContext.currentOrganization?.name ?? "no selected account"}${authContext.currentOrganization?.slug ? ` (${authContext.currentOrganization.slug})` : ""}.`}
+        actions={
+          selected === "users" && canManageUsers ? (
+            <Badge variant="default">User management</Badge>
+          ) : selected === "audit" && canViewAudit ? (
+            <Badge variant="secondary">Audit visible</Badge>
+          ) : (
+            <Badge variant="secondary">Organization scoped</Badge>
+          )
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="rounded-lg border bg-white p-3 shadow-sm">
+        <aside className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-3 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
           <nav className="grid gap-1">
             {SECTIONS.map(([key, label]) => (
-              <Link
+              <UiButton
                 key={key}
-                href={`/settings?section=${key}`}
-                className={`rounded-lg px-3 py-2 text-sm ${selected === key ? "bg-black text-white" : "hover:bg-gray-50"}`}
+                asChild
+                variant={selected === key ? "default" : "ghost"}
+                className="justify-start"
               >
-                {label}
-              </Link>
+                <Link href={`/settings?section=${key}`}>{label}</Link>
+              </UiButton>
             ))}
           </nav>
         </aside>
 
         <section>
           {!settingsData ? (
-            <div className="rounded-lg border bg-white p-6 text-sm text-muted-foreground shadow-sm">
-              Settings data is unavailable until an account is selected and admin access is configured.
-            </div>
+            <SectionCard title="Settings unavailable" description="Settings data is unavailable until an account is selected and admin access is configured.">
+              <EmptyState
+                title="No settings data available"
+                description="Atlas needs a selected organization and configured admin access before this page can render account-scoped settings."
+              />
+            </SectionCard>
           ) : selected === "general" ? (
             <General data={settingsData} />
           ) : selected === "users" ? (
             <Users data={managementData} />
           ) : selected === "permissions" ? (
-            canManageUsers ? <Permissions data={settingsData} managementData={managementData} /> : <div className="rounded-lg border bg-white p-6 text-sm text-muted-foreground shadow-sm">You do not have permission to manage account permissions.</div>
+            canManageUsers ? <Permissions data={settingsData} managementData={managementData} /> : <SectionCard title="Permissions" description="You do not have permission to manage account permissions."><EmptyState title="Permission management unavailable" description="Your current organization role does not allow updates to role permissions or user overrides." /></SectionCard>
           ) : selected === "underwriting" ? (
             <Underwriting data={settingsData} />
           ) : selected === "workflow" ? (
@@ -583,7 +665,7 @@ export default async function SettingsPage({
           ) : selected === "integrations" ? (
             <Integrations data={settingsData} emailConfigured={emailConfigured} />
           ) : selected === "audit" ? (
-            canViewAudit ? <Audit data={settingsData} /> : <div className="rounded-lg border bg-white p-6 text-sm text-muted-foreground shadow-sm">You do not have permission to view audit logs.</div>
+            canViewAudit ? <Audit data={settingsData} /> : <SectionCard title="Audit / Compliance" description="You do not have permission to view audit logs."><EmptyState title="Audit log unavailable" description="Your current role cannot view account-scoped audit history for the selected organization." /></SectionCard>
           ) : null}
         </section>
       </div>

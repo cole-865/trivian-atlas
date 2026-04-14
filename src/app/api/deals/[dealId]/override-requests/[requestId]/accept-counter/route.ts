@@ -5,9 +5,11 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { getAuthContext } from "@/lib/auth/userRole";
+import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
 import { loadDealStructurePageData } from "@/lib/deals/dealStructureLoader";
 import {
   acceptLatestDealOverrideCounterOffer,
+  approveAcceptedDealOverrideCounterOffer,
   listDealOverrideCounterOffers,
 } from "@/lib/deals/dealOverrideServer";
 
@@ -71,9 +73,32 @@ export async function POST(
       persist: true,
     });
 
+    await approveAcceptedDealOverrideCounterOffer({
+      organizationId,
+      dealId,
+      requestId,
+      liveStructure: buildOverrideStructureSnapshot({
+        vehicleId: refreshed.structure.vehicle.id,
+        cashDown: refreshed.structure.structure.cash_down_effective,
+        amountFinanced: refreshed.structure.structure.amount_financed,
+        monthlyPayment: refreshed.structure.structure.monthly_payment,
+        termMonths: refreshed.structure.structure.term_months,
+        ltv:
+          refreshed.structure.vehicle.jd_power_retail_book > 0
+            ? refreshed.structure.structure.ltv
+            : null,
+        pti: refreshed.structure.structure.pti,
+      }),
+    });
+
+    const finalState = await loadDealStructurePageData({
+      dealId,
+      persist: false,
+    });
+
     return NextResponse.json({
       acceptedCounterOfferId: accepted.id,
-      ...refreshed,
+      ...finalState,
     });
   } catch (error) {
     const offers = await listDealOverrideCounterOffers({

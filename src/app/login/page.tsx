@@ -2,6 +2,10 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { NoticeBanner, SectionCard } from "@/components/atlas/page";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 function LoginPageContent() {
@@ -70,88 +74,85 @@ function LoginPageContent() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold mb-2">Trivian Atlas</h1>
-        <p className="text-sm text-gray-600 mb-6">
-          {mode === "login"
-            ? "Log in to continue."
-            : "Create an account with the email address that was invited."}
-        </p>
-
-        {inviteEmail ? (
-          <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-            Invite email: <span className="font-medium">{inviteEmail}</span>
-          </div>
-        ) : null}
-
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">Email</label>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium">Password</label>
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-          </div>
-
-          {msg ? (
-            <div className={pageNotice ? "text-sm text-emerald-700" : "text-sm text-red-600"}>
-              {msg}
-            </div>
+      <div className="w-full max-w-md">
+        <SectionCard
+          eyebrow="Access"
+          title="Trivian Atlas"
+          description={
+            mode === "login"
+              ? "Log in to continue."
+              : "Create an account with the email address that was invited."
+          }
+        >
+          {inviteEmail ? (
+            <NoticeBanner tone="notice">
+              Invite email: <span className="font-medium">{inviteEmail}</span>
+            </NoticeBanner>
           ) : null}
 
-          <button
-            className="w-full rounded-md bg-black text-white py-2 disabled:opacity-50"
-            disabled={loading}
-            type="submit"
-          >
-            {loading ? "Working..." : mode === "login" ? "Log In" : "Create Account"}
-          </button>
-        </form>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
 
-        <div className="mt-4 text-sm">
-          {mode === "login" ? (
-            <button
-              className="underline"
-              onClick={() => {
-                setMsg(null);
-                setMode("signup");
-              }}
-            >
-              Need an account? Sign up
-            </button>
-          ) : (
-            <button
-              className="underline"
-              onClick={() => {
-                setMsg(null);
-                setMode("login");
-              }}
-            >
-              Already have an account? Log in
-            </button>
-          )}
-        </div>
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+            </div>
+
+            {msg ? (
+              <NoticeBanner tone={pageNotice ? "notice" : "error"}>{msg}</NoticeBanner>
+            ) : null}
+
+            <Button className="w-full" disabled={loading} type="submit">
+              {loading ? "Working..." : mode === "login" ? "Log In" : "Create Account"}
+            </Button>
+          </form>
+
+          <div className="mt-4 text-sm">
+            {mode === "login" ? (
+              <button
+                className="text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+                onClick={() => {
+                  setMsg(null);
+                  setMode("signup");
+                }}
+              >
+                Need an account? Sign up
+              </button>
+            ) : (
+              <button
+                className="text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+                onClick={() => {
+                  setMsg(null);
+                  setMode("login");
+                }}
+              >
+                Already have an account? Log in
+              </button>
+            )}
+          </div>
+        </SectionCard>
       </div>
     </div>
   );
@@ -162,8 +163,14 @@ export default function LoginPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center p-6">
-          <div className="w-full max-w-md rounded-2xl border p-6 shadow-sm">
-            <h1 className="text-2xl font-semibold mb-2">Trivian Atlas</h1>
+          <div className="w-full max-w-md">
+            <SectionCard
+              eyebrow="Access"
+              title="Trivian Atlas"
+              description="Loading sign-in..."
+            >
+              <div className="text-sm text-muted-foreground/82">Preparing your session.</div>
+            </SectionCard>
             <p className="text-sm text-gray-600">Loading sign-in…</p>
           </div>
         </div>

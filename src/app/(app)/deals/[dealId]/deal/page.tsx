@@ -1427,17 +1427,19 @@ export default function DealDealPage() {
                         matchingRequest &&
                         matchingRequest.status === "pending" ? (
                           <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                            <textarea
-                              value={reviewNotes[matchingRequest.id] ?? ""}
-                              onChange={(event) =>
-                                setReviewNotes((current) => ({
-                                  ...current,
-                                  [matchingRequest.id]: event.target.value,
-                                }))
-                              }
-                              placeholder="Required for decline or counter offer..."
-                              style={smallTextarea}
-                            />
+                            {expandedCounterRequestId === matchingRequest.id ? null : (
+                              <textarea
+                                value={reviewNotes[matchingRequest.id] ?? ""}
+                                onChange={(event) =>
+                                  setReviewNotes((current) => ({
+                                    ...current,
+                                    [matchingRequest.id]: event.target.value,
+                                  }))
+                                }
+                                placeholder="Required for decline or counter offer..."
+                                style={smallTextarea}
+                              />
+                            )}
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               <button
                                 type="button"
@@ -1507,7 +1509,7 @@ export default function DealDealPage() {
                                         Edit the current column, then calculate to validate the counter.
                                       </div>
                                     </div>
-                                    <div style={counterWorksheet}>
+                                     <div style={counterWorksheet}>
                                       <div style={counterHeaderCell}>Field</div>
                                       <div style={counterHeaderCell}>Approved</div>
                                       <div style={counterHeaderCell}>Current</div>
@@ -1667,13 +1669,24 @@ export default function DealDealPage() {
                                         current={formatPercent(displayStructure.ltv)}
                                         issue={issueFor("ltv")}
                                       />
-                                      <CounterRow
-                                        label="Additional Down"
-                                        approved={money(dealMath.additional_down_needed)}
-                                        current={money(displayStructure.additional_down_needed)}
-                                        issue={issueFor("additional_down")}
-                                      />
-                                    </div>
+                                       <CounterRow
+                                         label="Additional Down"
+                                         approved={money(dealMath.additional_down_needed)}
+                                         current={money(displayStructure.additional_down_needed)}
+                                         issue={issueFor("additional_down")}
+                                       />
+                                     </div>
+                                    <textarea
+                                      value={reviewNotes[requestId] ?? ""}
+                                      onChange={(event) =>
+                                        setReviewNotes((current) => ({
+                                          ...current,
+                                          [requestId]: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="Required for decline or counter offer..."
+                                      style={smallTextarea}
+                                    />
                                     <div style={counterWorksheetActions}>
                                       <button
                                         type="button"

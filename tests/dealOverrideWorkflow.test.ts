@@ -151,6 +151,40 @@ test("approved overrides become stale when the structure fingerprint no longer m
   assert.equal(staleReason, "Deal structure changed after override approval.");
 });
 
+test("accepted counter offer stays valid when fingerprint includes pti", () => {
+  const acceptedCounterStructure = buildOverrideStructureSnapshot({
+    vehicleId: "veh-1",
+    cashDown: 2000,
+    amountFinanced: 16484.22,
+    monthlyPayment: 580.1,
+    termMonths: 48,
+    ltv: 1.49,
+    pti: 0.2184,
+  });
+
+  const evaluation = evaluateDealOverrides({
+    liveStructure: acceptedCounterStructure,
+    failReasons: ["PTI"],
+    requests: [
+      {
+        blockerCode: "PTI",
+        requestedAt: "2026-04-09T00:00:00.000Z",
+        staleReason: null,
+        status: "approved",
+        structureFingerprint: buildDealOverrideFingerprint(acceptedCounterStructure),
+        vehicleId: "veh-1",
+      },
+    ],
+  });
+
+  assert.equal(evaluation.currentFingerprint, buildDealOverrideFingerprint(acceptedCounterStructure));
+  assert.deepEqual(evaluation.effectiveBlockers, []);
+  assert.equal(
+    evaluation.blockerStates.find((state) => state.blockerCode === "PTI")?.state,
+    "overridden"
+  );
+});
+
 test("blocked and stale blockers can request a new override", () => {
   assert.equal(canRequestOverrideForBlockerState("blocked"), true);
   assert.equal(canRequestOverrideForBlockerState("stale"), true);

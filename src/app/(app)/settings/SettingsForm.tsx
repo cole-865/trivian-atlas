@@ -12,6 +12,8 @@ import {
   type ReactNode,
 } from "react";
 import { useFormStatus } from "react-dom";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type FormAction = ComponentProps<"form">["action"];
 
@@ -69,10 +71,10 @@ function markChangedField(target: EventTarget | null) {
   }
 
   const changed = fieldChanged(target);
-  target.classList.toggle("border-amber-400", changed);
-  target.classList.toggle("bg-amber-50", changed);
+  target.classList.toggle("border-primary/70", changed);
+  target.classList.toggle("bg-primary/8", changed);
   target.classList.toggle("ring-1", changed);
-  target.classList.toggle("ring-amber-200", changed);
+  target.classList.toggle("ring-primary/30", changed);
 }
 
 export function SettingsForm({
@@ -137,10 +139,12 @@ export function SaveButton({
 
   const disabled = pending || (disabledWhenPristine && !dirty);
   const label = pending ? pendingLabel : children;
-  const className =
-    variant === "primary"
-      ? "rounded-lg bg-black px-4 py-2 text-sm text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600 disabled:hover:opacity-100"
-      : "rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400";
+  const className = cn(
+    buttonVariants({
+      variant: variant === "primary" ? "default" : "secondary",
+    }),
+    "disabled:cursor-not-allowed"
+  );
 
   return (
     <button type="submit" disabled={disabled} className={className}>
