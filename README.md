@@ -1,6 +1,6 @@
-# Trivian Atlas
+# Atlas
 
-Trivian Atlas is a multi-tenant loan origination and underwriting system for independent dealerships.
+Atlas is a multi-tenant loan origination and underwriting system for independent dealerships.
 
 ## Stack
 
@@ -13,8 +13,8 @@ Trivian Atlas is a multi-tenant loan origination and underwriting system for ind
 
 ## Workspaces
 
-- Web app: `C:\dev\trivian-atlas`
-- Credit worker: `C:\dev\trivian-atlas\services\credit-worker`
+- Web app: `C:\dev\atlas`
+- Credit worker: `C:\dev\atlas\services\credit-worker`
 
 ## Environment
 

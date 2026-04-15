@@ -1,6 +1,6 @@
 # Email delivery setup
 
-Trivian Atlas now uses Resend's REST API for app-generated emails.
+Atlas now uses Resend's REST API for app-generated emails.
 
 ## Required environment variables
 

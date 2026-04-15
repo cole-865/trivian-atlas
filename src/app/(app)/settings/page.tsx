@@ -477,10 +477,10 @@ function Products({ data }: { data: DealershipSettingsData }) {
   const config = data.trivianConfig;
   if (!config) {
     return (
-      <SectionCard title="Products & Pricing" description="No Trivian config row exists for this account yet.">
+      <SectionCard title="Products & Pricing" description="No pricing config row exists for this account yet.">
         <EmptyState
           title="No pricing config found"
-          description="Atlas could not find an organization-scoped Trivian config row for the current account."
+          description="Atlas could not find an organization-scoped pricing config row for the current account."
         />
       </SectionCard>
     );

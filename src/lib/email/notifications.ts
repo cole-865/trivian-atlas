@@ -153,12 +153,12 @@ async function getOverrideAuthorityRecipients(organizationId: string) {
 
 async function getUserDisplayName(userId: string | null | undefined) {
   if (!userId || !hasAdminAccess()) {
-    return "A Trivian Atlas user";
+    return "An Atlas user";
   }
 
   const profileLookup = await getUserProfilesByIds([userId]);
   const profile = profileLookup.get(userId);
-  return profile?.full_name || profile?.email || "A Trivian Atlas user";
+  return profile?.full_name || profile?.email || "An Atlas user";
 }
 
 export async function sendOrganizationInviteEmail(args: {
@@ -195,11 +195,11 @@ export async function sendOrganizationInviteEmail(args: {
 
   return sendEmail({
     to: [args.inviteeEmail],
-    subject: `You're invited to join ${accountName} in Trivian Atlas`,
+    subject: `You're invited to join ${accountName} in Atlas`,
     text: [
       `Hi ${inviteeName},`,
       "",
-      `${inviterName} invited you to join the ${accountName} account in Trivian Atlas as ${args.role}.`,
+      `${inviterName} invited you to join the ${accountName} account in Atlas as ${args.role}.`,
       "",
       `Accept your invite: ${args.acceptUrl}`,
       "",
@@ -208,7 +208,7 @@ export async function sendOrganizationInviteEmail(args: {
     html: `
       <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
         <p>Hi ${safeInviteeName},</p>
-        <p>${safeInviterName} invited you to join the <strong>${safeAccountName}</strong> account in Trivian Atlas as <strong>${safeRole}</strong>.</p>
+        <p>${safeInviterName} invited you to join the <strong>${safeAccountName}</strong> account in Atlas as <strong>${safeRole}</strong>.</p>
         <p><a href="${safeAcceptUrl}">Accept your invite</a></p>
         <p>This link expires in 7 days.</p>
       </div>
@@ -271,7 +271,7 @@ export async function sendDealApprovalRequestEmail(args: {
       <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
         <p><strong>${safeCustomerName}</strong> is ready for funding review in the <strong>${safeAccountName}</strong> account.</p>
         <p>Submitted by: ${safeSubmittedBy}</p>
-        <p><a href="${safeReviewUrl}">Review deal in Trivian Atlas</a></p>
+        <p><a href="${safeReviewUrl}">Review deal in Atlas</a></p>
       </div>
     `,
   });
@@ -529,7 +529,7 @@ export async function sendDealOverrideRequestedEmail(args: {
         <p>Vehicle: ${safeVehicleSummary}</p>
         <p>Override request:</p>
         <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">${safeRequestedNote}</pre>
-        <p><a href="${safeReviewUrl}">Review override in Trivian Atlas</a></p>
+        <p><a href="${safeReviewUrl}">Review override in Atlas</a></p>
       </div>
     `,
   });
@@ -603,7 +603,7 @@ export async function sendDealOverrideCounterOfferEmail(args: {
         <p>Countered by: ${safeReviewedBy}</p>
         <p>Counter note:</p>
         <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">${safeReviewNote}</pre>
-        <p><a href="${safeReviewUrl}">Review counter offer in Trivian Atlas</a></p>
+        <p><a href="${safeReviewUrl}">Review counter offer in Atlas</a></p>
       </div>
     `,
   });

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Trivian Atlas is a multi-tenant dealership LOS built around Supabase Auth, organization memberships, and organization-scoped business data. The web app owns user-facing workflows and the credit worker handles asynchronous bureau parsing and underwriting staging.
+Atlas is a multi-tenant dealership LOS built around Supabase Auth, organization memberships, and organization-scoped business data. The web app owns user-facing workflows and the credit worker handles asynchronous bureau parsing and underwriting staging.
 
 ## Auth Model
 

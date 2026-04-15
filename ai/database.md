@@ -1,4 +1,4 @@
-# Database Structure - Trivian Atlas
+# Database Structure - Atlas
 
 ## Purpose
 This file defines the core database structure and relationships.

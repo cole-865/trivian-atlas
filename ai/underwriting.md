@@ -1,4 +1,4 @@
-# Underwriting Logic - Trivian Atlas
+# Underwriting Logic - Atlas
 
 ## Purpose
 This file defines the underwriting and deal structuring rules used across Atlas.

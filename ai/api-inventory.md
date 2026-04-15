@@ -1,4 +1,4 @@
-# API Surface - Trivian Atlas
+# API Surface - Atlas
 
 ## Purpose
 

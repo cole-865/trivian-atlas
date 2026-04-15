@@ -77,7 +77,7 @@ function LoginPageContent() {
       <div className="w-full max-w-md">
         <SectionCard
           eyebrow="Access"
-          title="Trivian Atlas"
+          title="Atlas"
           description={
             mode === "login"
               ? "Log in to continue."
@@ -166,7 +166,7 @@ export default function LoginPage() {
           <div className="w-full max-w-md">
             <SectionCard
               eyebrow="Access"
-              title="Trivian Atlas"
+              title="Atlas"
               description="Loading sign-in..."
             >
               <div className="text-sm text-muted-foreground/82">Preparing your session.</div>

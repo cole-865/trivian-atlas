@@ -1,4 +1,4 @@
-# API Contracts - Trivian Atlas
+# API Contracts - Atlas
 
 ## Purpose
 This file defines API behavior rules and contract expectations for Atlas.

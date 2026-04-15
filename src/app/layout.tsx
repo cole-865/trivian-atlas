@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Trivian Atlas",
-  description: "Trivian Atlas",
+  title: "Atlas",
+  description: "Atlas",
 };
 
 export default function RootLayout({
