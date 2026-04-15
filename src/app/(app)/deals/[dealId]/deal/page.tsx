@@ -170,6 +170,8 @@ type DealStructureResponse = {
           ltv?: number;
         } | null;
         confidence: "low" | "medium" | "high";
+        path_state?: "clears_all_blockers" | "still_short" | "alternative_path";
+        remaining_gap?: number;
       }>;
       human_review_recommendations: string[];
       policy_gap_flags: string[];
@@ -1948,11 +1950,14 @@ export default function DealDealPage() {
                           <div style={{ display: "grid", gap: 4 }}>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                               {index === 0 ? <span style={bestNextStepTag}>Best Next Step</span> : null}
+                              <span style={actionOutcomeTag(action)}>
+                                {actionOutcomeLabel(action)}
+                              </span>
                               <span style={actionTypeTag}>
                                 {titleCaseActionLabel(action.type)}
                               </span>
                               <span style={confidenceTag(action.confidence)}>
-                                {action.confidence} confidence
+                                {action.confidence} estimate confidence
                               </span>
                             </div>
                             <div style={{ fontWeight: 800, color: "#111827" }}>{action.description}</div>
@@ -2169,6 +2174,51 @@ function confidenceTag(
     border: "1px solid rgba(148,163,184,0.28)",
     color: "#cbd5e1",
     textTransform: "capitalize",
+  };
+}
+
+function actionOutcomeLabel(action: NonNullable<DealStructureResponse["structure"]["ai_review"]>["recommended_actions"][number]) {
+  if (action.path_state === "clears_all_blockers") {
+    return "Clears All Blockers";
+  }
+
+  if (action.path_state === "still_short") {
+    if (action.remaining_gap != null && action.remaining_gap > 0) {
+      return `Still Needs ${money(action.remaining_gap)} Down`;
+    }
+
+    return "Still Needs Structure Change";
+  }
+
+  return "Alternative Path";
+}
+
+function actionOutcomeTag(
+  action: NonNullable<DealStructureResponse["structure"]["ai_review"]>["recommended_actions"][number]
+): React.CSSProperties {
+  if (action.path_state === "clears_all_blockers") {
+    return {
+      ...statusTagBase,
+      background: "rgba(16,185,129,0.14)",
+      border: "1px solid rgba(16,185,129,0.28)",
+      color: "#34d399",
+    };
+  }
+
+  if (action.path_state === "still_short") {
+    return {
+      ...statusTagBase,
+      background: "rgba(245,158,11,0.14)",
+      border: "1px solid rgba(245,158,11,0.28)",
+      color: "#fbbf24",
+    };
+  }
+
+  return {
+    ...statusTagBase,
+    background: "rgba(148,163,184,0.14)",
+    border: "1px solid rgba(148,163,184,0.28)",
+    color: "#cbd5e1",
   };
 }
 

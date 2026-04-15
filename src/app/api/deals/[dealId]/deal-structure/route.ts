@@ -35,6 +35,10 @@ export async function GET(
         return NextResponse.json(data);
     } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to load deal structure";
+        const isValidationIssue =
+            message.includes("recommended_actions") ||
+            message.includes("estimated_values") ||
+            message.includes("Too small");
         const status =
             message === "Deal not found"
                 ? 404
@@ -44,6 +48,9 @@ export async function GET(
                     ? 400
                     : 500;
 
-        return NextResponse.json({ error: message }, { status });
+        return NextResponse.json(
+            { error: isValidationIssue ? "Failed to generate AI review" : message },
+            { status }
+        );
     }
 }

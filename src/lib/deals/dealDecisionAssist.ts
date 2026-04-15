@@ -17,6 +17,7 @@ type DecisionAssistInventoryVehicle = {
   asking_price: number | string | null;
   date_in_stock: string | null;
   jd_power_retail_book: number | string | null;
+  body_type: string | null;
   vehicle_category: "car" | "suv" | "truck" | "van" | null;
 };
 
@@ -67,6 +68,11 @@ export const decisionAssistReviewSourceSchema = z.enum([
   "openai",
   "deterministic_fallback",
 ]);
+export const decisionAssistActionPathStateSchema = z.enum([
+  "clears_all_blockers",
+  "still_short",
+  "alternative_path",
+]);
 
 export const decisionAssistActionSchema = z.object({
   type: decisionAssistActionTypeSchema,
@@ -82,6 +88,8 @@ export const decisionAssistActionSchema = z.object({
     .partial()
     .optional(),
   confidence: decisionAssistConfidenceSchema,
+  path_state: decisionAssistActionPathStateSchema.optional(),
+  remaining_gap: z.number().finite().nonnegative().optional(),
 });
 
 export const decisionAssistReviewSchema = z.object({
@@ -114,6 +122,9 @@ export type DecisionAssistConfidence = z.infer<
 export type DecisionAssistReviewSource = z.infer<
   typeof decisionAssistReviewSourceSchema
 >;
+export type DecisionAssistActionPathState = z.infer<
+  typeof decisionAssistActionPathStateSchema
+>;
 export type DecisionAssistAction = z.infer<typeof decisionAssistActionSchema>;
 export type DealDecisionAssistReview = z.infer<typeof decisionAssistReviewSchema>;
 
@@ -137,6 +148,63 @@ type DecisionAssistCandidate = {
   supportScore: number;
   numericRequired: boolean;
 };
+
+function sanitizeEstimatedValues(
+  estimatedValues: DecisionAssistAction["estimated_values"] | undefined
+) {
+  if (!estimatedValues) {
+    return undefined;
+  }
+
+  const sanitized: NonNullable<DecisionAssistAction["estimated_values"]> = {};
+
+  if (
+    estimatedValues.required_down != null &&
+    Number.isFinite(estimatedValues.required_down) &&
+    estimatedValues.required_down >= 0
+  ) {
+    sanitized.required_down = round2(estimatedValues.required_down);
+  }
+
+  if (
+    estimatedValues.estimated_payment != null &&
+    Number.isFinite(estimatedValues.estimated_payment) &&
+    estimatedValues.estimated_payment >= 0
+  ) {
+    sanitized.estimated_payment = round2(estimatedValues.estimated_payment);
+  }
+
+  if (
+    estimatedValues.term_months != null &&
+    Number.isFinite(estimatedValues.term_months) &&
+    estimatedValues.term_months > 0
+  ) {
+    sanitized.term_months = Math.round(estimatedValues.term_months);
+  }
+
+  if (
+    estimatedValues.ltv != null &&
+    Number.isFinite(estimatedValues.ltv) &&
+    estimatedValues.ltv >= 0
+  ) {
+    sanitized.ltv = round2(estimatedValues.ltv);
+  }
+
+  return Object.keys(sanitized).length ? sanitized : undefined;
+}
+
+function sanitizeAction(action: DecisionAssistAction): DecisionAssistAction {
+  return {
+    ...action,
+    estimated_values: sanitizeEstimatedValues(action.estimated_values),
+    remaining_gap:
+      action.remaining_gap != null &&
+      Number.isFinite(action.remaining_gap) &&
+      action.remaining_gap >= 0
+        ? round2(action.remaining_gap)
+        : undefined,
+  };
+}
 
 const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses";
 
@@ -360,6 +428,73 @@ function buildVehicleLabel(vehicle: DealStructureComputedState["vehicle"]) {
   return vehicle.stock_number ? `${label} #${vehicle.stock_number}`.trim() : label || "another unit";
 }
 
+export function isRetailVehicleCandidate(
+  vehicle: Pick<
+    DecisionAssistInventoryVehicle,
+    "vehicle_category" | "body_type" | "make" | "model" | "asking_price"
+  >
+) {
+  const askingPrice = Number(vehicle.asking_price ?? 0);
+  if (!Number.isFinite(askingPrice) || askingPrice <= 0) {
+    return false;
+  }
+
+  const category = String(vehicle.vehicle_category ?? "").trim().toLowerCase();
+  if (["car", "suv", "truck", "van"].includes(category)) {
+    return true;
+  }
+
+  const bodyType = String(vehicle.body_type ?? "").trim().toLowerCase();
+  const make = String(vehicle.make ?? "").trim().toLowerCase();
+  const model = String(vehicle.model ?? "").trim().toLowerCase();
+  const vehicleText = `${make} ${model}`.trim();
+  const blocked = [
+    "atv",
+    "utv",
+    "side by side",
+    "side-by-side",
+    "motorcycle",
+    "scooter",
+    "four wheeler",
+    "4 wheeler",
+    "4-wheeler",
+    "quad",
+    "powersport",
+    "powersports",
+    "kingquad",
+    "sportsman",
+    "outlander",
+    "ranger",
+    "rzr",
+    "grizzly",
+  ].some((token) => bodyType.includes(token) || vehicleText.includes(token));
+
+  if (blocked) {
+    return false;
+  }
+
+  if (!bodyType) {
+    return true;
+  }
+
+  return [
+    "sedan",
+    "coupe",
+    "hatchback",
+    "wagon",
+    "convertible",
+    "crossover",
+    "sport utility",
+    "suv",
+    "pickup",
+    "truck",
+    "van",
+    "minivan",
+    "crew cab",
+    "extended cab",
+  ].some((token) => bodyType.includes(token));
+}
+
 function confidenceForGap(value: number, highThreshold = 500, mediumThreshold = 2000) {
   if (value <= highThreshold) return "high";
   if (value <= mediumThreshold) return "medium";
@@ -476,6 +611,12 @@ function buildVehicleAction(args: {
           computed.vehicle.jd_power_retail_book > 0 ? computed.structure.ltv : undefined,
       },
       confidence,
+      path_state: computed.structure.fits_program
+        ? "clears_all_blockers"
+        : "still_short",
+      remaining_gap: computed.structure.fits_program
+        ? undefined
+        : computed.structure.additional_down_needed,
     },
     targetBlocker:
       args.primaryBlocker === "VEHICLE_PRICE" || args.primaryBlocker === "LTV"
@@ -561,6 +702,18 @@ function buildDownPaymentAction(args: {
         required_down: targetCashDown,
       },
       confidence: confidenceForGap(additionalNeeded),
+      path_state:
+        additionalNeeded >= args.current.structure.additional_down_needed &&
+        !args.current.structure.fail_reasons.includes("VEHICLE_PRICE")
+          ? "clears_all_blockers"
+          : "still_short",
+      remaining_gap:
+        additionalNeeded >= args.current.structure.additional_down_needed &&
+        !args.current.structure.fail_reasons.includes("VEHICLE_PRICE")
+          ? undefined
+          : round2(
+              Math.max(0, args.current.structure.additional_down_needed - additionalNeeded)
+            ),
     },
     targetBlocker: blocker,
     resolvesAllBlockers:
@@ -638,6 +791,12 @@ function buildProductAction(args: {
             : undefined,
       },
       confidence: args.scenario.computed.structure.fits_program ? "high" : "medium",
+      path_state: args.scenario.computed.structure.fits_program
+        ? "clears_all_blockers"
+        : "still_short",
+      remaining_gap: args.scenario.computed.structure.fits_program
+        ? undefined
+        : args.scenario.computed.structure.additional_down_needed,
     },
     targetBlocker: args.targetBlocker,
     resolvesAllBlockers: args.scenario.computed.structure.fits_program,
@@ -682,6 +841,12 @@ function buildTermAction(args: {
             : undefined,
       },
       confidence: args.scenario.computed.structure.fits_program ? "high" : "medium",
+      path_state: args.scenario.computed.structure.fits_program
+        ? "clears_all_blockers"
+        : "still_short",
+      remaining_gap: args.scenario.computed.structure.fits_program
+        ? undefined
+        : args.scenario.computed.structure.additional_down_needed,
     },
     targetBlocker: args.targetBlocker,
     resolvesAllBlockers: args.scenario.computed.structure.fits_program,
@@ -713,6 +878,7 @@ function buildFallbackAction(args: {
           ? "Current retail constraints do not show a realistic approval path from available structure changes."
           : "Current retail constraints do not show a realistic approval path from available structure changes.",
       confidence: "medium",
+      path_state: "alternative_path",
     },
     targetBlocker: getPrimaryBlocker(args.current),
     resolvesAllBlockers: false,
@@ -728,10 +894,14 @@ function dedupeCandidates(candidates: Array<DecisionAssistCandidate | null>) {
 
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const key = `${candidate.action.type}:${candidate.action.description}`;
+    const sanitizedCandidate = {
+      ...candidate,
+      action: sanitizeAction(candidate.action),
+    } satisfies DecisionAssistCandidate;
+    const key = `${sanitizedCandidate.action.type}:${sanitizedCandidate.action.description}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    deduped.push(candidate);
+    deduped.push(sanitizedCandidate);
   }
 
   return deduped;
@@ -1002,6 +1172,8 @@ function validateAndNormalizeLlmReview(args: {
     return {
       ...action,
       estimated_values: matchingDeterministicAction.estimated_values,
+      path_state: matchingDeterministicAction.path_state,
+      remaining_gap: matchingDeterministicAction.remaining_gap,
     };
   });
 
@@ -1429,7 +1601,7 @@ async function loadVehicleRows(args: {
     await loadInventoryForOrganization<DecisionAssistInventoryVehicle>(
       args.supabase,
       args.context.organizationId,
-      "id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock, jd_power_retail_book, vehicle_category",
+      "id, stock_number, vin, year, make, model, odometer, status, asking_price, date_in_stock, jd_power_retail_book, body_type, vehicle_category",
       { limit: 120 }
     );
 
@@ -1446,6 +1618,7 @@ async function loadVehicleRows(args: {
   ];
 
   return ((vehicles ?? []) as DecisionAssistInventoryVehicle[])
+    .filter((vehicle) => isRetailVehicleCandidate(vehicle))
     .map(
       (vehicle): DecisionAssistVehicleOptionComparison | null => {
       const scenarios = scenarioTemplates

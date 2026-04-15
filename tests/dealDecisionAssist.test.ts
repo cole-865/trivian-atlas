@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildDecisionAssistReview,
+  isRetailVehicleCandidate,
   type DecisionAssistVehicleOptionComparison,
   type DecisionAssistVehicleOptionScenario,
 } from "../src/lib/deals/dealDecisionAssist.js";
@@ -318,6 +319,101 @@ test("multi-fail review prioritizes the highest-priority blocker first", () => {
 
   assert.ok(review);
   assert.equal(review.recommended_actions[0].type, "adjust_vehicle");
+});
+
+test("retail vehicle filter excludes powersports inventory like a KingQuad", () => {
+  assert.equal(
+    isRetailVehicleCandidate({
+      vehicle_category: null,
+      body_type: "ATV",
+      make: "Suzuki",
+      model: "KingQuad",
+      asking_price: 9200,
+    }),
+    false
+  );
+
+  assert.equal(
+    isRetailVehicleCandidate({
+      vehicle_category: null,
+      body_type: null,
+      make: "Suzuki",
+      model: "KingQuad 750AXi",
+      asking_price: 9200,
+    }),
+    false
+  );
+
+  assert.equal(
+    isRetailVehicleCandidate({
+      vehicle_category: "suv",
+      body_type: "Sport Utility",
+      make: "Honda",
+      model: "CR-V",
+      asking_price: null,
+    }),
+    false
+  );
+
+  assert.equal(
+    isRetailVehicleCandidate({
+      vehicle_category: "suv",
+      body_type: "Sport Utility",
+      make: "Honda",
+      model: "CR-V",
+      asking_price: 14400,
+    }),
+    true
+  );
+});
+
+test("negative ltv estimates are omitted instead of crashing review generation", () => {
+  const current = makeComputed({
+    structure: {
+      fits_program: false,
+      fail_reasons: ["PTI"],
+      monthly_payment: 560,
+      additional_down_needed: 900,
+      additional_down_breakdown: {
+        min_down: 0,
+        amount_financed: 0,
+        ltv: 0,
+        pti: 900,
+      },
+      checks: {
+        vehicle_price_ok: true,
+        amount_financed_ok: true,
+        ltv_ok: true,
+        payment_ok: false,
+      },
+    },
+  });
+
+  const longerTerm = makeScenario(
+    makeComputed({
+      structure: {
+        term_months: 60,
+        monthly_payment: 510,
+        ltv: -0.12,
+      },
+    })
+  );
+
+  const review = buildDecisionAssistReview({
+    underwritingDecision: "approved",
+    computed: current,
+    overrides: overrideTriggered,
+    vehicleRows: [makeVehicleRow(current.vehicle.id, [current])],
+    shorterTermScenario: null,
+    longerTermScenario: longerTerm,
+  });
+
+  assert.ok(review);
+  const termAction = review.recommended_actions.find(
+    (action) => action.type === "adjust_term"
+  );
+  assert.ok(termAction);
+  assert.equal(termAction.estimated_values?.ltv, undefined);
 });
 
 test("near-threshold approval returns near_approval with a quantified term recommendation", () => {
