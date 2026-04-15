@@ -840,9 +840,7 @@ export async function loadDealOverrideSnapshot(args: {
     requests,
     counterOffers,
     latestCounterOffer:
-      counterOffers.find((offer) => offer.status === "active") ??
-      counterOffers[0] ??
-      null,
+      counterOffers.find((offer) => offer.status === "active") ?? null,
   };
 }
 

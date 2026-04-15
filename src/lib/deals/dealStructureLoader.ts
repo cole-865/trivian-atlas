@@ -1,5 +1,6 @@
 import { getAuthContext } from "@/lib/auth/userRole";
 import { hasDealershipPermission } from "@/lib/auth/dealershipPermissions";
+import { loadDealDecisionAssistReview } from "@/lib/deals/dealDecisionAssist";
 import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
 import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
 import {
@@ -36,16 +37,6 @@ export async function loadDealStructurePageData(args: {
     vehicleTermPolicies: context.vehicleTermPolicies,
   });
 
-  if (args.persist !== false) {
-    await persistDealStructureState({
-      supabase,
-      organizationId: context.organizationId,
-      dealId: args.dealId,
-      inputs,
-      computed,
-    });
-  }
-
   const authContext = await getAuthContext(supabase);
   const canApproveOverrides =
     authContext.currentOrganizationId === context.organizationId &&
@@ -66,6 +57,33 @@ export async function loadDealStructurePageData(args: {
       pti: computed.structure.pti,
     }),
   });
+
+  const aiReview = await loadDealDecisionAssistReview({
+    supabase,
+    context,
+    computed,
+    overrides: {
+      currentFingerprint: overrides.currentFingerprint,
+      rawBlockers: overrides.rawBlockers,
+      effectiveBlockers: overrides.effectiveBlockers,
+      requests: overrides.requests.map((request) => ({
+        id: request.id,
+        blocker_code: request.blocker_code,
+        status: request.status,
+      })),
+    },
+  });
+
+  if (args.persist !== false) {
+    await persistDealStructureState({
+      supabase,
+      organizationId: context.organizationId,
+      dealId: args.dealId,
+      inputs,
+      computed,
+      aiReview,
+    });
+  }
 
   return {
     ok: true,
@@ -89,6 +107,7 @@ export async function loadDealStructurePageData(args: {
       vehicle: computed.vehicle,
       structure: computed.structure,
       assumptions: computed.assumptions,
+      ai_review: aiReview,
     },
     structureInputs: inputs,
     overrides: {

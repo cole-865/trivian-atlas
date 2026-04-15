@@ -140,6 +140,43 @@ type DealStructureResponse = {
       vehicle_max_term_months: number;
       vehicle_base_term_months: number;
     };
+    ai_review: {
+      summary: string;
+      consistency_status: "consistent" | "review" | "possible_anomaly";
+      deal_strategy_hint:
+        | "retail_viable"
+        | "near_approval"
+        | "needs_structure_change"
+        | "bhph_preferred"
+        | "high_risk";
+      review_source: "openai" | "deterministic_fallback";
+      review_model: string | null;
+      key_factors: string[];
+      recommended_actions: Array<{
+        type:
+          | "increase_down_payment"
+          | "adjust_vehicle"
+          | "adjust_term"
+          | "remove_products"
+          | "add_products"
+          | "bhph_candidate"
+          | "lender_redirect";
+        description: string;
+        impact: string;
+        estimated_values?: {
+          required_down?: number;
+          estimated_payment?: number;
+          term_months?: number;
+          ltv?: number;
+        } | null;
+        confidence: "low" | "medium" | "high";
+      }>;
+      human_review_recommendations: string[];
+      policy_gap_flags: string[];
+      confidence_note: string;
+      disclaimer: string;
+      trigger_reasons: string[];
+    } | null;
   };
   overrides: {
     canApprove: boolean;
@@ -254,6 +291,13 @@ function money(n: number | null | undefined) {
 function num(n: number | null | undefined) {
   const v = Number(n ?? 0);
   return v.toLocaleString();
+}
+
+function titleCaseActionLabel(value: string) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function parseNumOrNull(s: string | null): number | null {
@@ -502,6 +546,7 @@ export default function DealDealPage() {
   const [structure, setStructure] = useState<DealStructureResponse["structure"] | null>(null);
   const [structureInputs, setStructureInputs] = useState<DealStructureResponse["structureInputs"] | null>(null);
   const [overrides, setOverrides] = useState<DealStructureResponse["overrides"] | null>(null);
+  const [aiReview, setAiReview] = useState<DealStructureResponse["structure"]["ai_review"] | null>(null);
   const [requestNotes, setRequestNotes] = useState<Record<string, string>>({});
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [counterEditors, setCounterEditors] = useState<Record<string, CounterOfferEditorState>>({});
@@ -549,6 +594,7 @@ export default function DealDealPage() {
     }
 
     setStructure(j.structure ?? null);
+    setAiReview(j.structure?.ai_review ?? null);
     setCustomerName(j.customerName ?? null);
     setSelection(j.selection ?? null);
     setStructureInputs(j.structureInputs ?? null);
@@ -932,6 +978,14 @@ export default function DealDealPage() {
   const requestHistory = overrides?.requests ?? [];
   const counterOfferHistory = overrides?.counterOffers ?? [];
   const latestCounterOffer = overrides?.latestCounterOffer ?? null;
+  const latestHistoricalCounterOffer = counterOfferHistory[0] ?? null;
+  const staleCounterOfferNotice =
+    !latestCounterOffer &&
+    latestHistoricalCounterOffer &&
+    (latestHistoricalCounterOffer.status === "stale" ||
+      latestHistoricalCounterOffer.status === "rejected_acceptance")
+      ? latestHistoricalCounterOffer
+      : null;
   const hasEffectiveBlockers = (overrides?.effectiveBlockers.length ?? 0) > 0;
   const hasRawBlockers = (overrides?.rawBlockers.length ?? 0) > 0;
 
@@ -988,6 +1042,36 @@ export default function DealDealPage() {
 
       {structure && vehicle && dealMath ? (
         <>
+          {staleCounterOfferNotice ? (
+            <div
+              style={{
+                ...card,
+                border: "1px solid rgba(251,146,60,0.28)",
+                background: "rgba(124,45,18,0.18)",
+              }}
+            >
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={staleCounterOfferTag}>Counter Offer Removed</span>
+                  <span style={{ ...auditLine, fontWeight: 700 }}>
+                    Version {staleCounterOfferNotice.version_number} •{" "}
+                    {staleCounterOfferNotice.counter_type.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <div style={bodyText}>
+                  The previous counter offer is no longer valid for this deal. Review the current vehicle and structure,
+                  then work the deal again from the normal process before sending another counter offer.
+                </div>
+                {staleCounterOfferNotice.stale_reason ? (
+                  <div style={hintText}>{staleCounterOfferNotice.stale_reason}</div>
+                ) : null}
+                {staleCounterOfferNotice.rejection_reason ? (
+                  <div style={hintText}>{staleCounterOfferNotice.rejection_reason}</div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {latestCounterOffer ? (
             <div style={{ ...card, border: "1px solid rgba(125,211,252,0.22)", background: "rgba(8,47,73,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -1813,6 +1897,130 @@ export default function DealDealPage() {
               </div>
             ) : null}
           </div>
+
+          {aiReview ? (
+            <div style={card}>
+              <div style={sectionTitle}>AI Review</div>
+
+              <div style={{ display: "grid", gap: 16 }}>
+                <div>
+                  <div style={subsectionTitle}>Summary</div>
+                  <div style={bodyText}>{aiReview.summary}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <span style={reviewSourceTag(aiReview.review_source)}>
+                      {aiReview.review_source === "openai"
+                        ? `OpenAI${aiReview.review_model ? ` · ${aiReview.review_model}` : ""}`
+                        : "Deterministic Fallback"}
+                    </span>
+                    <span style={reviewTag(aiReview.consistency_status)}>
+                      {aiReview.consistency_status.replace("_", " ")}
+                    </span>
+                    <span style={strategyTag}>
+                      {aiReview.deal_strategy_hint.replace("_", " ")}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={subsectionTitle}>Key Factors</div>
+                  <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                    {aiReview.key_factors.map((factor) => (
+                      <div key={factor} style={reviewListItem}>
+                        {factor}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={subsectionTitle}>Recommended Actions</div>
+                  <div style={{ display: "grid", gap: 12, marginTop: 8 }}>
+                    {aiReview.recommended_actions.map((action, index) => (
+                      <details
+                        key={`${action.type}:${action.description}`}
+                        open={index === 0}
+                        style={{
+                          ...reviewActionCard,
+                          borderColor: index === 0 ? "#c2410c" : "#e5e7eb",
+                        }}
+                      >
+                        <summary style={reviewActionSummary}>
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                              {index === 0 ? <span style={bestNextStepTag}>Best Next Step</span> : null}
+                              <span style={actionTypeTag}>
+                                {titleCaseActionLabel(action.type)}
+                              </span>
+                              <span style={confidenceTag(action.confidence)}>
+                                {action.confidence} confidence
+                              </span>
+                            </div>
+                            <div style={{ fontWeight: 800, color: "#111827" }}>{action.description}</div>
+                            <div style={bodyText}>{action.impact}</div>
+                            {action.estimated_values ? (
+                              <div style={actionMetricsRow}>
+                                {action.estimated_values.required_down != null ? (
+                                  <span style={metricPill}>
+                                    Down Target {money(action.estimated_values.required_down)}
+                                  </span>
+                                ) : null}
+                                {action.estimated_values.estimated_payment != null ? (
+                                  <span style={metricPill}>
+                                    Payment {money(action.estimated_values.estimated_payment)}
+                                  </span>
+                                ) : null}
+                                {action.estimated_values.term_months != null ? (
+                                  <span style={metricPill}>
+                                    Term {action.estimated_values.term_months} mo
+                                  </span>
+                                ) : null}
+                                {action.estimated_values.ltv != null ? (
+                                  <span style={metricPill}>
+                                    LTV {(Number(action.estimated_values.ltv) * 100).toFixed(1)}%
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </summary>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={subsectionTitle}>Human Review Notes</div>
+                  <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                    {aiReview.human_review_recommendations.map((note) => (
+                      <div key={note} style={reviewListItem}>
+                        {note}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={subsectionTitle}>Policy Flags</div>
+                  {aiReview.policy_gap_flags.length ? (
+                    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                      {aiReview.policy_gap_flags.map((flag) => (
+                        <div key={flag} style={policyFlagItem}>
+                          {flag}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={hintText}>No policy gap flags on the current snapshot.</div>
+                  )}
+                </div>
+
+                <div style={assistMetaCard}>
+                  <div style={hintText}>{aiReview.confidence_note}</div>
+                  <div style={{ ...hintText, marginTop: 6 }}>{aiReview.disclaimer}</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -1900,6 +2108,90 @@ function blockerStateTag(state: "blocked" | "pending" | "overridden" | "stale") 
   };
 }
 
+function reviewTag(
+  status: "consistent" | "review" | "possible_anomaly"
+): React.CSSProperties {
+  if (status === "possible_anomaly") {
+    return {
+      ...statusTagBase,
+      background: "rgba(127,29,29,0.22)",
+      border: "1px solid rgba(248,113,113,0.28)",
+      color: "#fca5a5",
+      textTransform: "capitalize",
+    };
+  }
+
+  if (status === "review") {
+    return {
+      ...statusTagBase,
+      background: "rgba(245,158,11,0.14)",
+      border: "1px solid rgba(245,158,11,0.28)",
+      color: "#fbbf24",
+      textTransform: "capitalize",
+    };
+  }
+
+  return {
+    ...statusTagBase,
+    background: "rgba(16,185,129,0.14)",
+    border: "1px solid rgba(16,185,129,0.28)",
+    color: "#34d399",
+    textTransform: "capitalize",
+  };
+}
+
+function confidenceTag(
+  confidence: "low" | "medium" | "high"
+): React.CSSProperties {
+  if (confidence === "high") {
+    return {
+      ...statusTagBase,
+      background: "rgba(16,185,129,0.14)",
+      border: "1px solid rgba(16,185,129,0.28)",
+      color: "#34d399",
+      textTransform: "capitalize",
+    };
+  }
+
+  if (confidence === "medium") {
+    return {
+      ...statusTagBase,
+      background: "rgba(245,158,11,0.14)",
+      border: "1px solid rgba(245,158,11,0.28)",
+      color: "#fbbf24",
+      textTransform: "capitalize",
+    };
+  }
+
+  return {
+    ...statusTagBase,
+    background: "rgba(148,163,184,0.14)",
+    border: "1px solid rgba(148,163,184,0.28)",
+    color: "#cbd5e1",
+    textTransform: "capitalize",
+  };
+}
+
+function reviewSourceTag(
+  source: "openai" | "deterministic_fallback"
+): React.CSSProperties {
+  if (source === "openai") {
+    return {
+      ...statusTagBase,
+      background: "rgba(14,165,233,0.14)",
+      border: "1px solid rgba(14,165,233,0.28)",
+      color: "#7dd3fc",
+    };
+  }
+
+  return {
+    ...statusTagBase,
+    background: "rgba(148,163,184,0.14)",
+    border: "1px solid rgba(148,163,184,0.28)",
+    color: "#cbd5e1",
+  };
+}
+
 const card: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 14,
@@ -1912,6 +2204,129 @@ const sectionTitle: React.CSSProperties = {
   fontWeight: 900,
   marginBottom: 10,
   color: "#f5f7fa",
+};
+
+const subsectionTitle: React.CSSProperties = {
+  fontWeight: 800,
+  color: "#f5f7fa",
+};
+
+const bodyText: React.CSSProperties = {
+  color: "#d1d5db",
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const strategyTag: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+  background: "rgba(59,130,246,0.14)",
+  border: "1px solid rgba(59,130,246,0.28)",
+  color: "#93c5fd",
+  textTransform: "capitalize",
+};
+
+const reviewListItem: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 12,
+  padding: "10px 12px",
+  background: "rgba(255,255,255,0.03)",
+  color: "#d1d5db",
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const reviewActionCard: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 12,
+  padding: 12,
+  background: "rgba(255,255,255,0.03)",
+};
+
+const reviewActionSummary: React.CSSProperties = {
+  listStyle: "none",
+  cursor: "pointer",
+};
+
+const bestNextStepTag: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+  background: "rgba(194,65,12,0.16)",
+  border: "1px solid rgba(194,65,12,0.28)",
+  color: "#fdba74",
+};
+
+const staleCounterOfferTag: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+  background: "rgba(251,146,60,0.16)",
+  border: "1px solid rgba(251,146,60,0.28)",
+  color: "#fdba74",
+};
+
+const actionTypeTag: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "#e5e7eb",
+};
+
+const actionMetricsRow: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  marginTop: 6,
+};
+
+const metricPill: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  borderRadius: 999,
+  padding: "4px 10px",
+  fontSize: 12,
+  fontWeight: 800,
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "#d1d5db",
+};
+
+const policyFlagItem: React.CSSProperties = {
+  border: "1px solid rgba(248,113,113,0.28)",
+  borderRadius: 12,
+  padding: "10px 12px",
+  background: "rgba(127,29,29,0.22)",
+  color: "#fecaca",
+  fontSize: 14,
+  lineHeight: 1.5,
+};
+
+const assistMetaCard: React.CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: 12,
+  padding: 12,
+  background: "rgba(255,255,255,0.02)",
 };
 
 const grid2: React.CSSProperties = {

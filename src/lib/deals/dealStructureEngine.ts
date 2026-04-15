@@ -711,6 +711,7 @@ export async function persistDealStructureState(args: {
   dealId: string;
   inputs: DealStructureInputsRecord;
   computed: DealStructureComputedState;
+  aiReview?: unknown;
 }) {
   const now = new Date().toISOString();
   const normalizedInputs = {
@@ -739,6 +740,7 @@ export async function persistDealStructureState(args: {
     vehicle: args.computed.vehicle,
     structure: args.computed.structure,
     assumptions: args.computed.assumptions,
+    ai_review: args.aiReview ?? null,
   };
 
   const { error: upsertErr } = await args.supabase.from("deal_structure").upsert(

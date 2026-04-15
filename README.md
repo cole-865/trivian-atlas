@@ -35,6 +35,11 @@ Optional but recommended for invite delivery:
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
 
+Optional for model-backed decision assist:
+
+- `OPENAI_API_KEY`
+- `OPENAI_DECISION_ASSIST_MODEL` (optional, defaults to `gpt-4o-mini`)
+
 ### Credit worker
 
 Expected in `services/credit-worker/.env`:
@@ -60,6 +65,17 @@ npm run dev
 ```
 
 The app runs at `http://localhost:3000`.
+
+### Enable model-backed decision assist
+
+If you want the deal AI Review panel to use OpenAI for summary and recommendation wording instead of the deterministic fallback only, add these to `.env.local`:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_DECISION_ASSIST_MODEL=gpt-4o-mini
+```
+
+Without `OPENAI_API_KEY`, Atlas falls back to the deterministic decision-assist logic and still renders the review panel when trigger conditions are met.
 
 ### Start the credit worker
 
