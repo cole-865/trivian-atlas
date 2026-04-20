@@ -27,6 +27,7 @@ type PersonForm = {
 };
 
 type AddressSuggestion = {
+  placeId?: string;
   label: string;
   address_line1: string;
   city: string;
@@ -125,47 +126,33 @@ function addressFieldsEqual(a: PersonForm, b: PersonForm) {
 function parseAddressSuggestions(payload: unknown): AddressSuggestion[] {
   if (!Array.isArray(payload)) return [];
 
-  return payload
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
+  return payload.reduce<AddressSuggestion[]>((acc, item) => {
+      if (!item || typeof item !== "object") return acc;
 
       const value = item as {
-        address?: Record<string, string | undefined>;
-        display_name?: string;
-        name?: string;
+        placeId?: string;
+        label?: string;
+        address_line1?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
       };
 
-      const address = value.address ?? {};
-      const houseNumber = address.house_number?.trim() ?? "";
-      const road =
-        address.road?.trim() ??
-        address.pedestrian?.trim() ??
-        address.footway?.trim() ??
-        address.residential?.trim() ??
-        "";
-      const line1 = [houseNumber, road].filter(Boolean).join(" ").trim();
-      const city =
-        address.city?.trim() ??
-        address.town?.trim() ??
-        address.village?.trim() ??
-        address.hamlet?.trim() ??
-        "";
-      const state = address.state?.trim() ?? "";
-      const zip = address.postcode?.trim() ?? "";
+      const suggestion: AddressSuggestion = {
+        placeId: value.placeId?.trim() || undefined,
+        label: value.label?.trim() ?? "",
+        address_line1: value.address_line1?.trim() ?? "",
+        city: value.city?.trim() ?? "",
+        state: value.state?.trim() ?? "",
+        zip: value.zip?.trim() ?? "",
+      };
 
-      if (!line1) return null;
+      if (suggestion.label) {
+        acc.push(suggestion);
+      }
 
-      return {
-        label:
-          value.display_name?.trim() ||
-          [line1, city, state, zip].filter(Boolean).join(", "),
-        address_line1: line1,
-        city,
-        state,
-        zip,
-      } satisfies AddressSuggestion;
-    })
-    .filter((item): item is AddressSuggestion => Boolean(item));
+      return acc;
+    }, []);
 }
 
 function getResidenceBreakdown(moveInDate: string) {
@@ -268,6 +255,7 @@ export default function CustomerStepClient({
   const addressLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addressLookupAbortRef = useRef<AbortController | null>(null);
   const householdIncomeRequestRef = useRef(0);
+  const suppressNextAddressLookupRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -428,14 +416,53 @@ export default function CustomerStepClient({
     }
   }
 
-  function applyAddressSuggestion(role: Role, suggestion: AddressSuggestion) {
-    updateRole(role, (current) => ({
-      ...current,
-      address_line1: suggestion.address_line1,
-      city: suggestion.city,
-      state: suggestion.state,
-      zip: suggestion.zip,
-    }));
+  async function applyAddressSuggestion(role: Role, suggestion: AddressSuggestion) {
+    if (suggestion.placeId) {
+      setAddressSearchBusy(true);
+      setAddressSearchError(null);
+
+      try {
+        const r = await fetch(
+          `/api/deals/${dealId}/address-autocomplete?placeId=${encodeURIComponent(suggestion.placeId)}`,
+          {
+            cache: "no-store",
+          }
+        );
+        const j = (await r.json().catch(() => ({}))) as
+          | { address?: AddressSuggestion }
+          | ApiErrorLike;
+
+        if (!r.ok || !("address" in j) || !j.address) {
+          throw new Error(formatSaveError(j, "Failed to load address details"));
+        }
+
+        const address = j.address;
+        suppressNextAddressLookupRef.current = true;
+
+        updateRole(role, (current) => ({
+          ...current,
+          address_line1: address.address_line1,
+          city: address.city,
+          state: address.state,
+          zip: address.zip,
+        }));
+      } catch (e: unknown) {
+        setAddressSearchError(errorMessage(e, "Failed to load address details"));
+        return;
+      } finally {
+        setAddressSearchBusy(false);
+      }
+    } else {
+      suppressNextAddressLookupRef.current = true;
+      updateRole(role, (current) => ({
+        ...current,
+        address_line1: suggestion.address_line1,
+        city: suggestion.city,
+        state: suggestion.state,
+        zip: suggestion.zip,
+      }));
+    }
+
     setAddressSuggestions([]);
     setAddressSearchError(null);
   }
@@ -580,6 +607,11 @@ export default function CustomerStepClient({
       addressLookupAbortRef.current = null;
     }
 
+    if (suppressNextAddressLookupRef.current) {
+      suppressNextAddressLookupRef.current = false;
+      return;
+    }
+
     if (!shouldSearch || activeAddress.length < 4) {
       queueMicrotask(() => {
         setAddressSuggestions([]);
@@ -597,23 +629,26 @@ export default function CustomerStepClient({
 
       try {
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=us&limit=5&q=${encodeURIComponent(
-            activeAddress
-          )}`,
+          `/api/deals/${dealId}/address-autocomplete?q=${encodeURIComponent(activeAddress)}`,
           {
             signal: controller.signal,
-            headers: {
-              Accept: "application/json",
-            },
+            cache: "no-store",
           }
         );
 
         if (!response.ok) {
-          throw new Error("Address suggestions are unavailable right now.");
+          const payload = (await response.json().catch(() => ({}))) as ApiErrorLike;
+          throw new Error(formatSaveError(payload, "Address suggestions are unavailable right now."));
         }
 
         const payload = (await response.json()) as unknown;
-        setAddressSuggestions(parseAddressSuggestions(payload));
+        const suggestions =
+          typeof payload === "object" &&
+          payload &&
+          "suggestions" in payload
+            ? parseAddressSuggestions((payload as { suggestions?: unknown }).suggestions)
+            : [];
+        setAddressSuggestions(suggestions);
       } catch (e: unknown) {
         if (controller.signal.aborted) return;
         setAddressSuggestions([]);
@@ -628,7 +663,7 @@ export default function CustomerStepClient({
     return () => {
       if (addressLookupTimerRef.current) clearTimeout(addressLookupTimerRef.current);
     };
-  }, [activeRole, people, sameAsApplicant]);
+  }, [activeRole, dealId, people, sameAsApplicant]);
 
   function nextBlockerMessage() {
     if (!primaryOk) return "Enter Driver first + last name to continue.";
@@ -855,7 +890,9 @@ export default function CustomerStepClient({
             label="Address"
             value={activeForm.address_line1}
             onChange={(v) => updateAddressField("address_line1", v)}
-            onSelect={(suggestion) => applyAddressSuggestion(activeRole, suggestion)}
+            onSelect={(suggestion) => {
+              void applyAddressSuggestion(activeRole, suggestion);
+            }}
             suggestions={addressSuggestions}
             loading={addressSearchBusy}
             error={addressSearchError}
