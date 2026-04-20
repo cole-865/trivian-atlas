@@ -12,6 +12,7 @@ import {
   getCreditApplicantRole,
   parseCreditApplicantRole,
 } from "@/lib/deals/creditApplicantRole";
+import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
 
 const ALLOWED_TYPES = new Set([
   "credit_bureau",
@@ -231,6 +232,7 @@ export async function POST(
 
   const userRes = await supabase.auth.getUser();
   const uploadedBy = userRes.data.user?.id ?? null;
+  const dbClient = hasAdminAccess() ? createAdminClient() : supabase;
 
   if (!uploadedBy) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -315,7 +317,7 @@ export async function POST(
     );
   }
 
-  const { data: docRow, error: insErr } = await supabase
+  const { data: docRow, error: insErr } = await dbClient
     .from("deal_documents")
     .insert({
       organization_id: authorizedDeal.organizationId,
@@ -344,13 +346,13 @@ export async function POST(
   }
 
   if (docType === "credit_bureau") {
-    await purgeCreditReportArtifacts(supabase, {
+    await purgeCreditReportArtifacts(dbClient, {
       organizationId: authorizedDeal.organizationId,
       dealId,
       applicantRole: applicantRole ?? undefined,
     });
 
-    await supabase
+    await dbClient
       .from("credit_report_jobs")
       .update({ status: "failed", error_message: "Superseded by newer upload" })
       .eq("organization_id", authorizedDeal.organizationId)
@@ -358,7 +360,7 @@ export async function POST(
       .eq("applicant_role", applicantRole)
       .in("status", ["queued", "uploaded", "parsing", "redacting", "scoring"]);
 
-    const { error: jobErr } = await supabase.from("credit_report_jobs").insert({
+    const { error: jobErr } = await dbClient.from("credit_report_jobs").insert({
       organization_id: authorizedDeal.organizationId,
       deal_id: dealId,
       applicant_role: applicantRole,
@@ -371,7 +373,7 @@ export async function POST(
 
     if (jobErr) {
       await supabase.storage.from(bucket).remove([storagePath]);
-      await supabase
+      await dbClient
         .from("deal_documents")
         .delete()
         .eq("organization_id", authorizedDeal.organizationId)
