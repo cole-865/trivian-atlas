@@ -10,6 +10,7 @@ import {
 } from "@/lib/deals/organizationScope";
 import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
 import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
+import { getDealStructureSnapshotPti } from "@/lib/deals/dealStructureSnapshot";
 import { createDealFundingOutcomeNotifications } from "@/lib/notifications/appNotifications";
 import { sendDealFundingOutcomeEmail } from "@/lib/email/notifications";
 
@@ -132,13 +133,6 @@ function formatResidence(person: DealPerson | null) {
 
 function monthlyIncome(row: IncomeProfile) {
   return num(row.monthly_gross_calculated) ?? num(row.monthly_gross_manual) ?? 0;
-}
-
-function getSnapshotPti(snapshot: unknown) {
-  if (!snapshot || typeof snapshot !== "object") return null;
-  const structure = (snapshot as { structure?: { pti?: unknown } }).structure;
-  const pti = num(structure?.pti);
-  return pti;
 }
 
 async function notifyFundingOutcome(args: {
@@ -333,7 +327,7 @@ async function loadFundingPacket(supabase: Awaited<ReturnType<typeof supabaseSer
           monthlyPayment: structure.monthly_payment,
           termMonths: structure.term_months,
           ltv: structure.ltv,
-          pti: getSnapshotPti(structure.snapshot_json),
+          pti: getDealStructureSnapshotPti(structure.snapshot_json),
         }),
       })
     : null;
@@ -564,7 +558,7 @@ export async function GET(
     selection: result.packet.structure
       ? {
           ...result.packet.structure,
-          pti: getSnapshotPti(result.packet.structure.snapshot_json),
+          pti: getDealStructureSnapshotPti(result.packet.structure.snapshot_json),
         }
       : null,
     overrides: result.packet.overrideSnapshot,

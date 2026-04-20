@@ -10,6 +10,7 @@ import { hasDealershipPermission } from "@/lib/auth/dealershipPermissions";
 import { buildOverrideStructureSnapshot, normalizeDealOverrideBlockerCode } from "@/lib/deals/dealOverrideWorkflow";
 import { buildDealOverrideRequestNote } from "@/lib/deals/dealOverrideSummary";
 import { createDealOverrideRequest } from "@/lib/deals/dealOverrideServer";
+import { getDealStructureSnapshotPti } from "@/lib/deals/dealStructureSnapshot";
 
 type DealStructureRow = {
   amount_financed: number | null;
@@ -179,7 +180,7 @@ export async function POST(
         monthlyPayment: liveStructure.monthly_payment,
         termMonths: liveStructure.term_months,
         ltv: liveStructure.ltv,
-        pti: null,
+        pti: getDealStructureSnapshotPti(liveStructure.snapshot_json),
       }),
       directApproval:
         action === "approve"

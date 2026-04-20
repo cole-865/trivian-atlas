@@ -9,6 +9,7 @@ import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { loadInventoryVehicleForOrganization } from "@/lib/los/organizationScope";
 import { buildOverrideStructureSnapshot } from "@/lib/deals/dealOverrideWorkflow";
 import { loadDealOverrideSnapshot } from "@/lib/deals/dealOverrideServer";
+import { getDealStructureSnapshotPti } from "@/lib/deals/dealStructureSnapshot";
 import { sendDealApprovalRequestEmail } from "@/lib/email/notifications";
 import { createDealFundingReviewNotifications } from "@/lib/notifications/appNotifications";
 import { getSubmitRequirementSettings } from "@/lib/deals/workflowAccess";
@@ -23,18 +24,6 @@ type InventoryStatusRow = {
     id: string;
     status: string | null;
 };
-
-function num(value: unknown): number | null {
-    if (value == null || value === "") return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-}
-
-function getSnapshotPti(snapshot: unknown) {
-    if (!snapshot || typeof snapshot !== "object") return null;
-    const structure = (snapshot as { structure?: { pti?: unknown } }).structure;
-    return num(structure?.pti);
-}
 
 export async function POST(
     req: Request,
@@ -203,7 +192,7 @@ export async function POST(
                 monthlyPayment: dealStructure.monthly_payment,
                 termMonths: dealStructure.term_months,
                 ltv: dealStructure.ltv ?? null,
-                pti: getSnapshotPti(dealStructure.snapshot_json),
+                pti: getDealStructureSnapshotPti(dealStructure.snapshot_json),
             }),
         })
         : null;
