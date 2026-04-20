@@ -5,10 +5,10 @@ import { isEmailDeliveryConfigured } from "@/lib/email/mailer";
 import { createClient } from "@/utils/supabase/server";
 import { getAuthContext } from "@/lib/auth/userRole";
 import {
-  canManageCurrentOrganization,
   isOrganizationScopedRole,
 } from "@/lib/auth/organizationManagement";
 import { ORG_MANAGED_ROLES, loadOrganizationManagementData } from "@/lib/auth/organizationManagement";
+import { isOrganizationAdminRole } from "@/lib/auth/accessRules";
 import {
   createOrganizationInviteAction,
   resendOrganizationInviteAction,
@@ -20,6 +20,12 @@ import { SaveButton, SettingsForm } from "./SettingsForm";
 import { UnderwritingTierCards } from "./UnderwritingTierCards";
 import { VehicleTermPolicyCards } from "./VehicleTermPolicyCards";
 import { getResolvedDealershipPermissions } from "@/lib/auth/dealershipPermissions";
+import {
+  canAccessAnySettingsSection,
+  getSettingsSectionAccess,
+  SETTINGS_SECTIONS,
+  type SettingsSection,
+} from "@/lib/auth/settingsAccess";
 import {
   DEFAULT_WORKFLOW_SETTINGS,
   getWorkflowSettings,
@@ -57,11 +63,11 @@ const SECTIONS = [
   ["notifications", "Notifications"],
   ["integrations", "Integrations"],
   ["audit", "Audit / Compliance"],
-] as const;
+] as const satisfies ReadonlyArray<readonly [SettingsSection, string]>;
 
 const VISIBLE_PERMISSION_KEYS = DEALERSHIP_PERMISSION_KEYS;
 
-type Section = (typeof SECTIONS)[number][0];
+type Section = SettingsSection;
 type ManagementData = Awaited<ReturnType<typeof loadOrganizationManagementData>>;
 
 function param(searchParams: Record<string, string | string[] | undefined>, key: string) {
@@ -101,6 +107,28 @@ function permissionLabel(permission: string) {
 
 function Banner({ tone, children }: { tone: "notice" | "error"; children: React.ReactNode }) {
   return <NoticeBanner tone={tone}>{children}</NoticeBanner>;
+}
+
+function firstVisibleSection(access: Record<SettingsSection, boolean>) {
+  return SETTINGS_SECTIONS.find((section) => access[section]) ?? null;
+}
+
+function AccessDenied({
+  title,
+  description,
+  emptyTitle,
+  emptyDescription,
+}: {
+  title: string;
+  description: string;
+  emptyTitle: string;
+  emptyDescription: string;
+}) {
+  return (
+    <SectionCard title={title} description={description}>
+      <EmptyState title={emptyTitle} description={emptyDescription} />
+    </SectionCard>
+  );
 }
 
 function Header({ title, text, meta }: { title: string; text: string; meta?: string }) {
@@ -568,24 +596,41 @@ export default async function SettingsPage({
   const notice = param(resolvedSearchParams, "notice");
   const error = param(resolvedSearchParams, "error");
   const platformDev = authContext.realRole === "dev" && !authContext.isImpersonating;
+  const effectiveOrganizationRole = isOrganizationScopedRole(
+    authContext.effectiveOrganizationRole
+  )
+    ? authContext.effectiveOrganizationRole
+    : null;
   const permissions =
     authContext.currentOrganizationId &&
     authContext.effectiveProfile?.id &&
-    isOrganizationScopedRole(authContext.effectiveOrganizationRole)
+    effectiveOrganizationRole
       ? await getResolvedDealershipPermissions({
           organizationId: authContext.currentOrganizationId,
           userId: authContext.effectiveProfile.id,
-          role: authContext.effectiveOrganizationRole,
+          role: effectiveOrganizationRole,
         })
       : null;
+  const sectionAccess = getSettingsSectionAccess({
+    currentOrganizationId: authContext.currentOrganizationId,
+    effectiveOrganizationRole,
+    permissions,
+    platformDev,
+  });
+  const visibleSections = SECTIONS.filter(([key]) => sectionAccess[key]);
+  const hasAnyVisibleSections = canAccessAnySettingsSection(sectionAccess);
+  const fallbackSection = firstVisibleSection(sectionAccess);
+  const activeSection =
+    sectionAccess[selected] ? selected : fallbackSection;
   const canManageUsers = platformDev || !!permissions?.manage_users;
   const canViewAudit = platformDev || !!permissions?.view_audit_logs;
+  const canManagePermissions =
+    platformDev || (!!permissions?.manage_users && isOrganizationAdminRole(effectiveOrganizationRole));
   const settingsData =
     authContext.currentOrganizationId && adminAccess
       ? await loadDealershipSettingsData(authContext.currentOrganizationId)
       : null;
   const managementData =
-    canManageCurrentOrganization(authContext) &&
     canManageUsers &&
     authContext.currentOrganizationId &&
     adminAccess
@@ -608,9 +653,9 @@ export default async function SettingsPage({
         title="Settings"
         description={`Editing ${authContext.currentOrganization?.name ?? "no selected account"}${authContext.currentOrganization?.slug ? ` (${authContext.currentOrganization.slug})` : ""}.`}
         actions={
-          selected === "users" && canManageUsers ? (
+          activeSection === "users" && canManageUsers ? (
             <Badge variant="default">User management</Badge>
-          ) : selected === "audit" && canViewAudit ? (
+          ) : activeSection === "audit" && canViewAudit ? (
             <Badge variant="secondary">Audit visible</Badge>
           ) : (
             <Badge variant="secondary">Organization scoped</Badge>
@@ -621,11 +666,11 @@ export default async function SettingsPage({
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-3 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
           <nav className="grid gap-1">
-            {SECTIONS.map(([key, label]) => (
+            {visibleSections.map(([key, label]) => (
               <UiButton
                 key={key}
                 asChild
-                variant={selected === key ? "default" : "ghost"}
+                variant={activeSection === key ? "default" : "ghost"}
                 className="justify-start"
               >
                 <Link href={`/settings?section=${key}`}>{label}</Link>
@@ -642,24 +687,31 @@ export default async function SettingsPage({
                 description="Atlas needs a selected organization and configured admin access before this page can render account-scoped settings."
               />
             </SectionCard>
-          ) : selected === "general" ? (
+          ) : !hasAnyVisibleSections ? (
+            <AccessDenied
+              title="Settings"
+              description="No editable settings are available for your current role in this organization."
+              emptyTitle="No settings access"
+              emptyDescription="Atlas hides organization settings that your current role cannot manage."
+            />
+          ) : activeSection === "general" ? (
             <General data={settingsData} />
-          ) : selected === "users" ? (
+          ) : activeSection === "users" ? (
             <Users data={managementData} />
-          ) : selected === "permissions" ? (
-            canManageUsers ? <Permissions data={settingsData} managementData={managementData} /> : <SectionCard title="Permissions" description="You do not have permission to manage account permissions."><EmptyState title="Permission management unavailable" description="Your current organization role does not allow updates to role permissions or user overrides." /></SectionCard>
-          ) : selected === "underwriting" ? (
+          ) : activeSection === "permissions" ? (
+            canManagePermissions ? <Permissions data={settingsData} managementData={managementData} /> : <AccessDenied title="Permissions" description="Only organization admins can manage role presets and user overrides." emptyTitle="Permission management unavailable" emptyDescription="Your current role can manage users, but it cannot change role permissions or user-level permission overrides." />
+          ) : activeSection === "underwriting" ? (
             <Underwriting data={settingsData} />
-          ) : selected === "workflow" ? (
+          ) : activeSection === "workflow" ? (
             <Workflow settings={workflowSettings} data={settingsData} />
-          ) : selected === "products" ? (
+          ) : activeSection === "products" ? (
             <Products data={settingsData} />
-          ) : selected === "notifications" ? (
+          ) : activeSection === "notifications" ? (
             <Notifications data={settingsData} />
-          ) : selected === "integrations" ? (
+          ) : activeSection === "integrations" ? (
             <Integrations data={settingsData} emailConfigured={emailConfigured} />
-          ) : selected === "audit" ? (
-            canViewAudit ? <Audit data={settingsData} /> : <SectionCard title="Audit / Compliance" description="You do not have permission to view audit logs."><EmptyState title="Audit log unavailable" description="Your current role cannot view account-scoped audit history for the selected organization." /></SectionCard>
+          ) : activeSection === "audit" ? (
+            canViewAudit ? <Audit data={settingsData} /> : <AccessDenied title="Audit / Compliance" description="You do not have permission to view audit logs." emptyTitle="Audit log unavailable" emptyDescription="Your current role cannot view account-scoped audit history for the selected organization." />
           ) : null}
         </section>
       </div>

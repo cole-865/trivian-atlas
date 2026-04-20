@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight, Plus } from "lucide-react";
 import { createClient } from "@/utils/supabase/server";
+import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 import { getCurrentOrganizationIdForDeals } from "@/lib/deals/organizationScope";
 import { Badge } from "@/components/ui/badge";
@@ -152,11 +153,7 @@ function SectionCard({
 async function getDashboardMetrics(
   organizationId: string | null
 ): Promise<DashboardMetrics> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("atlas_dashboard_metrics");
-
-  if (error) {
-    console.error("atlas_dashboard_metrics error:", error);
+  if (!organizationId) {
     return {
       deals_created_30d: 0,
       deals_worked_30d: 0,
@@ -167,29 +164,78 @@ async function getDashboardMetrics(
     };
   }
 
-  let vehiclesInventory = Number(data?.vehicles_inventory ?? 0);
+  const supabase = await createClient();
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  if (organizationId) {
-    const inventoryResponse = await supabase
-      .from("trivian_inventory")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("status", "IN INVENTORY");
+  const [
+    dealsCreatedResponse,
+    dealsWorkedResponse,
+    pendingApprovalsResponse,
+    vehiclesInventoryResponse,
+    creditReportsProcessingResponse,
+  ] = await Promise.all([
+    scopeQueryToOrganization(
+      supabase
+        .from("deals")
+        .select("id", { count: "exact", head: true }),
+      organizationId
+    ).gte("created_at", since),
+    scopeQueryToOrganization(
+      supabase
+        .from("deals")
+        .select("id", { count: "exact", head: true }),
+      organizationId
+    ).gte("updated_at", since),
+    scopeQueryToOrganization(
+      supabase
+        .from("deal_override_requests")
+        .select("id", { count: "exact", head: true }),
+      organizationId
+    ).eq("status", "pending"),
+    scopeQueryToOrganization(
+      supabase
+        .from("trivian_inventory")
+        .select("id", { count: "exact", head: true }),
+      organizationId
+    ).eq("status", "IN INVENTORY"),
+    scopeQueryToOrganization(
+      supabase
+        .from("credit_report_jobs")
+        .select("id", { count: "exact", head: true }),
+      organizationId
+    ).in("status", ["queued", "uploaded", "parsing", "redacting", "scoring"]),
+  ]);
 
-    if (inventoryResponse.error) {
-      console.error("inventory metrics error:", inventoryResponse.error);
-    } else {
-      vehiclesInventory = Number(inventoryResponse.count ?? 0);
-    }
+  if (dealsCreatedResponse.error) {
+    console.error("dashboard deals_created_30d error:", dealsCreatedResponse.error);
+  }
+
+  if (dealsWorkedResponse.error) {
+    console.error("dashboard deals_worked_30d error:", dealsWorkedResponse.error);
+  }
+
+  if (pendingApprovalsResponse.error) {
+    console.error("dashboard pending approvals error:", pendingApprovalsResponse.error);
+  }
+
+  if (vehiclesInventoryResponse.error) {
+    console.error("dashboard inventory error:", vehiclesInventoryResponse.error);
+  }
+
+  if (creditReportsProcessingResponse.error) {
+    console.error(
+      "dashboard credit reports processing error:",
+      creditReportsProcessingResponse.error
+    );
   }
 
   return {
-    deals_created_30d: Number(data?.deals_created_30d ?? 0),
-    deals_worked_30d: Number(data?.deals_worked_30d ?? 0),
-    pending_approvals: Number(data?.pending_approvals ?? 0),
-    risk_review_queue: Number(data?.risk_review_queue ?? 0),
-    vehicles_inventory: vehiclesInventory,
-    credit_reports_processing: Number(data?.credit_reports_processing ?? 0),
+    deals_created_30d: Number(dealsCreatedResponse.count ?? 0),
+    deals_worked_30d: Number(dealsWorkedResponse.count ?? 0),
+    pending_approvals: Number(pendingApprovalsResponse.count ?? 0),
+    risk_review_queue: Number(pendingApprovalsResponse.count ?? 0),
+    vehicles_inventory: Number(vehiclesInventoryResponse.count ?? 0),
+    credit_reports_processing: Number(creditReportsProcessingResponse.count ?? 0),
   };
 }
 

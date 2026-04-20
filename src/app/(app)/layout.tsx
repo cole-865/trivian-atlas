@@ -3,6 +3,12 @@ import { createClient } from "@/utils/supabase/server";
 import { stopImpersonationAction } from "@/lib/auth/impersonationActions";
 import { getAuthContext } from "@/lib/auth/userRole";
 import { getSwitchableOrganizations } from "@/lib/auth/organizationManagement";
+import { isOrganizationScopedRole } from "@/lib/auth/accessRules";
+import { getResolvedDealershipPermissions } from "@/lib/auth/dealershipPermissions";
+import {
+  canAccessAnySettingsSection,
+  getSettingsSectionAccess,
+} from "@/lib/auth/settingsAccess";
 import { OrganizationSwitcher } from "@/components/OrganizationSwitcher";
 import { getCurrentUserUnreadNotificationCount } from "@/lib/notifications/appNotifications";
 import { AppHeader, AppHeaderInner, AppShell, AppSidebar } from "@/components/app-shell";
@@ -42,12 +48,35 @@ export default async function AppLayout({
     authContext.isImpersonating &&
     authContext.impersonatedProfile &&
     authContext.realUser;
+  const platformDev = authContext.realRole === "dev" && !authContext.isImpersonating;
+  const permissions =
+    authContext.currentOrganizationId &&
+    authContext.effectiveProfile?.id &&
+    isOrganizationScopedRole(authContext.effectiveOrganizationRole)
+      ? await getResolvedDealershipPermissions({
+          organizationId: authContext.currentOrganizationId,
+          userId: authContext.effectiveProfile.id,
+          role: authContext.effectiveOrganizationRole,
+        })
+      : null;
+  const canViewSettings = canAccessAnySettingsSection(
+    getSettingsSectionAccess({
+      currentOrganizationId: authContext.currentOrganizationId,
+      effectiveOrganizationRole: isOrganizationScopedRole(
+        authContext.effectiveOrganizationRole
+      )
+        ? authContext.effectiveOrganizationRole
+        : null,
+      permissions,
+      platformDev,
+    })
+  );
   const navItems: NavItem[] = [
     { href: "/home", label: "Home" },
     { href: "/approvals", label: "Approvals" },
     { href: "/messages", label: "Messages" },
     { href: "/deals", label: "Deals" },
-    { href: "/settings", label: "Settings" },
+    ...(canViewSettings ? [{ href: "/settings", label: "Settings" }] : []),
     ...(authContext.realRole === "dev" ? [{ href: "/dev-tools", label: "GOD MODE" }] : []),
   ];
   const accountName =

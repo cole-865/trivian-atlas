@@ -29,6 +29,7 @@ export const DEFAULT_ROLE_PERMISSION_PRESETS: DealershipPermissionPreset = {
     "submit_deals",
     "fund_deals",
     "approve_overrides",
+    "manage_users",
   ],
   admin: DEALERSHIP_PERMISSION_KEYS,
 };

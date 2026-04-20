@@ -8,7 +8,6 @@ import {
   ORG_MANAGED_ROLES,
   acceptOrganizationInvite,
   canCreateOrganizations,
-  canManageCurrentOrganization,
   createOrganization,
   createOrganizationInvite,
   resendOrganizationInvite,
@@ -18,6 +17,7 @@ import {
   updateOrganizationMembership,
 } from "@/lib/auth/organizationManagement";
 import { getAuthContext } from "@/lib/auth/userRole";
+import { isPlatformDevRole } from "@/lib/auth/accessRules";
 import {
   clearDealershipPermissionCache,
   requireDealershipPermission,
@@ -58,6 +58,12 @@ function redirectWithMessage(
   const params = new URLSearchParams();
   params.set(key, message);
   redirect(`${path}?${params.toString()}`);
+}
+
+function canManageOrganizationUsers(authContext: Awaited<ReturnType<typeof getAuthContext>>) {
+  return !!authContext.currentOrganizationId && !(
+    authContext.isImpersonating && isPlatformDevRole(authContext.realRole)
+  );
 }
 
 export async function createOrganizationAction(formData: FormData) {
@@ -131,7 +137,7 @@ export async function createOrganizationInviteAction(formData: FormData) {
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
 
-  if (!canManageCurrentOrganization(authContext) || !authContext.currentOrganizationId) {
+  if (!canManageOrganizationUsers(authContext)) {
     redirectWithMessage("/settings", "error", "You cannot invite users into this account.");
   }
   try {
@@ -162,8 +168,13 @@ export async function createOrganizationInviteAction(formData: FormData) {
     redirectWithMessage("/settings", "error", "Missing inviter context.");
   }
 
+  const organizationId = authContext.currentOrganizationId;
+  if (!organizationId) {
+    redirectWithMessage("/settings", "error", "Missing account management context.");
+  }
+
   const invite = await createOrganizationInvite({
-    organizationId: authContext.currentOrganizationId,
+    organizationId,
     invitedByUserId: authContext.realUser.id,
     ...parsed.data,
   });
@@ -183,7 +194,7 @@ export async function resendOrganizationInviteAction(formData: FormData) {
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
 
-  if (!canManageCurrentOrganization(authContext) || !inviteId) {
+  if (!canManageOrganizationUsers(authContext) || !inviteId) {
     redirectWithMessage("/settings", "error", "You cannot resend this invitation.");
   }
   try {
@@ -200,9 +211,10 @@ export async function resendOrganizationInviteAction(formData: FormData) {
     redirectWithMessage("/settings", "error", "Missing account management context.");
   }
 
+  const organizationId = authContext.currentOrganizationId;
   const invite = await resendOrganizationInvite(
     inviteId,
-    authContext.currentOrganizationId,
+    organizationId,
     authContext.realUser.id
   );
   revalidatePath("/settings");
@@ -220,7 +232,7 @@ export async function revokeOrganizationInviteAction(formData: FormData) {
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
 
-  if (!canManageCurrentOrganization(authContext) || !inviteId) {
+  if (!canManageOrganizationUsers(authContext) || !inviteId) {
     redirectWithMessage("/settings", "error", "You cannot revoke this invitation.");
   }
   try {
@@ -237,7 +249,8 @@ export async function revokeOrganizationInviteAction(formData: FormData) {
     redirectWithMessage("/settings", "error", "Missing account management context.");
   }
 
-  await revokeOrganizationInvite(inviteId, authContext.currentOrganizationId);
+  const organizationId = authContext.currentOrganizationId;
+  await revokeOrganizationInvite(inviteId, organizationId);
   revalidatePath("/settings");
   redirectWithMessage("/settings", "notice", "Invitation revoked.");
 }
@@ -246,7 +259,7 @@ export async function updateOrganizationMembershipAction(formData: FormData) {
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
 
-  if (!canManageCurrentOrganization(authContext) || !authContext.currentOrganizationId) {
+  if (!canManageOrganizationUsers(authContext)) {
     redirectWithMessage("/settings", "error", "You cannot update users in this account.");
   }
   try {
@@ -271,12 +284,17 @@ export async function updateOrganizationMembershipAction(formData: FormData) {
     redirectWithMessage("/settings", "error", parsed.error.issues[0]?.message ?? "Invalid membership update.");
   }
 
+  const organizationId = authContext.currentOrganizationId;
+  if (!organizationId) {
+    redirectWithMessage("/settings", "error", "Missing account management context.");
+  }
+
   await updateOrganizationMembership({
-    organizationId: authContext.currentOrganizationId,
+    organizationId,
     ...parsed.data,
   });
   clearDealershipPermissionCache({
-    organizationId: authContext.currentOrganizationId,
+    organizationId,
     userId: parsed.data.userId,
   });
 

@@ -13,7 +13,10 @@ import {
   clearDealershipPermissionCache,
   requireDealershipPermission,
 } from "@/lib/auth/dealershipPermissions";
-import { ORG_MANAGED_ROLES } from "@/lib/auth/accessRules";
+import {
+  isOrganizationAdminRole,
+  ORG_MANAGED_ROLES,
+} from "@/lib/auth/accessRules";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logOrganizationSettingsChange } from "@/lib/settings/audit";
 import {
@@ -165,6 +168,21 @@ async function getAuthorizedContext(permission: DealershipPermissionKey) {
     organizationId: authContext.currentOrganizationId,
     userId: authContext.realUser?.id ?? null,
   };
+}
+
+async function getAuthorizedPermissionsContext() {
+  const context = await getAuthorizedContext("manage_users");
+  const isPlatformDev =
+    context.authContext.realRole === "dev" && !context.authContext.isImpersonating;
+
+  if (
+    !isPlatformDev &&
+    !isOrganizationAdminRole(context.authContext.effectiveOrganizationRole)
+  ) {
+    throw new Error("Only organization admins can manage role permissions.");
+  }
+
+  return context;
 }
 
 async function getBeforeRow(table: string, organizationId: string, filters?: Record<string, string>) {
@@ -331,7 +349,7 @@ export async function updateGeneralSettingsAction(formData: FormData) {
 
 export async function updateRolePermissionsAction(formData: FormData) {
   try {
-    const { organizationId, userId } = await getAuthorizedContext("manage_users");
+    const { organizationId, userId } = await getAuthorizedPermissionsContext();
     const permissions = DEALERSHIP_PERMISSION_KEYS.filter(
       (permission) => formData.get(permission) === "on"
     );
@@ -386,7 +404,7 @@ export async function updateRolePermissionsAction(formData: FormData) {
 
 export async function updateUserPermissionOverrideAction(formData: FormData) {
   try {
-    const { organizationId, userId } = await getAuthorizedContext("manage_users");
+    const { organizationId, userId } = await getAuthorizedPermissionsContext();
     const parsed = userOverrideSchema.parse({
       userId: String(formData.get("user_id") ?? ""),
       permission: String(formData.get("permission") ?? ""),
