@@ -197,6 +197,7 @@ export type Database = {
       }
       bureau_messages: {
         Row: {
+          applicant_role: string
           bureau_summary_id: string
           code: string | null
           created_at: string
@@ -208,6 +209,7 @@ export type Database = {
           severity: string | null
         }
         Insert: {
+          applicant_role?: string
           bureau_summary_id: string
           code?: string | null
           created_at?: string
@@ -219,6 +221,7 @@ export type Database = {
           severity?: string | null
         }
         Update: {
+          applicant_role?: string
           bureau_summary_id?: string
           code?: string | null
           created_at?: string
@@ -256,6 +259,7 @@ export type Database = {
       bureau_public_records: {
         Row: {
           amount: number | null
+          applicant_role: string
           bad: boolean | null
           bureau_summary_id: string
           court_name: string | null
@@ -275,6 +279,7 @@ export type Database = {
         }
         Insert: {
           amount?: number | null
+          applicant_role?: string
           bad?: boolean | null
           bureau_summary_id: string
           court_name?: string | null
@@ -294,6 +299,7 @@ export type Database = {
         }
         Update: {
           amount?: number | null
+          applicant_role?: string
           bad?: boolean | null
           bureau_summary_id?: string
           court_name?: string | null
@@ -337,6 +343,7 @@ export type Database = {
       }
       bureau_summary: {
         Row: {
+          applicant_role: string
           autos_on_bureau: number | null
           bureau_raw: Json | null
           bureau_source: string | null
@@ -370,6 +377,7 @@ export type Database = {
           utilization_pct: number | null
         }
         Insert: {
+          applicant_role?: string
           autos_on_bureau?: number | null
           bureau_raw?: Json | null
           bureau_source?: string | null
@@ -403,6 +411,7 @@ export type Database = {
           utilization_pct?: number | null
         }
         Update: {
+          applicant_role?: string
           autos_on_bureau?: number | null
           bureau_raw?: Json | null
           bureau_source?: string | null
@@ -471,6 +480,7 @@ export type Database = {
           account_status: string | null
           account_type: string | null
           amount: number | null
+          applicant_role: string
           auto_repo: boolean | null
           bad: boolean | null
           balance: number | null
@@ -502,6 +512,7 @@ export type Database = {
           account_status?: string | null
           account_type?: string | null
           amount?: number | null
+          applicant_role?: string
           auto_repo?: boolean | null
           bad?: boolean | null
           balance?: number | null
@@ -533,6 +544,7 @@ export type Database = {
           account_status?: string | null
           account_type?: string | null
           amount?: number | null
+          applicant_role?: string
           auto_repo?: boolean | null
           bad?: boolean | null
           balance?: number | null
@@ -586,6 +598,7 @@ export type Database = {
       }
       credit_report_jobs: {
         Row: {
+          applicant_role: string
           bureau: string
           created_at: string
           deal_id: string
@@ -606,6 +619,7 @@ export type Database = {
           uploaded_by: string
         }
         Insert: {
+          applicant_role?: string
           bureau?: string
           created_at?: string
           deal_id: string
@@ -626,6 +640,7 @@ export type Database = {
           uploaded_by: string
         }
         Update: {
+          applicant_role?: string
           bureau?: string
           created_at?: string
           deal_id?: string
@@ -664,6 +679,7 @@ export type Database = {
       }
       credit_reports: {
         Row: {
+          applicant_role: string
           bureau: string
           created_at: string
           deal_id: string
@@ -678,6 +694,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          applicant_role?: string
           bureau?: string
           created_at?: string
           deal_id: string
@@ -692,6 +709,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          applicant_role?: string
           bureau?: string
           created_at?: string
           deal_id?: string
@@ -731,6 +749,7 @@ export type Database = {
       }
       deal_documents: {
         Row: {
+          applicant_role: string | null
           created_at: string
           deal_id: string
           doc_type: string
@@ -744,6 +763,7 @@ export type Database = {
           uploaded_by: string | null
         }
         Insert: {
+          applicant_role?: string | null
           created_at?: string
           deal_id: string
           doc_type: string
@@ -757,6 +777,7 @@ export type Database = {
           uploaded_by?: string | null
         }
         Update: {
+          applicant_role?: string | null
           created_at?: string
           deal_id?: string
           doc_type?: string

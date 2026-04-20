@@ -50,8 +50,8 @@ function createGateway(overrides?: Partial<CreditWorkerGateway>) {
     async replaceBureauDetails() {
       calls.push("replaceBureauDetails");
     },
-    async loadPrimaryPerson() {
-      calls.push("loadPrimaryPerson");
+    async loadApplicantPerson() {
+      calls.push("loadApplicantPerson");
       return { residence_months: 24 };
     },
     async upsertUnderwritingResult() {
@@ -127,6 +127,7 @@ test("processJob orchestrates the happy path and stamps missing organization ids
     uploaded_by: "user-1",
     raw_bucket: "raw",
     raw_path: "deal/1/report.pdf",
+    applicant_role: "primary",
   };
 
   const result = await processJob(job, {
@@ -151,7 +152,7 @@ test("processJob orchestrates the happy path and stamps missing organization ids
     "upsertCreditReport",
     "upsertBureauSummary",
     "replaceBureauDetails",
-    "loadPrimaryPerson",
+    "loadApplicantPerson",
     "upsertUnderwritingResult",
     "updateJobStatus:done",
   ]);
@@ -168,6 +169,7 @@ test("processJob skips organization stamping when the queued job already has org
       uploaded_by: "user-1",
       raw_bucket: "raw",
       raw_path: "deal/2/report.pdf",
+      applicant_role: "primary",
     },
     {
       gateway,
@@ -199,6 +201,7 @@ test("processJob marks the job failed when redacted upload fails", async () => {
         uploaded_by: "user-1",
         raw_bucket: "raw",
         raw_path: "deal/3/report.pdf",
+        applicant_role: "primary",
       },
       {
         gateway,
@@ -228,6 +231,7 @@ test("processJob fails unsupported bureau formats before any downstream upserts"
         uploaded_by: "user-1",
         raw_bucket: "raw",
         raw_path: "deal/4/report.pdf",
+        applicant_role: "primary",
       },
       {
         gateway,
@@ -244,4 +248,31 @@ test("processJob fails unsupported bureau formats before any downstream upserts"
   assert.equal(calls.includes("upsertCreditReport"), false);
   assert.equal(calls.includes("upsertBureauSummary"), false);
   assert.equal(calls.includes("markJobFailed"), true);
+});
+
+test("processJob stores co-app bureau data without refreshing deal underwriting", async () => {
+  const { gateway, calls } = createGateway();
+
+  await processJob(
+    {
+      id: "job-5",
+      deal_id: "deal-5",
+      organization_id: "org-1",
+      uploaded_by: "user-1",
+      raw_bucket: "raw",
+      raw_path: "deal/5/report.pdf",
+      applicant_role: "co",
+    },
+    {
+      gateway,
+      parsePdfText: async () => "Equifax-Style Report Generated from Equifax v6 Data",
+      parseBureau: () => createParsedBureau(),
+      scrubText: (text) => text,
+      renderRedactedPdf: async () => Buffer.from("pdf"),
+      underwrite: async () => createUnderwriteResult(),
+    }
+  );
+
+  assert.equal(calls.includes("loadApplicantPerson"), false);
+  assert.equal(calls.includes("upsertUnderwritingResult"), false);
 });

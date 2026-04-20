@@ -6,6 +6,7 @@ import type {
 } from "./parseEquifax.js";
 
 export type CreditReportJobRow = {
+  applicant_role?: "primary" | "co" | null;
   id: string;
   deal_id: string;
   organization_id?: string | null;
@@ -56,6 +57,7 @@ export type CreditWorkerGateway = {
   downloadRawPdf: (bucket: string, path: string) => Promise<Buffer>;
   uploadRedactedPdf: (bucket: string, path: string, body: Uint8Array) => Promise<void>;
   upsertCreditReport: (args: {
+    applicantRole: "primary" | "co";
     organizationId: string;
     dealId: string;
     jobId: string;
@@ -67,6 +69,7 @@ export type CreditWorkerGateway = {
     redactedText: string;
   }) => Promise<{ id: string } & Record<string, unknown>>;
   upsertBureauSummary: (args: {
+    applicantRole: "primary" | "co";
     organizationId: string;
     dealId: string;
     creditReportId: string;
@@ -74,6 +77,7 @@ export type CreditWorkerGateway = {
     parsed: ParsedBureauReport;
   }) => Promise<{ id: string; score: number | null; repo_count?: number | null; months_since_repo?: number | null; paid_auto_trades?: number | null; open_auto_trades?: number | null } & Record<string, unknown>>;
   replaceBureauDetails: (args: {
+    applicantRole: "primary" | "co";
     organizationId: string;
     bureauSummaryId: string;
     dealId: string;
@@ -81,7 +85,11 @@ export type CreditWorkerGateway = {
     publicRecords: BureauPublicRecordRow[];
     messages: BureauMessageRow[];
   }) => Promise<void>;
-  loadPrimaryPerson: (organizationId: string, dealId: string) => Promise<{ residence_months: number | null }>;
+  loadApplicantPerson: (
+    organizationId: string,
+    dealId: string,
+    applicantRole: "primary" | "co"
+  ) => Promise<{ residence_months: number | null }>;
   upsertUnderwritingResult: (args: {
     organizationId: string;
     dealId: string;
@@ -164,6 +172,7 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
 
   async upsertCreditReport(args) {
     const payload = {
+      applicant_role: args.applicantRole,
       organization_id: args.organizationId,
       deal_id: args.dealId,
       bureau: args.bureau,
@@ -178,7 +187,7 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
 
     const { data, error } = await supabase
       .from("credit_reports")
-      .upsert(payload, { onConflict: "deal_id" })
+      .upsert(payload, { onConflict: "organization_id,deal_id,applicant_role" })
       .select("*")
       .single();
 
@@ -189,6 +198,7 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
   async upsertBureauSummary(args) {
     const s = args.parsed.summary;
     const payload = {
+      applicant_role: args.applicantRole,
       organization_id: args.organizationId,
       deal_id: args.dealId,
       credit_report_id: args.creditReportId,
@@ -235,26 +245,30 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
       .from("bureau_tradelines")
       .delete()
       .eq("organization_id", args.organizationId)
-      .eq("bureau_summary_id", args.bureauSummaryId);
+      .eq("bureau_summary_id", args.bureauSummaryId)
+      .eq("applicant_role", args.applicantRole);
     if (delTradelinesErr) throw delTradelinesErr;
 
     const { error: delPublicErr } = await supabase
       .from("bureau_public_records")
       .delete()
       .eq("organization_id", args.organizationId)
-      .eq("bureau_summary_id", args.bureauSummaryId);
+      .eq("bureau_summary_id", args.bureauSummaryId)
+      .eq("applicant_role", args.applicantRole);
     if (delPublicErr) throw delPublicErr;
 
     const { error: delMessagesErr } = await supabase
       .from("bureau_messages")
       .delete()
       .eq("organization_id", args.organizationId)
-      .eq("bureau_summary_id", args.bureauSummaryId);
+      .eq("bureau_summary_id", args.bureauSummaryId)
+      .eq("applicant_role", args.applicantRole);
     if (delMessagesErr) throw delMessagesErr;
 
     if (args.tradelines.length > 0) {
       const { error } = await supabase.from("bureau_tradelines").insert(
         args.tradelines.map((t) => ({
+          applicant_role: args.applicantRole,
           organization_id: args.organizationId,
           bureau_summary_id: args.bureauSummaryId,
           deal_id: args.dealId,
@@ -290,6 +304,7 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
     if (args.publicRecords.length > 0) {
       const { error } = await supabase.from("bureau_public_records").insert(
         args.publicRecords.map((r) => ({
+          applicant_role: args.applicantRole,
           organization_id: args.organizationId,
           bureau_summary_id: args.bureauSummaryId,
           deal_id: args.dealId,
@@ -313,6 +328,7 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
     if (args.messages.length > 0) {
       const { error } = await supabase.from("bureau_messages").insert(
         args.messages.map((m) => ({
+          applicant_role: args.applicantRole,
           organization_id: args.organizationId,
           bureau_summary_id: args.bureauSummaryId,
           deal_id: args.dealId,
@@ -326,13 +342,13 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
     }
   },
 
-  async loadPrimaryPerson(organizationId, dealId) {
+  async loadApplicantPerson(organizationId, dealId, applicantRole) {
     const { data, error } = await supabase
       .from("deal_people")
       .select("*")
       .eq("organization_id", organizationId)
       .eq("deal_id", dealId)
-      .eq("role", "primary")
+      .eq("role", applicantRole)
       .single();
 
     if (error) throw error;

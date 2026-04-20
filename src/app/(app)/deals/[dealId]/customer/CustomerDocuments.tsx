@@ -4,8 +4,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type DocType = "credit_bureau";
+type ApplicantRole = "primary" | "co";
 
 type DealDoc = {
+  applicant_role: ApplicantRole | null;
   id: string;
   doc_type: DocType;
   original_name: string | null;
@@ -24,6 +26,7 @@ type BureauJobStatus =
   | null;
 
 type BureauReport = {
+  applicant_role: ApplicantRole | null;
   id: string;
   deal_id: string;
   latest_job_id: string | null;
@@ -38,6 +41,7 @@ type BureauReport = {
 } | null;
 
 type BureauSummary = {
+  applicant_role: ApplicantRole | null;
   id: string;
   deal_id: string;
   credit_report_id: string | null;
@@ -149,10 +153,12 @@ type ModalTab = "report" | "info" | "tradelines" | "public";
 
 export default function CustomerDocuments({
   dealId,
+  applicantRole,
   onStatus,
 }: {
   dealId: string;
-  onStatus?: (s: { credit_app: boolean; credit_bureau: boolean }) => void;
+  applicantRole: ApplicantRole;
+  onStatus?: (s: { applicant_role: ApplicantRole; credit_app: boolean; credit_bureau: boolean }) => void;
 }) {
   const router = useRouter();
   const [docs, setDocs] = useState<{
@@ -182,6 +188,7 @@ export default function CustomerDocuments({
     credit_bureau: DealDoc | null;
   }) {
     onStatus?.({
+      applicant_role: applicantRole,
       credit_app: false,
       credit_bureau: !!nextDocs.credit_bureau,
     });
@@ -221,7 +228,9 @@ export default function CustomerDocuments({
     if (!dealId) return;
 
     try {
-      const r = await fetch(`/api/deals/${dealId}/credit-bureau-status`, { cache: "no-store" });
+      const statusUrl = new URL(`/api/deals/${dealId}/credit-bureau-status`, window.location.origin);
+      statusUrl.searchParams.set("applicantRole", applicantRole);
+      const r = await fetch(statusUrl.toString(), { cache: "no-store" });
       const j = (await r.json()) as BureauStatusResponse;
 
       if (!r.ok) {
@@ -248,7 +257,9 @@ export default function CustomerDocuments({
     setErr(null);
 
     try {
-      const r = await fetch(`/api/deals/${dealId}/refresh-underwriting`, {
+      const refreshUrl = new URL(`/api/deals/${dealId}/refresh-underwriting`, window.location.origin);
+      refreshUrl.searchParams.set("applicantRole", applicantRole);
+      const r = await fetch(refreshUrl.toString(), {
         method: "POST",
       });
 
@@ -270,7 +281,9 @@ export default function CustomerDocuments({
     setErr(null);
 
     try {
-      const r = await fetch(`/api/deals/${dealId}/documents`, { cache: "no-store" });
+      const documentsUrl = new URL(`/api/deals/${dealId}/documents`, window.location.origin);
+      documentsUrl.searchParams.set("applicantRole", applicantRole);
+      const r = await fetch(documentsUrl.toString(), { cache: "no-store" });
       const j = (await r.json()) as DocumentsResponse;
 
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to load documents");
@@ -301,7 +314,9 @@ export default function CustomerDocuments({
     setModalOpen(true);
 
     try {
-      const r = await fetch(`/api/deals/${dealId}/credit-bureau-details`, {
+      const detailsUrl = new URL(`/api/deals/${dealId}/credit-bureau-details`, window.location.origin);
+      detailsUrl.searchParams.set("applicantRole", applicantRole);
+      const r = await fetch(detailsUrl.toString(), {
         cache: "no-store",
       });
       const j = await r.json();
@@ -334,7 +349,7 @@ export default function CustomerDocuments({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dealId]);
+  }, [dealId, applicantRole]);
 
   useEffect(() => {
     if (bureauStatus === "done") {
@@ -383,6 +398,7 @@ export default function CustomerDocuments({
 
       const fd = new FormData();
       fd.append("doc_type", type);
+      fd.append("applicant_role", applicantRole);
       fd.append("file", file);
 
       const r = await fetch(`/api/deals/${dealId}/documents`, {
@@ -452,7 +468,7 @@ export default function CustomerDocuments({
   }
 
   function label() {
-    return "Credit Bureau (PDF)";
+    return applicantRole === "primary" ? "Driver Credit Bureau (PDF)" : "Co-app Credit Bureau (PDF)";
   }
 
   function renderBureauStatusPill() {
@@ -530,6 +546,7 @@ export default function CustomerDocuments({
     const doc = docs[type];
     const busy = busyType === type;
     const bureauReady = type === "credit_bureau" && bureauStatus === "done";
+    const canRefreshUnderwriting = applicantRole === "primary";
 
     return (
       <div
@@ -647,12 +664,16 @@ export default function CustomerDocuments({
             type="button"
             style={{
               ...btnSecondary,
-              opacity: busy ? 0.6 : 1,
-              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy || !canRefreshUnderwriting ? 0.6 : 1,
+              cursor: busy || !canRefreshUnderwriting ? "not-allowed" : "pointer",
             }}
-            disabled={busy}
+            disabled={busy || !canRefreshUnderwriting}
             onClick={() => refreshUnderwriting()}
-            title="Refresh underwriting from current bureau data"
+            title={
+              canRefreshUnderwriting
+                ? "Refresh underwriting from current bureau data"
+                : "Co-app bureau storage is wired up, but underwriting refresh remains driver-only for now"
+            }
           >
             Refresh Underwriting
           </button>
@@ -681,7 +702,9 @@ export default function CustomerDocuments({
     <>
       <div style={{ display: "grid", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <h3 style={{ margin: 0 }}>Documents</h3>
+          <h3 style={{ margin: 0 }}>
+            Documents {applicantRole === "primary" ? "(Driver)" : "(Co-app)"}
+          </h3>
           {err ? <span style={{ color: "#fca5a5" }}>{err}</span> : null}
         </div>
 

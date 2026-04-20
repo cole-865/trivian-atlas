@@ -4,11 +4,13 @@ import {
   assertDealInCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
+import { getCreditApplicantRole } from "@/lib/deals/creditApplicantRole";
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ dealId: string }> }
 ) {
   const { dealId } = await params;
+  const applicantRole = getCreditApplicantRole(new URL(req.url).searchParams.get("applicantRole"));
   const supabase = await supabaseServer();
   const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
 
@@ -40,10 +42,11 @@ export async function GET(
     supabase
       .from("credit_reports")
       .select(
-        "id, deal_id, latest_job_id, bureau, raw_bucket, raw_path, redacted_bucket, redacted_path, redacted_text, created_at, updated_at"
+        "id, deal_id, applicant_role, latest_job_id, bureau, raw_bucket, raw_path, redacted_bucket, redacted_path, redacted_text, created_at, updated_at"
       )
       .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
+      .eq("applicant_role", applicantRole)
       .maybeSingle(),
 
     supabase
@@ -51,6 +54,7 @@ export async function GET(
       .select("*")
       .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
+      .eq("applicant_role", applicantRole)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -60,6 +64,7 @@ export async function GET(
       .select("*")
       .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
+      .eq("applicant_role", applicantRole)
       .order("created_at", { ascending: true }),
 
     supabase
@@ -67,6 +72,7 @@ export async function GET(
       .select("*")
       .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
+      .eq("applicant_role", applicantRole)
       .order("created_at", { ascending: true }),
 
     supabase
@@ -74,6 +80,7 @@ export async function GET(
       .select("*")
       .eq("organization_id", scopedDeal.organizationId)
       .eq("deal_id", dealId)
+      .eq("applicant_role", applicantRole)
       .order("created_at", { ascending: true }),
   ]);
 

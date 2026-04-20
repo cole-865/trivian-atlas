@@ -8,6 +8,10 @@ import {
 } from "@/lib/deals/organizationScope";
 import { purgeCreditReportArtifacts } from "@/lib/deals/creditReportArtifacts";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
+import {
+  getCreditApplicantRole,
+  parseCreditApplicantRole,
+} from "@/lib/deals/creditApplicantRole";
 
 const ALLOWED_TYPES = new Set([
   "credit_bureau",
@@ -23,6 +27,7 @@ const BUCKET_DEAL_DOCS = "deal-docs";
 const BUCKET_CREDIT_BUREAU_RAW = "credit_reports_raw";
 
 type DealDocumentRow = {
+  applicant_role: string | null;
   id: string;
   deal_id: string;
   doc_type: string;
@@ -80,10 +85,11 @@ function safeFileName(name: string) {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ dealId: string }> }
 ) {
   const { dealId } = await params;
+  const applicantRole = getCreditApplicantRole(new URL(req.url).searchParams.get("applicantRole"));
   const supabase = await supabaseServer();
   const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
 
@@ -109,7 +115,7 @@ export async function GET(
     supabase
       .from("deal_documents")
       .select(
-        "id, deal_id, doc_type, storage_bucket, storage_path, original_name, mime_type, size_bytes, created_at"
+        "id, deal_id, applicant_role, doc_type, storage_bucket, storage_path, original_name, mime_type, size_bytes, created_at"
       ),
     scopedDeal.organizationId
   )
@@ -127,6 +133,12 @@ export async function GET(
   const grouped: Record<string, DealDocumentRow[]> = {};
 
   for (const row of (data ?? []) as DealDocumentRow[]) {
+    if (
+      row.doc_type === "credit_bureau" &&
+      getCreditApplicantRole(row.applicant_role) !== applicantRole
+    ) {
+      continue;
+    }
     if (!latest[row.doc_type]) latest[row.doc_type] = row;
     if (!grouped[row.doc_type]) grouped[row.doc_type] = [];
     grouped[row.doc_type].push(row);
@@ -182,6 +194,15 @@ export async function POST(
   const docType = safeDocType(form.get("doc_type"));
   if (!docType) {
     return NextResponse.json({ error: "Invalid doc_type" }, { status: 400 });
+  }
+  const rawApplicantRole = form.get("applicant_role");
+  const applicantRole =
+    docType === "credit_bureau"
+      ? parseCreditApplicantRole(rawApplicantRole)
+      : null;
+
+  if (docType === "credit_bureau" && !applicantRole) {
+    return NextResponse.json({ error: "Invalid applicant_role" }, { status: 400 });
   }
 
   const file = form.get("file");
@@ -275,7 +296,7 @@ export async function POST(
 
   const storagePath =
     docType === "credit_bureau"
-      ? `deal/${dealId}/bureau/${ts}_${safeName}`
+      ? `deal/${dealId}/bureau/${applicantRole}/${ts}_${safeName}`
       : `deals/${dealId}/${docType}/${ts}-${safeName}`;
 
   const arrayBuffer = await file.arrayBuffer();
@@ -299,6 +320,7 @@ export async function POST(
     .insert({
       organization_id: authorizedDeal.organizationId,
       deal_id: dealId,
+      applicant_role: applicantRole,
       doc_type: docType,
       storage_bucket: bucket,
       storage_path: storagePath,
@@ -325,6 +347,7 @@ export async function POST(
     await purgeCreditReportArtifacts(supabase, {
       organizationId: authorizedDeal.organizationId,
       dealId,
+      applicantRole: applicantRole ?? undefined,
     });
 
     await supabase
@@ -332,11 +355,13 @@ export async function POST(
       .update({ status: "failed", error_message: "Superseded by newer upload" })
       .eq("organization_id", authorizedDeal.organizationId)
       .eq("deal_id", dealId)
+      .eq("applicant_role", applicantRole)
       .in("status", ["queued", "uploaded", "parsing", "redacting", "scoring"]);
 
     const { error: jobErr } = await supabase.from("credit_report_jobs").insert({
       organization_id: authorizedDeal.organizationId,
       deal_id: dealId,
+      applicant_role: applicantRole,
       uploaded_by: uploadedBy,
       bureau: "unknown",
       raw_bucket: BUCKET_CREDIT_BUREAU_RAW,

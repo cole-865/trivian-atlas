@@ -210,7 +210,8 @@ export default function CustomerStepClient({
   });
 
   const [docStatus, setDocStatus] = useState({
-    credit_bureau: false,
+    primary: false,
+    co: false,
   });
 
   const [saveStateByRole, setSaveStateByRole] = useState<Record<Role, SaveState>>({
@@ -235,7 +236,7 @@ export default function CustomerStepClient({
     [people.primary]
   );
 
-  const docsOk = docStatus.credit_bureau;
+  const docsOk = docStatus.primary;
   const anySaving = saveStateByRole.primary === "saving" || saveStateByRole.co === "saving";
   const canNext =
     primaryOk &&
@@ -256,6 +257,7 @@ export default function CustomerStepClient({
   const addressLookupAbortRef = useRef<AbortController | null>(null);
   const householdIncomeRequestRef = useRef(0);
   const suppressNextAddressLookupRef = useRef(false);
+  const addressLookupArmedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -389,6 +391,9 @@ export default function CustomerStepClient({
     value: PersonForm[K],
     role = activeRole
   ) {
+    if (key === "address_line1") {
+      addressLookupArmedRef.current = true;
+    }
     updateField(key, value, role);
   }
 
@@ -438,6 +443,7 @@ export default function CustomerStepClient({
 
         const address = j.address;
         suppressNextAddressLookupRef.current = true;
+        addressLookupArmedRef.current = false;
 
         updateRole(role, (current) => ({
           ...current,
@@ -454,6 +460,7 @@ export default function CustomerStepClient({
       }
     } else {
       suppressNextAddressLookupRef.current = true;
+      addressLookupArmedRef.current = false;
       updateRole(role, (current) => ({
         ...current,
         address_line1: suggestion.address_line1,
@@ -605,6 +612,10 @@ export default function CustomerStepClient({
     if (addressLookupAbortRef.current) {
       addressLookupAbortRef.current.abort();
       addressLookupAbortRef.current = null;
+    }
+
+    if (!addressLookupArmedRef.current) {
+      return;
     }
 
     if (suppressNextAddressLookupRef.current) {
@@ -962,10 +973,12 @@ export default function CustomerStepClient({
       <div className="grid gap-3 rounded-2xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
         <CustomerDocuments
           dealId={dealId}
-          onStatus={(s: { credit_app: boolean; credit_bureau: boolean }) => {
-            setDocStatus({
-              credit_bureau: s.credit_bureau,
-            });
+          applicantRole={activeRole}
+          onStatus={(s: { applicant_role: Role; credit_app: boolean; credit_bureau: boolean }) => {
+            setDocStatus((prev) => ({
+              ...prev,
+              [s.applicant_role]: s.credit_bureau,
+            }));
 
             if (s.credit_bureau && error?.toLowerCase().includes("upload")) {
               setError(null);
@@ -978,8 +991,8 @@ export default function CustomerStepClient({
         Required to continue:{" "}
         <b>
           Driver name {primaryOk ? "✓" : "✗"} · Move-in date{" "}
-          {primaryResidenceComplete ? "✓" : "✗"} · Credit Bureau{" "}
-          {docStatus.credit_bureau ? "✓" : "✗"}
+          {primaryResidenceComplete ? "✓" : "✗"} · Driver Credit Bureau{" "}
+          {docStatus.primary ? "✓" : "✗"}
         </b>
       </div>
     </div>

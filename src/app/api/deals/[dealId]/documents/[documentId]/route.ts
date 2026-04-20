@@ -100,7 +100,7 @@ export async function DELETE(
   const { data: doc, error: loadErr } = await scopeQueryToOrganization(
     supabase
       .from("deal_documents")
-      .select("id, deal_id, doc_type, storage_bucket, storage_path"),
+      .select("id, deal_id, applicant_role, doc_type, storage_bucket, storage_path"),
     scopedDeal.organizationId
   )
     .eq("id", documentId)
@@ -173,6 +173,7 @@ export async function DELETE(
     await purgeCreditReportArtifacts(supabase, {
       organizationId: scopedDeal.organizationId,
       dealId,
+      applicantRole: doc.applicant_role ?? undefined,
       deleteJobs: true,
     });
   }

@@ -217,3 +217,13 @@ When returning vehicle options, sort in this order:
 - All underwriting results come from underwriting_results table
 - Do not recompute tier logic here
 - This file governs STRUCTURING, not credit scoring
+
+## Future co-app bureau logic
+
+- Credit bureau uploads and parsed bureau data are now stored separately for `primary` and `co`
+- Deal-level underwriting refresh and `bureau_precheck` still use the driver (`primary`) bureau only
+- Do not invent co-app credit decisioning until this file is updated with explicit rules
+- When co-app bureau logic is added later, document:
+  - whether tiering uses primary only, co-app only, best score, worst score, or another rule
+  - whether both applicants must satisfy hard stops
+  - which applicant's residence and related stability inputs should feed scoring

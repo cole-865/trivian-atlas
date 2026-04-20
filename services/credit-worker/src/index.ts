@@ -49,7 +49,7 @@ async function sanityCheckDb() {
   try {
     const { data, error } = await supabase
       .from("credit_report_jobs")
-      .select("id,status,created_at")
+      .select("id,status,applicant_role,created_at")
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -140,7 +140,7 @@ async function handleJobAttempt(jobId: string) {
 async function catchUpQueuedJobs() {
   const { data, error } = await supabase
     .from("credit_report_jobs")
-    .select("id,status,created_at")
+    .select("id,status,applicant_role,created_at")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(CATCHUP_LIMIT);
@@ -154,7 +154,10 @@ async function catchUpQueuedJobs() {
     return;
   }
 
-  console.log(`[credit-worker] catch-up: found ${data.length} queued job(s)`, data.map((r) => r.id));
+  console.log(
+    `[credit-worker] catch-up: found ${data.length} queued job(s)`,
+    data.map((r) => `${r.id}:${r.applicant_role ?? "primary"}`)
+  );
   for (const row of data) {
     handleJobAttempt(row.id);
   }

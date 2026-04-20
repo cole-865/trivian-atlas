@@ -44,6 +44,7 @@ export async function processJob(job, dependencies = {}) {
         });
     const jobId = job?.id;
     const dealId = job?.deal_id;
+    const applicantRole = job?.applicant_role === "co" ? "co" : "primary";
     const jobOrganizationId = job?.organization_id ?? null;
     const rawBucket = job?.raw_bucket;
     const rawPath = job?.raw_path;
@@ -117,9 +118,11 @@ export async function processJob(job, dependencies = {}) {
         console.log("[credit-worker] about to upsert credit_reports + bureau_summary", {
             jobId,
             dealId,
+            applicantRole,
             bureau,
         });
         const creditReport = await gateway.upsertCreditReport({
+            applicantRole,
             organizationId,
             dealId,
             jobId,
@@ -131,6 +134,7 @@ export async function processJob(job, dependencies = {}) {
             redactedText,
         });
         const bureauSummary = await gateway.upsertBureauSummary({
+            applicantRole,
             organizationId,
             dealId,
             creditReportId: creditReport.id,
@@ -138,6 +142,7 @@ export async function processJob(job, dependencies = {}) {
             parsed: parsedBureau,
         });
         await gateway.replaceBureauDetails({
+            applicantRole,
             organizationId,
             bureauSummaryId: bureauSummary.id,
             dealId,
@@ -145,25 +150,27 @@ export async function processJob(job, dependencies = {}) {
             publicRecords: parsedBureau.publicRecords,
             messages: parsedBureau.messages,
         });
-        const primaryPerson = await gateway.loadPrimaryPerson(organizationId, dealId);
-        const uw = await underwrite({
-            incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
-            score: bureauSummary.score,
-            repoCount: Number(bureauSummary.repo_count ?? 0),
-            monthsSinceRepo: bureauSummary.months_since_repo ?? null,
-            paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
-            openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
-            residenceMonths: primaryPerson.residence_months,
-            jobMonths: null,
-            cashDown: 0,
-            vehiclePrice: 0,
-        });
-        await gateway.upsertUnderwritingResult({
-            organizationId,
-            dealId,
-            uploadedBy: job.uploaded_by ?? null,
-            result: uw,
-        });
+        if (applicantRole === "primary") {
+            const applicantPerson = await gateway.loadApplicantPerson(organizationId, dealId, applicantRole);
+            const uw = await underwrite({
+                incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
+                score: bureauSummary.score,
+                repoCount: Number(bureauSummary.repo_count ?? 0),
+                monthsSinceRepo: bureauSummary.months_since_repo ?? null,
+                paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
+                openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
+                residenceMonths: applicantPerson.residence_months,
+                jobMonths: null,
+                cashDown: 0,
+                vehiclePrice: 0,
+            });
+            await gateway.upsertUnderwritingResult({
+                organizationId,
+                dealId,
+                uploadedBy: job.uploaded_by ?? null,
+                result: uw,
+            });
+        }
         // 6) Finalize job row
         await gateway.updateJobStatus(jobId, "done", {
             bureau,
@@ -175,6 +182,7 @@ export async function processJob(job, dependencies = {}) {
         console.log("[credit-worker] processJob done", {
             jobId,
             dealId,
+            applicantRole,
             bureau,
             creditReportId: creditReport.id,
             bureauSummaryId: bureauSummary.id,

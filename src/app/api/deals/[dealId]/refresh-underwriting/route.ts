@@ -9,6 +9,7 @@ import {
     scopeDealChildQueryToOrganization,
 } from "@/lib/deals/underwritingOrganizationScope";
 import { loadActiveUnderwritingTierPolicy } from "@/lib/los/organizationScope";
+import { getCreditApplicantRole } from "@/lib/deals/creditApplicantRole";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
@@ -32,10 +33,11 @@ function roundHalfStep(value: number): number {
 }
 
 export async function POST(
-    _req: Request,
+    req: Request,
     { params }: { params: Promise<{ dealId: string }> }
 ) {
     const { dealId } = await params;
+    const applicantRole = getCreditApplicantRole(new URL(req.url).searchParams.get("applicantRole"));
     const supabase = await supabaseServer();
     const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
 
@@ -57,6 +59,13 @@ export async function POST(
         return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
+    if (applicantRole !== "primary") {
+        return NextResponse.json(
+            { error: "Underwriting refresh is currently supported for the driver bureau only" },
+            { status: 400 }
+        );
+    }
+
     const { data: bureauSummary, error: bureauErr } = await scopeDealChildQueryToOrganization(
         supabase
             .from("bureau_summary")
@@ -66,6 +75,7 @@ export async function POST(
         scopedDeal.organizationId,
         dealId
     )
+        .eq("applicant_role", applicantRole)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();

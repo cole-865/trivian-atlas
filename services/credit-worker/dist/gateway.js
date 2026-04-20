@@ -65,6 +65,7 @@ export const defaultCreditWorkerGateway = {
     },
     async upsertCreditReport(args) {
         const payload = {
+            applicant_role: args.applicantRole,
             organization_id: args.organizationId,
             deal_id: args.dealId,
             bureau: args.bureau,
@@ -78,7 +79,7 @@ export const defaultCreditWorkerGateway = {
         };
         const { data, error } = await supabase
             .from("credit_reports")
-            .upsert(payload, { onConflict: "deal_id" })
+            .upsert(payload, { onConflict: "organization_id,deal_id,applicant_role" })
             .select("*")
             .single();
         if (error)
@@ -88,6 +89,7 @@ export const defaultCreditWorkerGateway = {
     async upsertBureauSummary(args) {
         const s = args.parsed.summary;
         const payload = {
+            applicant_role: args.applicantRole,
             organization_id: args.organizationId,
             deal_id: args.dealId,
             credit_report_id: args.creditReportId,
@@ -132,25 +134,29 @@ export const defaultCreditWorkerGateway = {
             .from("bureau_tradelines")
             .delete()
             .eq("organization_id", args.organizationId)
-            .eq("bureau_summary_id", args.bureauSummaryId);
+            .eq("bureau_summary_id", args.bureauSummaryId)
+            .eq("applicant_role", args.applicantRole);
         if (delTradelinesErr)
             throw delTradelinesErr;
         const { error: delPublicErr } = await supabase
             .from("bureau_public_records")
             .delete()
             .eq("organization_id", args.organizationId)
-            .eq("bureau_summary_id", args.bureauSummaryId);
+            .eq("bureau_summary_id", args.bureauSummaryId)
+            .eq("applicant_role", args.applicantRole);
         if (delPublicErr)
             throw delPublicErr;
         const { error: delMessagesErr } = await supabase
             .from("bureau_messages")
             .delete()
             .eq("organization_id", args.organizationId)
-            .eq("bureau_summary_id", args.bureauSummaryId);
+            .eq("bureau_summary_id", args.bureauSummaryId)
+            .eq("applicant_role", args.applicantRole);
         if (delMessagesErr)
             throw delMessagesErr;
         if (args.tradelines.length > 0) {
             const { error } = await supabase.from("bureau_tradelines").insert(args.tradelines.map((t) => ({
+                applicant_role: args.applicantRole,
                 organization_id: args.organizationId,
                 bureau_summary_id: args.bureauSummaryId,
                 deal_id: args.dealId,
@@ -184,6 +190,7 @@ export const defaultCreditWorkerGateway = {
         }
         if (args.publicRecords.length > 0) {
             const { error } = await supabase.from("bureau_public_records").insert(args.publicRecords.map((r) => ({
+                applicant_role: args.applicantRole,
                 organization_id: args.organizationId,
                 bureau_summary_id: args.bureauSummaryId,
                 deal_id: args.dealId,
@@ -205,6 +212,7 @@ export const defaultCreditWorkerGateway = {
         }
         if (args.messages.length > 0) {
             const { error } = await supabase.from("bureau_messages").insert(args.messages.map((m) => ({
+                applicant_role: args.applicantRole,
                 organization_id: args.organizationId,
                 bureau_summary_id: args.bureauSummaryId,
                 deal_id: args.dealId,
@@ -217,13 +225,13 @@ export const defaultCreditWorkerGateway = {
                 throw error;
         }
     },
-    async loadPrimaryPerson(organizationId, dealId) {
+    async loadApplicantPerson(organizationId, dealId, applicantRole) {
         const { data, error } = await supabase
             .from("deal_people")
             .select("*")
             .eq("organization_id", organizationId)
             .eq("deal_id", dealId)
-            .eq("role", "primary")
+            .eq("role", applicantRole)
             .single();
         if (error)
             throw error;

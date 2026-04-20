@@ -5,12 +5,14 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { scopeDealChildQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
+import { getCreditApplicantRole } from "@/lib/deals/creditApplicantRole";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ dealId: string }> }
 ) {
   const { dealId } = await params;
+  const applicantRole = getCreditApplicantRole(new URL(req.url).searchParams.get("applicantRole"));
   const supabase = await supabaseServer();
   const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
 
@@ -39,6 +41,7 @@ export async function GET(
     scopedDeal.organizationId,
     dealId
   )
+    .eq("applicant_role", applicantRole)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
