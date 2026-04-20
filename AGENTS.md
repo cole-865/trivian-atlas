@@ -156,3 +156,9 @@ When finished, report:
 - Never trust client-provided organization_id
 - Always derive organization from server-side context
 - Do not bypass RLS without explicit server-side reasoning
+
+## Supabase migration workflow
+
+- Default to tracked repo migrations plus `supabase db push` for schema changes.
+- Use the Supabase SQL editor only for read-only inspection or urgent manual hotfixes.
+- If a manual SQL change is made in Supabase, immediately mirror it into a tracked repo migration and repair migration history if needed.

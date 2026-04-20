@@ -5,6 +5,11 @@ tracking in `supabase_migrations.schema_migrations`. Because of that, do not
 blindly run `supabase db push` against production until the remote migration
 history has been repaired to match the repo.
 
+Default rule: use tracked repo migrations plus `supabase db push` for schema
+changes. Use the Supabase SQL editor only for read-only inspection or urgent
+manual hotfixes, and immediately mirror any manual SQL change into a tracked
+repo migration.
+
 ## Current canonical migration set
 
 These are the migration versions that should be recorded as applied in the
@@ -63,3 +68,23 @@ Expected result: the `Remote` column should list the same versions as `Local`.
 - Prefer full timestamps over date-only versions.
 - Keep data backfills idempotent when possible.
 - Treat `supabase migration list` as part of release verification.
+
+## Atlas migration checklist
+
+Use this every time you change Supabase schema:
+
+1. Create a new migration with a unique full timestamp.
+2. Put the schema change in the repo migration first.
+3. Run a review pass on the SQL before applying it.
+4. Apply with `supabase db push`.
+5. Run `supabase migration list`.
+6. Confirm `Local` and `Remote` both include the new version.
+7. If the migration changes permissions or RLS, run one read-only verification query.
+8. Commit the app code and migration together.
+
+If you use the SQL editor for a hotfix:
+
+1. Add the same SQL to a repo migration immediately.
+2. Repair or mark the migration history immediately.
+3. Run `supabase migration list`.
+4. Do not leave remote-only changes unresolved.
