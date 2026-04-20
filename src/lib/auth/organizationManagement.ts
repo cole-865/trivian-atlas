@@ -615,7 +615,7 @@ export async function updateOrganizationMembership(args: {
   isActive?: boolean;
 }) {
   const admin = createAdminClient();
-  const update: Record<string, unknown> = {
+  const update: Database["public"]["Tables"]["organization_users"]["Update"] = {
     updated_at: new Date().toISOString(),
   };
 
