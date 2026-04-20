@@ -1,6 +1,7 @@
 import { DealStepNav } from "@/components/DealStepNav";
 import { supabaseServer } from "@/lib/supabase/server";
 import { canAccessStep, type DealStep } from "@/lib/deals/canAccessStep";
+import { loadPrimaryCustomerNames } from "@/lib/deals/customerName";
 import { getDealForCurrentOrganization } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
 import { scopeDealStageQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
@@ -62,6 +63,11 @@ export default async function DealLayout({
     });
   }
 
+  const primaryNames = organizationId
+    ? await loadPrimaryCustomerNames(supabase, [dealId], organizationId)
+    : {};
+  const customerName = primaryNames[dealId] ?? null;
+
   const stepKeys: DealStep[] = [
     "customer",
     "income",
@@ -94,7 +100,12 @@ export default async function DealLayout({
 
   return (
     <div className="mx-auto w-full max-w-[1800px] px-4 py-4 sm:px-6">
-      <DealStepNav dealId={dealId} tier={uwResult?.tier ?? null} access={access} />
+      <DealStepNav
+        dealId={dealId}
+        customerName={customerName}
+        tier={uwResult?.tier ?? null}
+        access={access}
+      />
       <div className="mt-4 w-full">{children}</div>
     </div>
   );

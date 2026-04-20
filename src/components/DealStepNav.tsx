@@ -19,10 +19,12 @@ const steps: Step[] = [
 
 export function DealStepNav({
   dealId,
+  customerName,
   tier,
   access,
 }: {
   dealId: string;
+  customerName?: string | null;
   tier?: string | null;
   access?: Partial<Record<DealStep, boolean>>;
 }) {
@@ -34,7 +36,7 @@ export function DealStepNav({
         Deal
       </div>
       <div className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
-        {dealId ? dealId.slice(0, 8) : "—"}…
+        {customerName?.trim() || (dealId ? `${dealId.slice(0, 8)}…` : "—")}
       </div>
 
       {tier ? <Badge variant="default">Tier {tier}</Badge> : null}
