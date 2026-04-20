@@ -27,6 +27,7 @@ test("current-organization management is limited to org admins and platform dev"
   assert.equal(
     canManageCurrentOrganizationForRole({
       currentOrganizationId: "org-1",
+      isImpersonating: false,
       realRole: "admin",
       effectiveOrganizationRole: "admin",
     }),
@@ -36,6 +37,7 @@ test("current-organization management is limited to org admins and platform dev"
   assert.equal(
     canManageCurrentOrganizationForRole({
       currentOrganizationId: "org-1",
+      isImpersonating: false,
       realRole: "dev",
       effectiveOrganizationRole: "sales",
     }),
@@ -45,6 +47,7 @@ test("current-organization management is limited to org admins and platform dev"
   assert.equal(
     canManageCurrentOrganizationForRole({
       currentOrganizationId: "org-1",
+      isImpersonating: false,
       realRole: "management",
       effectiveOrganizationRole: "management",
     }),
@@ -54,8 +57,19 @@ test("current-organization management is limited to org admins and platform dev"
   assert.equal(
     canManageCurrentOrganizationForRole({
       currentOrganizationId: null,
+      isImpersonating: false,
       realRole: "dev",
       effectiveOrganizationRole: "admin",
+    }),
+    false
+  );
+
+  assert.equal(
+    canManageCurrentOrganizationForRole({
+      currentOrganizationId: "org-1",
+      isImpersonating: true,
+      realRole: "dev",
+      effectiveOrganizationRole: "sales",
     }),
     false
   );

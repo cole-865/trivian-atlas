@@ -5,11 +5,18 @@ import {
   NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
-import { scopeDealChildQueryToOrganization } from "@/lib/deals/underwritingOrganizationScope";
+import {
+  scopeDealChildQueryToOrganization,
+  scopeDealStageQueryToOrganization,
+} from "@/lib/deals/underwritingOrganizationScope";
 import { loadLatestTrivianConfig } from "@/lib/los/organizationScope";
 
 type TrivianConfigPaymentCap = {
   payment_cap_pct: number | null;
+};
+
+type UnderwritingResultPaymentCap = {
+  max_pti: number | null;
 };
 
 function round2(n: number) {
@@ -152,12 +159,29 @@ export async function POST(
       : []),
   ];
 
-  // 4) Load config (payment cap pct). Default to 0.22 if missing.
-  const { data: cfg, error: cfgErr } = await loadLatestTrivianConfig<TrivianConfigPaymentCap>(
-    supabase,
-    organizationId,
-    "payment_cap_pct"
-  );
+  // 4) Resolve PTI cap. Tier-specific underwriting limits should override the
+  // organization-wide base payment cap when bureau_precheck has already run.
+  const [{ data: uwResult, error: uwErr }, { data: cfg, error: cfgErr }] =
+    await Promise.all([
+      scopeDealStageQueryToOrganization(
+        supabase.from("underwriting_results").select("max_pti"),
+        organizationId,
+        dealId,
+        "bureau_precheck"
+      ).maybeSingle(),
+      loadLatestTrivianConfig<TrivianConfigPaymentCap>(
+        supabase,
+        organizationId,
+        "payment_cap_pct"
+      ),
+    ]);
+
+  if (uwErr) {
+    return NextResponse.json(
+      { error: "Failed to load underwriting results", details: uwErr.message },
+      { status: 500 }
+    );
+  }
 
   if (cfgErr) {
     return NextResponse.json(
@@ -166,8 +190,9 @@ export async function POST(
     );
   }
 
-  const capPctRaw = num(cfg?.payment_cap_pct);
-  const capPct = capPctRaw > 0 ? capPctRaw : 0.22;
+  const tierCapPct = num((uwResult as UnderwritingResultPaymentCap | null)?.max_pti);
+  const configCapPct = num(cfg?.payment_cap_pct);
+  const capPct = tierCapPct > 0 ? tierCapPct : configCapPct > 0 ? configCapPct : 0.22;
 
   const maxPayment = round2(grossMonthlyIncome * capPct);
 

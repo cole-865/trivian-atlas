@@ -143,7 +143,7 @@ export function clearDealershipPermissionCache(args?: {
 }
 
 export function canPlatformDevManage(authContext: AuthContext) {
-  return authContext.realRole === "dev";
+  return authContext.realRole === "dev" && !authContext.isImpersonating;
 }
 
 export async function hasDealershipPermission(

@@ -27,6 +27,7 @@ test("default role presets match requested seed values", () => {
     "view_deals",
     "edit_deals",
     "submit_deals",
+    "fund_deals",
     "approve_overrides",
   ]);
   assert.deepEqual(DEFAULT_ROLE_PERMISSION_PRESETS.admin, DEALERSHIP_PERMISSION_KEYS);
@@ -64,6 +65,7 @@ test("resolved permissions use editable role rows and user overrides win", () =>
 
   assert.equal(resolved.view_deals, true);
   assert.equal(resolved.submit_deals, true);
+  assert.equal(resolved.fund_deals, false);
   assert.equal(resolved.manage_users, false);
   assert.equal(resolved.approve_overrides, false);
 });

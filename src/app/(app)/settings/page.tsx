@@ -56,9 +56,7 @@ const SECTIONS = [
   ["audit", "Audit / Compliance"],
 ] as const;
 
-const VISIBLE_PERMISSION_KEYS = DEALERSHIP_PERMISSION_KEYS.filter(
-  (permission) => permission !== "approve_overrides"
-);
+const VISIBLE_PERMISSION_KEYS = DEALERSHIP_PERMISSION_KEYS;
 
 type Section = (typeof SECTIONS)[number][0];
 type ManagementData = Awaited<ReturnType<typeof loadOrganizationManagementData>>;
@@ -365,11 +363,6 @@ function Permissions({ data, managementData }: { data: DealershipSettingsData; m
         {ORG_MANAGED_ROLES.map((role) => (
           <SettingsForm key={role} action={updateRolePermissionsAction} className="rounded-xl border border-border/75 bg-background/20 p-4">
             <input type="hidden" name="role" value={role} />
-            {DEALERSHIP_PERMISSION_KEYS.filter((permission) => permission === "approve_overrides").map((permission) => (
-              matrix.get(`${role}:${permission}`) ?? DEFAULT_ROLE_PERMISSION_PRESETS[role].includes(permission)
-                ? <input key={permission} type="hidden" name={permission} value="on" />
-                : null
-            ))}
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="font-medium capitalize text-foreground">{role}</div>
               <Badge variant="secondary">{role}</Badge>
@@ -399,7 +392,7 @@ function Permissions({ data, managementData }: { data: DealershipSettingsData; m
             const roleAllowed = matrix.get(`${member.role}:${selectedPermission}`) ?? DEFAULT_ROLE_PERMISSION_PRESETS[member.role].includes(selectedPermission);
             const overrideAllowed = overrides.get(`${member.userId}:${selectedPermission}`);
             const memberOverrides = data.userPermissionOverrides.filter(
-              (row) => row.user_id === member.userId && row.permission_key !== "approve_overrides"
+              (row) => row.user_id === member.userId
             );
             return (
             <SettingsForm key={member.userId} action={updateUserPermissionOverrideAction} className="grid gap-3 rounded-xl border border-border/75 bg-background/20 p-3 md:grid-cols-[minmax(0,1fr)_240px_190px_110px]">
@@ -571,7 +564,7 @@ export default async function SettingsPage({
   const emailConfigured = isEmailDeliveryConfigured();
   const notice = param(resolvedSearchParams, "notice");
   const error = param(resolvedSearchParams, "error");
-  const platformDev = authContext.realRole === "dev";
+  const platformDev = authContext.realRole === "dev" && !authContext.isImpersonating;
   const permissions =
     authContext.currentOrganizationId &&
     authContext.effectiveProfile?.id &&

@@ -4,6 +4,7 @@ export const DEALERSHIP_PERMISSION_KEYS = [
   "view_deals",
   "edit_deals",
   "submit_deals",
+  "fund_deals",
   "approve_overrides",
   "manage_users",
   "manage_underwriting_settings",
@@ -22,7 +23,13 @@ export type DealershipPermissionPreset = Record<
 
 export const DEFAULT_ROLE_PERMISSION_PRESETS: DealershipPermissionPreset = {
   sales: ["view_deals", "edit_deals", "submit_deals"],
-  management: ["view_deals", "edit_deals", "submit_deals", "approve_overrides"],
+  management: [
+    "view_deals",
+    "edit_deals",
+    "submit_deals",
+    "fund_deals",
+    "approve_overrides",
+  ],
   admin: DEALERSHIP_PERMISSION_KEYS,
 };
 

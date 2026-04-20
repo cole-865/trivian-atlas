@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasPermission } from "@/lib/auth/permissions";
-import { getCurrentOrganizationRole } from "@/lib/auth/organizationContext";
+import { getAuthContext } from "@/lib/auth/userRole";
+import { hasDealershipPermission } from "@/lib/auth/dealershipPermissions";
 import { canAccessStep } from "@/lib/deals/canAccessStep";
 import {
   getDealForCurrentOrganization,
@@ -582,13 +582,13 @@ export async function PATCH(
   const { dealId } = await params;
   const supabase = await supabaseServer();
   const auth = await supabase.auth.getUser();
+  const authContext = await getAuthContext(supabase);
 
   if (auth.error || !auth.data.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const role = await getCurrentOrganizationRole(supabase, { userId: auth.data.user.id });
-  if (!role || !hasPermission(role, "fund_deal")) {
+  if (!(await hasDealershipPermission(authContext, "fund_deals"))) {
     return NextResponse.json({ error: "Funding review is restricted to managers and admins." }, { status: 403 });
   }
 

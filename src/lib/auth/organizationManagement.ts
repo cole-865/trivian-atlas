@@ -313,6 +313,7 @@ export function isPlatformDev(authContext: AuthContext) {
 export function canManageCurrentOrganization(authContext: AuthContext) {
   return canManageCurrentOrganizationForRole({
     currentOrganizationId: authContext.currentOrganizationId,
+    isImpersonating: authContext.isImpersonating,
     realRole: authContext.realRole,
     effectiveOrganizationRole: authContext.effectiveOrganizationRole,
   });

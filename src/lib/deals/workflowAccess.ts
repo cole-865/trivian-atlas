@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth/userRole";
+import { canPlatformDevManage } from "@/lib/auth/dealershipPermissions";
 import { getWorkflowSettings } from "@/lib/settings/appSettings";
 import type { DealStep, StepAccessResult } from "@/lib/deals/canAccessStep";
 import {
@@ -45,7 +46,7 @@ export async function evaluateWorkflowStepAccess({
   return evaluateWorkflowStepAccessRules({
     settings,
     canBypassStepEnforcement:
-      authContext.realRole === "dev" ||
+      canPlatformDevManage(authContext) ||
       authContext.effectiveOrganizationRole === "admin",
     step,
     deal,

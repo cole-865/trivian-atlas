@@ -15,11 +15,13 @@ export function canCreateOrganizationsForRole(role: AppUserRole | null | undefin
 
 export function canManageCurrentOrganizationForRole(args: {
   currentOrganizationId: string | null;
+  isImpersonating?: boolean;
   realRole: AppUserRole | null | undefined;
   effectiveOrganizationRole: AppUserRole | null | undefined;
 }) {
   return !!args.currentOrganizationId && (
-    isPlatformDevRole(args.realRole) || args.effectiveOrganizationRole === "admin"
+    (!args.isImpersonating && isPlatformDevRole(args.realRole)) ||
+    args.effectiveOrganizationRole === "admin"
   );
 }
 
