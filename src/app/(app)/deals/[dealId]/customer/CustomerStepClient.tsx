@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { splitCustomerName } from "@/lib/deals/customerName";
+import { formatPhoneNumber, normalizePhoneForStorage } from "@/lib/formatting/phone";
 import CustomerDocuments from "./CustomerDocuments";
 
 type Role = "primary" | "co";
@@ -23,6 +24,14 @@ type PersonForm = {
   banking_checking: boolean;
   banking_savings: boolean;
   banking_prepaid: boolean;
+};
+
+type AddressSuggestion = {
+  label: string;
+  address_line1: string;
+  city: string;
+  state: string;
+  zip: string;
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -104,6 +113,61 @@ function formsEqual(a: PersonForm, b: PersonForm) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function addressFieldsEqual(a: PersonForm, b: PersonForm) {
+  return (
+    a.address_line1 === b.address_line1 &&
+    a.city === b.city &&
+    a.state === b.state &&
+    a.zip === b.zip
+  );
+}
+
+function parseAddressSuggestions(payload: unknown): AddressSuggestion[] {
+  if (!Array.isArray(payload)) return [];
+
+  return payload
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+
+      const value = item as {
+        address?: Record<string, string | undefined>;
+        display_name?: string;
+        name?: string;
+      };
+
+      const address = value.address ?? {};
+      const houseNumber = address.house_number?.trim() ?? "";
+      const road =
+        address.road?.trim() ??
+        address.pedestrian?.trim() ??
+        address.footway?.trim() ??
+        address.residential?.trim() ??
+        "";
+      const line1 = [houseNumber, road].filter(Boolean).join(" ").trim();
+      const city =
+        address.city?.trim() ??
+        address.town?.trim() ??
+        address.village?.trim() ??
+        address.hamlet?.trim() ??
+        "";
+      const state = address.state?.trim() ?? "";
+      const zip = address.postcode?.trim() ?? "";
+
+      if (!line1) return null;
+
+      return {
+        label:
+          value.display_name?.trim() ||
+          [line1, city, state, zip].filter(Boolean).join(", "),
+        address_line1: line1,
+        city,
+        state,
+        zip,
+      } satisfies AddressSuggestion;
+    })
+    .filter((item): item is AddressSuggestion => Boolean(item));
+}
+
 function getResidenceBreakdown(moveInDate: string) {
   if (!moveInDate) return { years: "", months: "" };
 
@@ -166,6 +230,10 @@ export default function CustomerStepClient({
     primary: "idle",
     co: "idle",
   });
+  const [sameAsApplicant, setSameAsApplicant] = useState(false);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [addressSearchBusy, setAddressSearchBusy] = useState(false);
+  const [addressSearchError, setAddressSearchError] = useState<string | null>(null);
 
   const activeForm = useMemo(() => people[activeRole], [people, activeRole]);
 
@@ -197,6 +265,9 @@ export default function CustomerStepClient({
   });
   const firstLoadDoneRef = useRef(false);
   const saveBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressLookupAbortRef = useRef<AbortController | null>(null);
+  const householdIncomeRequestRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,7 +295,7 @@ export default function CustomerStepClient({
           next[role] = {
             first_name: p.first_name ?? "",
             last_name: p.last_name ?? "",
-            phone: p.phone ?? "",
+            phone: formatPhoneNumber(p.phone ?? ""),
             email: p.email ?? "",
             address_line1: p.address_line1 ?? "",
             city: p.city ?? "",
@@ -251,6 +322,9 @@ export default function CustomerStepClient({
 
         if (!cancelled) {
           setPeople(next);
+          setSameAsApplicant(
+            !!next.co.address_line1.trim() && addressFieldsEqual(next.primary, next.co)
+          );
           setLastSavedPeople(
             primaryHasSavedName || !initialCustomerName
               ? next
@@ -278,24 +352,108 @@ export default function CustomerStepClient({
       cancelled = true;
       const autosaveTimer = autosaveTimerRef.current;
       const saveBadgeTimer = saveBadgeTimerRef.current;
+      const addressLookupTimer = addressLookupTimerRef.current;
+      const addressLookupAbort = addressLookupAbortRef.current;
       if (autosaveTimer) clearTimeout(autosaveTimer);
       if (saveBadgeTimer) clearTimeout(saveBadgeTimer);
+      if (addressLookupTimer) clearTimeout(addressLookupTimer);
+      if (addressLookupAbort) addressLookupAbort.abort();
     };
   }, [dealId, initialCustomerName]);
 
-  function updateField<K extends keyof PersonForm>(key: K, value: PersonForm[K]) {
-    setPeople((prev) => ({
-      ...prev,
-      [activeRole]: {
-        ...prev[activeRole],
-        [key]: value,
-      },
-    }));
+  function updateRole(role: Role, updater: (current: PersonForm) => PersonForm) {
+    setPeople((prev) => {
+      const nextRole = updater(prev[role]);
+
+      return {
+        ...prev,
+        [role]: nextRole,
+        ...(role === "primary" && sameAsApplicant
+          ? {
+              co: {
+                ...prev.co,
+                address_line1: nextRole.address_line1,
+                city: nextRole.city,
+                state: nextRole.state,
+                zip: nextRole.zip,
+              },
+            }
+          : {}),
+      };
+    });
 
     setSaveStateByRole((prev) => ({
       ...prev,
-      [activeRole]: "idle",
+      [role]: "idle",
+      ...(role === "primary" && sameAsApplicant ? { co: "idle" } : {}),
     }));
+  }
+
+  function updateField<K extends keyof PersonForm>(key: K, value: PersonForm[K], role = activeRole) {
+    updateRole(role, (current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function updateAddressField<K extends "address_line1" | "city" | "state" | "zip">(
+    key: K,
+    value: PersonForm[K],
+    role = activeRole
+  ) {
+    updateField(key, value, role);
+  }
+
+  async function setHouseholdIncomeChecked(next: boolean) {
+    const requestId = ++householdIncomeRequestRef.current;
+
+    try {
+      const r = await fetch(`/api/deals/${dealId}/household-income`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ household_income: next }),
+      });
+      const j = (await r.json().catch(() => ({}))) as ApiErrorLike;
+
+      if (!r.ok) {
+        throw new Error(formatSaveError(j, "Failed to update household income"));
+      }
+    } catch (e: unknown) {
+      if (householdIncomeRequestRef.current !== requestId) return;
+      setError(errorMessage(e, "Failed to update household income"));
+    } finally {
+      if (householdIncomeRequestRef.current === requestId) {
+        router.refresh();
+      }
+    }
+  }
+
+  function applyAddressSuggestion(role: Role, suggestion: AddressSuggestion) {
+    updateRole(role, (current) => ({
+      ...current,
+      address_line1: suggestion.address_line1,
+      city: suggestion.city,
+      state: suggestion.state,
+      zip: suggestion.zip,
+    }));
+    setAddressSuggestions([]);
+    setAddressSearchError(null);
+  }
+
+  async function toggleSameAsApplicant(checked: boolean) {
+    setSameAsApplicant(checked);
+
+    if (!checked) return;
+
+    setAddressSuggestions([]);
+    updateRole("co", (current) => ({
+      ...current,
+      address_line1: people.primary.address_line1,
+      city: people.primary.city,
+      state: people.primary.state,
+      zip: people.primary.zip,
+    }));
+    void setHouseholdIncomeChecked(true);
   }
 
   async function saveRole(role: Role, opts?: { silent?: boolean }) {
@@ -343,7 +501,10 @@ export default function CustomerStepClient({
       const r = await fetch(`/api/deals/${dealId}/people/${role}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(current),
+        body: JSON.stringify({
+          ...current,
+          phone: normalizePhoneForStorage(current.phone),
+        }),
       });
 
       const j = await r.json().catch(() => ({}));
@@ -407,6 +568,67 @@ export default function CustomerStepClient({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [people, activeRole, loading, navBusy, lastSavedPeople]);
+
+  useEffect(() => {
+    const activeAddress = people[activeRole].address_line1.trim();
+    const shouldSearch =
+      activeRole !== "co" || !sameAsApplicant;
+
+    if (addressLookupTimerRef.current) clearTimeout(addressLookupTimerRef.current);
+    if (addressLookupAbortRef.current) {
+      addressLookupAbortRef.current.abort();
+      addressLookupAbortRef.current = null;
+    }
+
+    if (!shouldSearch || activeAddress.length < 4) {
+      queueMicrotask(() => {
+        setAddressSuggestions([]);
+        setAddressSearchBusy(false);
+        setAddressSearchError(null);
+      });
+      return;
+    }
+
+    addressLookupTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      addressLookupAbortRef.current = controller;
+      setAddressSearchBusy(true);
+      setAddressSearchError(null);
+
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=us&limit=5&q=${encodeURIComponent(
+            activeAddress
+          )}`,
+          {
+            signal: controller.signal,
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("Address suggestions are unavailable right now.");
+        }
+
+        const payload = (await response.json()) as unknown;
+        setAddressSuggestions(parseAddressSuggestions(payload));
+      } catch (e: unknown) {
+        if (controller.signal.aborted) return;
+        setAddressSuggestions([]);
+        setAddressSearchError(errorMessage(e, "Address suggestions are unavailable right now."));
+      } finally {
+        if (!controller.signal.aborted) {
+          setAddressSearchBusy(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      if (addressLookupTimerRef.current) clearTimeout(addressLookupTimerRef.current);
+    };
+  }, [activeRole, people, sameAsApplicant]);
 
   function nextBlockerMessage() {
     if (!primaryOk) return "Enter Driver first + last name to continue.";
@@ -607,7 +829,8 @@ export default function CustomerStepClient({
             <Field
               label="Phone"
               value={activeForm.phone}
-              onChange={(v) => updateField("phone", v)}
+              onChange={(v) => updateField("phone", formatPhoneNumber(v))}
+              inputMode="tel"
             />
             <Field
               label="Email"
@@ -616,27 +839,48 @@ export default function CustomerStepClient({
             />
           </div>
 
-          <Field
+          {activeRole === "co" ? (
+            <div className="rounded-xl border border-border/75 bg-background/20 px-3 py-2">
+              <Checkbox
+                label="Same as applicant"
+                checked={sameAsApplicant}
+                onChange={(v) => {
+                  void toggleSameAsApplicant(v);
+                }}
+              />
+            </div>
+          ) : null}
+
+          <AddressAutocompleteField
             label="Address"
             value={activeForm.address_line1}
-            onChange={(v) => updateField("address_line1", v)}
+            onChange={(v) => updateAddressField("address_line1", v)}
+            onSelect={(suggestion) => applyAddressSuggestion(activeRole, suggestion)}
+            suggestions={addressSuggestions}
+            loading={addressSearchBusy}
+            error={addressSearchError}
+            disabled={activeRole === "co" && sameAsApplicant}
           />
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <Field
               label="City"
               value={activeForm.city}
-              onChange={(v) => updateField("city", v)}
+              onChange={(v) => updateAddressField("city", v)}
+              disabled={activeRole === "co" && sameAsApplicant}
             />
             <Field
               label="State"
               value={activeForm.state}
-              onChange={(v) => updateField("state", v)}
+              onChange={(v) => updateAddressField("state", v)}
+              disabled={activeRole === "co" && sameAsApplicant}
             />
             <Field
               label="ZIP"
               value={activeForm.zip}
-              onChange={(v) => updateField("zip", v)}
+              onChange={(v) => updateAddressField("zip", v)}
+              disabled={activeRole === "co" && sameAsApplicant}
+              inputMode="numeric"
             />
           </div>
 
@@ -711,12 +955,16 @@ function Field({
   onChange,
   required,
   invalid,
+  disabled,
+  inputMode,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   required?: boolean;
   invalid?: boolean;
+  disabled?: boolean;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
 }) {
   return (
     <label className="grid gap-1">
@@ -726,12 +974,71 @@ function Field({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        inputMode={inputMode}
         className={[
           "rounded-xl border bg-background/35 px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary/50",
+          disabled ? "cursor-not-allowed opacity-60" : "",
           invalid ? "border-destructive/60" : "border-border/75",
         ].join(" ")}
       />
     </label>
+  );
+}
+
+function AddressAutocompleteField({
+  label,
+  value,
+  onChange,
+  onSelect,
+  suggestions,
+  loading,
+  error,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSelect: (suggestion: AddressSuggestion) => void;
+  suggestions: AddressSuggestion[];
+  loading: boolean;
+  error: string | null;
+  disabled?: boolean;
+}) {
+  const showSuggestions = !disabled && suggestions.length > 0;
+
+  return (
+    <div className="grid gap-1">
+      <Field
+        label={label}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+      />
+
+      {loading ? (
+        <div className="text-xs text-muted-foreground/75">Looking up addresses…</div>
+      ) : null}
+
+      {error ? (
+        <div className="text-xs text-warning">{error}</div>
+      ) : null}
+
+      {showSuggestions ? (
+        <div className="grid gap-1 rounded-xl border border-border/75 bg-background/75 p-2">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.label}
+              type="button"
+              onClick={() => onSelect(suggestion)}
+              className="rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-accent/80"
+            >
+              {suggestion.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

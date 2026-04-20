@@ -193,6 +193,7 @@ export default function DealSubmitPage() {
 
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [dragDocType, setDragDocType] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -494,6 +495,29 @@ export default function DealSubmitPage() {
     }
   }
 
+  function onDragOverDoc(event: React.DragEvent<HTMLDivElement>, docType: StipConfig["key"]) {
+    event.preventDefault();
+    if (uploadingDocType) return;
+    setDragDocType(docType);
+  }
+
+  function onDragLeaveDoc(event: React.DragEvent<HTMLDivElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragDocType((current) => current);
+    setDragDocType(null);
+  }
+
+  function onDropDoc(event: React.DragEvent<HTMLDivElement>, docType: StipConfig["key"]) {
+    event.preventDefault();
+    setDragDocType(null);
+
+    if (uploadingDocType) return;
+
+    const file = Array.from(event.dataTransfer.files ?? [])[0] ?? null;
+    if (!file) return;
+    void onUploadFile(docType, file);
+  }
+
   if (!dealId) {
     return (
       <div style={{ padding: 16, color: "#fca5a5" }}>
@@ -657,7 +681,23 @@ export default function DealSubmitPage() {
             const isUploading = uploadingDocType === stip.key;
 
             return (
-              <div key={stip.key} style={stipRow}>
+              <div
+                key={stip.key}
+                style={{
+                  ...stipRow,
+                  border:
+                    dragDocType === stip.key
+                      ? "1px solid rgba(70,205,255,0.45)"
+                      : stipRow.border,
+                  background:
+                    dragDocType === stip.key
+                      ? "rgba(70,205,255,0.08)"
+                      : stipRow.background,
+                }}
+                onDragOver={(event) => onDragOverDoc(event, stip.key)}
+                onDragLeave={onDragLeaveDoc}
+                onDrop={(event) => onDropDoc(event, stip.key)}
+              >
                 <div>
                   <div
                     style={{
@@ -680,6 +720,26 @@ export default function DealSubmitPage() {
                     ) : null}
                   </div>
                   <div style={stipHelper}>{stip.helper}</div>
+                  <div
+                    style={{
+                      ...stipHelper,
+                      marginTop: 8,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border:
+                        dragDocType === stip.key
+                          ? "1px dashed rgba(70,205,255,0.65)"
+                          : "1px dashed rgba(255,255,255,0.18)",
+                      background:
+                        dragDocType === stip.key
+                          ? "rgba(70,205,255,0.12)"
+                          : "rgba(255,255,255,0.03)",
+                      color: "rgba(255,255,255,0.78)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Drag and drop files here, or use Upload.
+                  </div>
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>

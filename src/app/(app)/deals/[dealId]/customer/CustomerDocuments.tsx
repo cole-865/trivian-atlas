@@ -174,6 +174,7 @@ export default function CustomerDocuments({
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [details, setDetails] = useState<BureauDetailsResponse | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const refreshTimer = useRef<number | null>(null);
 
@@ -368,6 +369,11 @@ export default function CustomerDocuments({
     return name.endsWith(".pdf") || type === "application/pdf";
   }
 
+  function getDroppedFile(event: React.DragEvent<HTMLDivElement>) {
+    const files = Array.from(event.dataTransfer.files ?? []);
+    return files.find((file) => isPdf(file)) ?? null;
+  }
+
   async function upload(type: DocType, file: File) {
     setBusyType(type);
     setErr(null);
@@ -449,7 +455,7 @@ export default function CustomerDocuments({
     return "Credit Bureau (PDF)";
   }
 
-  function BureauStatusPill() {
+  function renderBureauStatusPill() {
     const s = bureauStatus;
     if (!docs.credit_bureau) return null;
 
@@ -520,13 +526,41 @@ export default function CustomerDocuments({
     );
   }
 
-  function DocCard({ type }: { type: DocType }) {
+  function renderDocCard(type: DocType) {
     const doc = docs[type];
     const busy = busyType === type;
     const bureauReady = type === "credit_bureau" && bureauStatus === "done";
 
     return (
-      <div style={card}>
+      <div
+        style={{
+          ...card,
+          borderColor: dragActive ? "rgba(70,205,255,0.45)" : card.border?.toString(),
+          background: dragActive
+            ? "linear-gradient(180deg, rgba(70,205,255,0.08), rgba(255,255,255,0.03))"
+            : card.background,
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (busy) return;
+          setDragActive(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          setDragActive(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragActive(false);
+          if (busy) return;
+          const file = getDroppedFile(event);
+          if (!file) {
+            setErr("Drop a PDF to upload the credit bureau.");
+            return;
+          }
+          void upload(type, file);
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ fontWeight: 900 }}>{label()}</div>
           <div style={{ flex: 1 }} />
@@ -554,7 +588,24 @@ export default function CustomerDocuments({
           )}
         </div>
 
-        {type === "credit_bureau" ? <BureauStatusPill /> : null}
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: dragActive
+              ? "1px dashed rgba(70,205,255,0.65)"
+              : "1px dashed rgba(255,255,255,0.18)",
+            background: dragActive ? "rgba(70,205,255,0.12)" : "rgba(255,255,255,0.03)",
+            color: "rgba(255,255,255,0.76)",
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          Drag and drop a bureau PDF here, or use the upload button.
+        </div>
+
+        {type === "credit_bureau" ? renderBureauStatusPill() : null}
 
         <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <label
@@ -634,7 +685,7 @@ export default function CustomerDocuments({
           {err ? <span style={{ color: "#fca5a5" }}>{err}</span> : null}
         </div>
 
-        <DocCard type="credit_bureau" />
+        {renderDocCard("credit_bureau")}
       </div>
 
       {modalOpen ? (

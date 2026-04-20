@@ -251,12 +251,17 @@ export default function DealVehiclePage() {
   const [cashDownApplied, setCashDownApplied] = useState<number | null>(null);
   const [tradeValueInput, setTradeValueInput] = useState<string>("");
   const [tradePayoffInput, setTradePayoffInput] = useState<string>("");
+  const [dealInputSaveState, setDealInputSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selected | null>(null);
   const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>("all");
   const [activeOptionByVehicle, setActiveOptionByVehicle] = useState<Record<string, PayOption["label"]>>(
     {}
   );
+  const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveSequenceRef = React.useRef(0);
+  const skipAutosaveRef = React.useRef(true);
+  const saveBadgeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function load(cashDown: number | null) {
     if (!dealId) return;
@@ -300,17 +305,20 @@ export default function DealVehiclePage() {
 
       const serverDown = incoming?.[0]?.assumptions?.cash_down_used;
       if (cashDownApplied == null && serverDown != null) {
+        skipAutosaveRef.current = true;
         setCashDownApplied(Number(serverDown));
         setCashDownInput(String(serverDown));
       }
 
       const serverTradeValue = incoming?.[0]?.assumptions?.trade_value;
       if (serverTradeValue != null) {
+        skipAutosaveRef.current = true;
         setTradeValueInput(String(serverTradeValue));
       }
 
       const serverTradePayoff = incoming?.[0]?.assumptions?.trade_payoff;
       if (serverTradePayoff != null) {
+        skipAutosaveRef.current = true;
         setTradePayoffInput(String(serverTradePayoff));
       }
 
@@ -325,9 +333,18 @@ export default function DealVehiclePage() {
 
   useEffect(() => {
     if (!dealId) return;
-    void load(cashDownApplied);
+    queueMicrotask(() => {
+      void load(cashDownApplied);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
+
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (saveBadgeTimerRef.current) clearTimeout(saveBadgeTimerRef.current);
+    };
+  }, []);
 
   const header = rows[0]?.assumptions;
 
@@ -457,25 +474,33 @@ export default function DealVehiclePage() {
 
   const bestVehicleId = filtered[0]?.vehicle.id ?? null;
 
-  async function handleApplyDealInputs() {
+  async function saveDealInputs(opts?: { silent?: boolean }) {
     const cashDown = Number(cashDownInput || 0);
     const tradeValue = Number(tradeValueInput || 0);
     const tradePayoff = Number(tradePayoffInput || 0);
+    const silent = !!opts?.silent;
 
     if (Number.isNaN(cashDown) || cashDown < 0) {
-      setErr("Cash down must be a valid non-negative number.");
+      if (!silent) setErr("Cash down must be a valid non-negative number.");
+      setDealInputSaveState("error");
       return;
     }
 
     if (Number.isNaN(tradeValue) || tradeValue < 0) {
-      setErr("Trade in must be a valid non-negative number.");
+      if (!silent) setErr("Trade in must be a valid non-negative number.");
+      setDealInputSaveState("error");
       return;
     }
 
     if (Number.isNaN(tradePayoff) || tradePayoff < 0) {
-      setErr("Trade payoff must be a valid non-negative number.");
+      if (!silent) setErr("Trade payoff must be a valid non-negative number.");
+      setDealInputSaveState("error");
       return;
     }
+
+    const seq = ++saveSequenceRef.current;
+    setDealInputSaveState("saving");
+    if (!silent) setErr(null);
 
     try {
       const res = await fetch(`/api/deals/${dealId}`, {
@@ -504,11 +529,43 @@ export default function DealVehiclePage() {
 
       setCashDownApplied(cashDown);
       await load(cashDown);
+      if (saveSequenceRef.current !== seq) return;
+      setDealInputSaveState("saved");
+      if (saveBadgeTimerRef.current) clearTimeout(saveBadgeTimerRef.current);
+      saveBadgeTimerRef.current = setTimeout(() => {
+        setDealInputSaveState((current) => (current === "saved" ? "idle" : current));
+      }, 1500);
     } catch (e) {
       console.error(e);
+      if (saveSequenceRef.current !== seq) return;
+      setDealInputSaveState("error");
       setErr("Failed to save deal inputs");
     }
   }
+
+  async function handleApplyDealInputs() {
+    await saveDealInputs();
+  }
+
+  useEffect(() => {
+    if (skipAutosaveRef.current) {
+      skipAutosaveRef.current = false;
+      return;
+    }
+
+    if (loading) return;
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+
+    autosaveTimerRef.current = setTimeout(() => {
+      void saveDealInputs({ silent: true });
+    }, 900);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cashDownInput]);
 
   const tradeEquityPreview =
     (Number(tradeValueInput || 0) || 0) - (Number(tradePayoffInput || 0) || 0);
@@ -688,6 +745,16 @@ export default function DealVehiclePage() {
               placeholder="1.00"
               style={input}
             />
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.62)" }}>
+            {dealInputSaveState === "saving"
+              ? "Saving cash down..."
+              : dealInputSaveState === "saved"
+                ? "Cash down saved"
+                : dealInputSaveState === "error"
+                  ? "Cash down save failed"
+                  : "Cash down autosaves"}
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
