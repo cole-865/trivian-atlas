@@ -1,4 +1,6 @@
-export type UserRole = "sales" | "management" | "admin" | "dev";
+import type { AppUserRole } from "@/lib/auth/accessRules";
+
+export type UserRole = AppUserRole;
 
 export type Permission =
   | "view_own_deals"

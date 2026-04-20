@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { UserRole } from "@/lib/auth/permissions";
+import { isAppUserRole } from "@/lib/auth/accessRules";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const CURRENT_ORGANIZATION_COOKIE_NAME = "atlas_current_organization_id";
@@ -109,7 +110,7 @@ async function getAuthenticatedUser(
 }
 
 function isUserRole(value: unknown): value is UserRole {
-  return value === "sales" || value === "management" || value === "admin" || value === "dev";
+  return isAppUserRole(value);
 }
 
 async function getPlatformRoleForUser(

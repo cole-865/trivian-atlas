@@ -1,18 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  APP_USER_ROLES,
   ORG_MANAGED_ROLES,
   canCreateOrganizationsForRole,
   canManageCurrentOrganizationForRole,
   getImpersonationDecision,
   getInviteAcceptanceBlockReason,
   getOrganizationSwitchDecision,
+  isAppUserRole,
+  isOrganizationScopedRole,
   isPlatformDevRole,
 } from "../src/lib/auth/accessRules.js";
 
 test("org-managed roles never expose dev", () => {
   assert.deepEqual(ORG_MANAGED_ROLES, ["sales", "management", "admin"]);
+  assert.deepEqual(APP_USER_ROLES, ["sales", "management", "admin", "dev"]);
   assert.equal(ORG_MANAGED_ROLES.includes("dev" as never), false);
+});
+
+test("shared role validators distinguish org roles from global roles", () => {
+  assert.equal(isOrganizationScopedRole("sales"), true);
+  assert.equal(isOrganizationScopedRole("dev"), false);
+  assert.equal(isOrganizationScopedRole("underwriting"), false);
+  assert.equal(isAppUserRole("admin"), true);
+  assert.equal(isAppUserRole("dev"), true);
+  assert.equal(isAppUserRole("underwriting"), false);
 });
 
 test("only platform dev can create organizations", () => {

@@ -1,7 +1,10 @@
 import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AuthContext } from "@/lib/auth/userRole";
-import type { OrganizationScopedRole } from "@/lib/auth/accessRules";
+import {
+  isOrganizationScopedRole,
+  type OrganizationScopedRole,
+} from "@/lib/auth/accessRules";
 import {
   DEALERSHIP_PERMISSION_KEYS,
   DEFAULT_ROLE_PERMISSION_PRESETS,
@@ -42,10 +45,6 @@ function cacheKey(organizationId: string, userId: string, role: string) {
   return `${organizationId}:${userId}:${role}`;
 }
 
-function isOrgScopedRole(value: unknown): value is OrganizationScopedRole {
-  return value === "sales" || value === "management" || value === "admin";
-}
-
 export { resolveDealershipPermissionsFromRows };
 
 async function loadPermissionRows(args: {
@@ -79,7 +78,9 @@ async function loadPermissionRows(args: {
 
   return {
     roleRows: ((rolePermissions.data ?? []) as RolePermissionRow[]).filter(
-      (row) => isOrgScopedRole(row.role) && isDealershipPermissionKey(row.permission_key)
+      (row) =>
+        isOrganizationScopedRole(row.role) &&
+        isDealershipPermissionKey(row.permission_key)
     ),
     overrideRows: ((userOverrides.data ?? []) as UserPermissionOverrideRow[]).filter(
       (row) => isDealershipPermissionKey(row.permission_key)
@@ -158,7 +159,7 @@ export async function hasDealershipPermission(
   const userId = authContext.effectiveProfile?.id ?? authContext.realUser?.id ?? null;
   const role = authContext.effectiveOrganizationRole;
 
-  if (!organizationId || !userId || !isOrgScopedRole(role)) {
+  if (!organizationId || !userId || !isOrganizationScopedRole(role)) {
     return false;
   }
 
@@ -232,7 +233,7 @@ export async function listActiveOrganizationUsersWithPermission(
     is_active: boolean;
   }>)
     .map((row) =>
-      isOrgScopedRole(row.role)
+      isOrganizationScopedRole(row.role)
         ? { ...row, role: row.role }
         : null
     )

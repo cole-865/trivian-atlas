@@ -13,6 +13,7 @@ import {
   clearDealershipPermissionCache,
   requireDealershipPermission,
 } from "@/lib/auth/dealershipPermissions";
+import { ORG_MANAGED_ROLES } from "@/lib/auth/accessRules";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logOrganizationSettingsChange } from "@/lib/settings/audit";
 import {
@@ -26,8 +27,6 @@ import {
   getWorkflowSettings,
   setWorkflowSettings,
 } from "@/lib/settings/appSettings";
-
-const ORG_ROLES = ["sales", "management", "admin"] as const;
 
 const generalSchema = z.object({
   displayName: z.string().trim().min(1, "Display name is required."),
@@ -47,7 +46,7 @@ const generalSchema = z.object({
 });
 
 const rolePermissionsSchema = z.object({
-  role: z.enum(ORG_ROLES),
+  role: z.enum(ORG_MANAGED_ROLES),
   permissions: z.array(z.enum(DEALERSHIP_PERMISSION_KEYS)),
 });
 

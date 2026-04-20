@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/permissions";
 import { getImpersonatedUserId } from "@/lib/auth/impersonation";
+import { isAppUserRole } from "@/lib/auth/accessRules";
 import {
   getCurrentOrganization,
   getCurrentOrganizationId,
@@ -15,8 +16,6 @@ export {
   getCurrentOrganizationId,
   getCurrentOrganizationMembership,
 } from "@/lib/auth/organizationContext";
-
-const USER_ROLES = ["sales", "management", "admin", "dev"] as const;
 
 type SupabaseLike = {
   auth: {
@@ -77,7 +76,7 @@ export type AuthContext = {
 };
 
 function isUserRole(value: unknown): value is UserRole {
-  return typeof value === "string" && USER_ROLES.includes(value as UserRole);
+  return isAppUserRole(value);
 }
 
 function mapUserProfile(row: UserProfileRow | null): UserProfile | null {

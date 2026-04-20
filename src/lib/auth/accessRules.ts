@@ -1,12 +1,33 @@
-export type OrganizationScopedRole = "sales" | "management" | "admin";
-export type AppUserRole = OrganizationScopedRole | "dev";
 export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
 export type SwitchOrganizationDecision = "clear" | "set" | "reject";
 
 export const ORG_MANAGED_ROLES = ["sales", "management", "admin"] as const;
+export const APP_USER_ROLES = [...ORG_MANAGED_ROLES, "dev"] as const;
+
+export type OrganizationScopedRole = (typeof ORG_MANAGED_ROLES)[number];
+export type AppUserRole = (typeof APP_USER_ROLES)[number];
+
+export function isOrganizationScopedRole(
+  value: unknown
+): value is OrganizationScopedRole {
+  return (
+    typeof value === "string" &&
+    ORG_MANAGED_ROLES.includes(value as OrganizationScopedRole)
+  );
+}
+
+export function isAppUserRole(value: unknown): value is AppUserRole {
+  return typeof value === "string" && APP_USER_ROLES.includes(value as AppUserRole);
+}
 
 export function isPlatformDevRole(role: AppUserRole | null | undefined) {
   return role === "dev";
+}
+
+export function isOrganizationAdminRole(
+  role: OrganizationScopedRole | AppUserRole | null | undefined
+) {
+  return role === "admin";
 }
 
 export function canCreateOrganizationsForRole(role: AppUserRole | null | undefined) {
@@ -21,7 +42,7 @@ export function canManageCurrentOrganizationForRole(args: {
 }) {
   return !!args.currentOrganizationId && (
     (!args.isImpersonating && isPlatformDevRole(args.realRole)) ||
-    args.effectiveOrganizationRole === "admin"
+    isOrganizationAdminRole(args.effectiveOrganizationRole)
   );
 }
 

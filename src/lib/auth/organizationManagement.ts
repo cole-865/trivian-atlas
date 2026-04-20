@@ -14,6 +14,7 @@ import { seedDefaultRolePermissionsForOrganization } from "@/lib/auth/dealership
 import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database.generated";
 export { ORG_MANAGED_ROLES } from "@/lib/auth/accessRules";
+export { isOrganizationScopedRole } from "@/lib/auth/accessRules";
 
 export type OrgManagedRole = (typeof ORG_MANAGED_ROLES)[number];
 export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";

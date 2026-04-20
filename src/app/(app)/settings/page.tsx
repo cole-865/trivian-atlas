@@ -4,7 +4,10 @@ import { hasAdminAccess } from "@/lib/supabase/admin";
 import { isEmailDeliveryConfigured } from "@/lib/email/mailer";
 import { createClient } from "@/utils/supabase/server";
 import { getAuthContext } from "@/lib/auth/userRole";
-import { canManageCurrentOrganization } from "@/lib/auth/organizationManagement";
+import {
+  canManageCurrentOrganization,
+  isOrganizationScopedRole,
+} from "@/lib/auth/organizationManagement";
 import { ORG_MANAGED_ROLES, loadOrganizationManagementData } from "@/lib/auth/organizationManagement";
 import {
   createOrganizationInviteAction,
@@ -568,9 +571,7 @@ export default async function SettingsPage({
   const permissions =
     authContext.currentOrganizationId &&
     authContext.effectiveProfile?.id &&
-    (authContext.effectiveOrganizationRole === "sales" ||
-      authContext.effectiveOrganizationRole === "management" ||
-      authContext.effectiveOrganizationRole === "admin")
+    isOrganizationScopedRole(authContext.effectiveOrganizationRole)
       ? await getResolvedDealershipPermissions({
           organizationId: authContext.currentOrganizationId,
           userId: authContext.effectiveProfile.id,

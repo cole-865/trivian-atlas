@@ -100,14 +100,6 @@ as $$
         and organization_user.is_active = true
       limit 1
     ),
-    (
-      select organization_user.role in ('management', 'admin')
-      from public.organization_users organization_user
-      where organization_user.organization_id = target_organization_id
-        and organization_user.user_id = auth.uid()
-        and organization_user.is_active = true
-      limit 1
-    ),
     false
   );
 $$;
@@ -116,6 +108,7 @@ grant execute on function public.atlas_is_active_organization_member(uuid) to au
 grant execute on function public.atlas_has_deal_override_authority(uuid) to authenticated;
 
 alter table public.deal_override_requests enable row level security;
+alter table public.deal_override_counter_offers enable row level security;
 alter table public.app_notifications enable row level security;
 
 drop policy if exists "deal_override_requests_select_org_members" on public.deal_override_requests;
@@ -147,6 +140,15 @@ using (
 )
 with check (
   public.atlas_has_deal_override_authority(organization_id)
+);
+
+drop policy if exists "deal_override_counter_offers_select_org_members" on public.deal_override_counter_offers;
+create policy "deal_override_counter_offers_select_org_members"
+on public.deal_override_counter_offers
+for select
+to authenticated
+using (
+  public.atlas_is_active_organization_member(organization_id)
 );
 
 drop policy if exists "app_notifications_select_owner" on public.app_notifications;
