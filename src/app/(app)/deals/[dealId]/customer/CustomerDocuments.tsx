@@ -82,7 +82,7 @@ type ApiErrorLike = {
 
 type BureauStatusResponse = {
   status?: BureauJobStatus;
-  error_message?: string | null;
+  error_message?: unknown;
   created_at?: string | null;
 };
 
@@ -241,7 +241,9 @@ export default function CustomerDocuments({
       }
 
       setBureauStatus((j.status ?? null) as BureauJobStatus);
-      setBureauError((j.error_message ?? null) as string | null);
+      setBureauError(
+        j.error_message ? cleanErrorMessage(j.error_message) : null
+      );
       setBureauUpdatedAt((j.created_at ?? null) as string | null);
     } catch {
       setBureauStatus(null);

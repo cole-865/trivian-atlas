@@ -22,6 +22,7 @@ import {
   clearDealershipPermissionCache,
   requireDealershipPermission,
 } from "@/lib/auth/dealershipPermissions";
+import { toTitleCase } from "@/lib/formatting/text";
 
 const inviteFormSchema = z.object({
   fullName: z.string().trim().min(1, "Full name is required."),
@@ -79,7 +80,7 @@ export async function createOrganizationAction(formData: FormData) {
     slug:
       String(formData.get("slug") ?? "").trim() ||
       slugifyOrganizationName(String(formData.get("name") ?? "")),
-    initialAdminName: String(formData.get("initial_admin_name") ?? ""),
+    initialAdminName: toTitleCase(String(formData.get("initial_admin_name") ?? "")),
     initialAdminEmail: String(formData.get("initial_admin_email") ?? ""),
   });
 
@@ -151,7 +152,7 @@ export async function createOrganizationInviteAction(formData: FormData) {
   }
 
   const parsed = inviteFormSchema.safeParse({
-    fullName: String(formData.get("full_name") ?? ""),
+    fullName: toTitleCase(String(formData.get("full_name") ?? "")),
     email: String(formData.get("email") ?? ""),
     role: String(formData.get("role") ?? ""),
   });

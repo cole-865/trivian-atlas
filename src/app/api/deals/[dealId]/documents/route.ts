@@ -303,7 +303,7 @@ export async function POST(
 
   const arrayBuffer = await file.arrayBuffer();
 
-  const { error: upErr } = await supabase.storage
+  const { error: upErr } = await dbClient.storage
     .from(bucket)
     .upload(storagePath, arrayBuffer, {
       contentType: file.type || "application/octet-stream",
@@ -337,7 +337,7 @@ export async function POST(
     .single();
 
   if (insErr) {
-    await supabase.storage.from(bucket).remove([storagePath]);
+    await dbClient.storage.from(bucket).remove([storagePath]);
 
     return NextResponse.json(
       { error: "Failed to save document record", details: insErr.message },
@@ -372,7 +372,7 @@ export async function POST(
     });
 
     if (jobErr) {
-      await supabase.storage.from(bucket).remove([storagePath]);
+      await dbClient.storage.from(bucket).remove([storagePath]);
       await dbClient
         .from("deal_documents")
         .delete()

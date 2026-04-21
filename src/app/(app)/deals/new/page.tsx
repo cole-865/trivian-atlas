@@ -4,6 +4,7 @@ import { PageHeader, SectionCard, NoticeBanner } from "@/components/atlas/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toTitleCase } from "@/lib/formatting/text";
 import { createClient } from "@/utils/supabase/server";
 import {
   getCurrentOrganizationIdForDeals,
@@ -13,9 +14,9 @@ import {
 async function createDeal(formData: FormData) {
   "use server";
 
-  const firstName = String(formData.get("first_name") ?? "").trim();
-  const lastName = String(formData.get("last_name") ?? "").trim();
-  const fallbackCustomerName = String(formData.get("customer_name") ?? "").trim();
+  const firstName = toTitleCase(String(formData.get("first_name") ?? ""));
+  const lastName = toTitleCase(String(formData.get("last_name") ?? ""));
+  const fallbackCustomerName = toTitleCase(String(formData.get("customer_name") ?? ""));
   const customer_name = `${firstName} ${lastName}`.trim() || fallbackCustomerName;
 
   if (!customer_name) {

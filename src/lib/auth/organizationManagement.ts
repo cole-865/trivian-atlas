@@ -11,6 +11,7 @@ import {
 import { setStoredCurrentOrganizationId } from "@/lib/auth/organizationContext";
 import { sendOrganizationInviteEmail } from "@/lib/email/notifications";
 import { seedDefaultRolePermissionsForOrganization } from "@/lib/auth/dealershipPermissions";
+import { titleCaseOrNull } from "@/lib/formatting/text";
 import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/database.generated";
 export { ORG_MANAGED_ROLES } from "@/lib/auth/accessRules";
@@ -486,7 +487,7 @@ async function upsertInvite(input: CreateInviteInput): Promise<OrganizationInvit
   const payload = {
     organization_id: input.organizationId,
     email: normalizeEmail(input.email),
-    full_name: input.fullName.trim() || null,
+    full_name: titleCaseOrNull(input.fullName),
     role: input.role,
     invited_by_user_id: input.invitedByUserId,
     token_hash: tokenHash,
@@ -533,7 +534,7 @@ async function upsertInvite(input: CreateInviteInput): Promise<OrganizationInvit
   const emailDelivery = await sendOrganizationInviteEmail({
     organizationId: input.organizationId,
     inviteeEmail: normalizeEmail(input.email),
-    inviteeFullName: input.fullName.trim() || null,
+    inviteeFullName: titleCaseOrNull(input.fullName),
     invitedByUserId: input.invitedByUserId,
     role: input.role,
     acceptUrl: inviteResult.acceptUrl,

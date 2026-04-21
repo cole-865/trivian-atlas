@@ -30,6 +30,7 @@ import {
   getWorkflowSettings,
   setWorkflowSettings,
 } from "@/lib/settings/appSettings";
+import { titleCaseOrNull } from "@/lib/formatting/text";
 
 const generalSchema = z.object({
   displayName: z.string().trim().min(1, "Display name is required."),
@@ -310,10 +311,10 @@ export async function updateGeneralSettingsAction(formData: FormData) {
       phone: nullableText(parsed.phone),
       website: nullableText(parsed.website),
       main_email: nullableText(parsed.mainEmail),
-      address_line1: nullableText(parsed.addressLine1),
-      address_line2: nullableText(parsed.addressLine2),
-      city: nullableText(parsed.city),
-      state: nullableText(parsed.state),
+      address_line1: titleCaseOrNull(parsed.addressLine1),
+      address_line2: titleCaseOrNull(parsed.addressLine2),
+      city: titleCaseOrNull(parsed.city),
+      state: titleCaseOrNull(parsed.state),
       postal_code: nullableText(parsed.postalCode),
       country: nullableText(parsed.country) ?? "US",
       timezone: nullableText(parsed.timezone) ?? "America/New_York",

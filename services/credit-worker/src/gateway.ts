@@ -98,6 +98,29 @@ export type CreditWorkerGateway = {
   }) => Promise<void>;
 };
 
+function formatWorkerError(err: unknown) {
+  if (err instanceof Error) {
+    return `${err.name}: ${err.message}`;
+  }
+
+  if (err && typeof err === "object") {
+    const candidate = err as {
+      details?: string | null;
+      error?: string | null;
+      message?: string | null;
+    };
+
+    return (
+      candidate.details ||
+      candidate.message ||
+      candidate.error ||
+      JSON.stringify(candidate)
+    );
+  }
+
+  return String(err);
+}
+
 export const defaultCreditWorkerGateway: CreditWorkerGateway = {
   async getDealOrganizationId(dealId) {
     const { data, error } = await supabase
@@ -138,7 +161,7 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
   },
 
   async markJobFailed(jobId, err) {
-    const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    const message = formatWorkerError(err);
 
     const { error } = await supabase
       .from("credit_report_jobs")

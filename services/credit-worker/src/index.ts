@@ -35,6 +35,29 @@ const CATCHUP_INTERVAL_MS = Number(process.env.CATCHUP_INTERVAL_MS || "5000");
 // Prevent duplicate processing bursts (INSERT + UPDATE can both fire)
 const inFlight = new Set<string>();
 
+function formatWorkerError(err: unknown) {
+  if (err instanceof Error) {
+    return `${err.name}: ${err.message}`;
+  }
+
+  if (err && typeof err === "object") {
+    const candidate = err as {
+      details?: string | null;
+      error?: string | null;
+      message?: string | null;
+    };
+
+    return (
+      candidate.details ||
+      candidate.message ||
+      candidate.error ||
+      JSON.stringify(candidate)
+    );
+  }
+
+  return String(err);
+}
+
 console.log("[credit-worker] boot", new Date().toISOString());
 console.log("[credit-worker] cwd:", process.cwd());
 console.log("[credit-worker] WORKER_ID:", WORKER_ID);
@@ -86,8 +109,7 @@ async function claimJob(jobId: string) {
 }
 
 async function markFailed(jobId: string, err: unknown) {
-  const message =
-    err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  const message = formatWorkerError(err);
 
   const { error } = await supabase
     .from("credit_report_jobs")

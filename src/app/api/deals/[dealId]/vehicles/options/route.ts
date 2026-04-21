@@ -14,6 +14,7 @@ import {
   loadInventoryForOrganization,
   loadLatestTrivianConfig,
 } from "@/lib/los/organizationScope";
+import { titleCaseOrNull } from "@/lib/formatting/text";
 
 function round2(n: number) {
   return Number((n || 0).toFixed(2));
@@ -492,8 +493,8 @@ export async function GET(
         stock_number: v.stock_number,
         vin: v.vin,
         year: v.year,
-        make: v.make,
-        model: v.model,
+        make: titleCaseOrNull(v.make),
+        model: titleCaseOrNull(v.model),
         odometer: v.odometer,
         status: v.status,
         asking_price: price,

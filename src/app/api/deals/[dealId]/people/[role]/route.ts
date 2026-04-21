@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { buildCustomerName } from "@/lib/deals/customerName";
 import { normalizePhoneForStorage } from "@/lib/formatting/phone";
+import { titleCaseOrNull } from "@/lib/formatting/text";
 import {
   assertDealInCurrentOrganization,
   NO_CURRENT_ORGANIZATION_MESSAGE,
@@ -103,14 +104,14 @@ export async function PATCH(
     deal_id: dealId,
     role,
 
-    first_name: strOrNull(body.first_name),
-    last_name: strOrNull(body.last_name),
+    first_name: titleCaseOrNull(body.first_name),
+    last_name: titleCaseOrNull(body.last_name),
     phone: normalizePhoneForStorage(strOrNull(body.phone)),
     email: strOrNull(body.email),
 
-    address_line1: strOrNull(body.address_line1),
-    city: strOrNull(body.city),
-    state: strOrNull(body.state),
+    address_line1: titleCaseOrNull(body.address_line1),
+    city: titleCaseOrNull(body.city),
+    state: titleCaseOrNull(body.state),
     zip: strOrNull(body.zip),
 
     move_in_date,

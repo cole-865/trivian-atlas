@@ -1,4 +1,17 @@
 import { supabase } from "./supabase.js";
+function formatWorkerError(err) {
+    if (err instanceof Error) {
+        return `${err.name}: ${err.message}`;
+    }
+    if (err && typeof err === "object") {
+        const candidate = err;
+        return (candidate.details ||
+            candidate.message ||
+            candidate.error ||
+            JSON.stringify(candidate));
+    }
+    return String(err);
+}
 export const defaultCreditWorkerGateway = {
     async getDealOrganizationId(dealId) {
         const { data, error } = await supabase
@@ -34,7 +47,7 @@ export const defaultCreditWorkerGateway = {
             throw error;
     },
     async markJobFailed(jobId, err) {
-        const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        const message = formatWorkerError(err);
         const { error } = await supabase
             .from("credit_report_jobs")
             .update({
