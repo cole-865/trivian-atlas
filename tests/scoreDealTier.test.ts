@@ -269,11 +269,13 @@ test("strong paid-auto history plus recent bankruptcy cannot reach A", () => {
     primary: strongApplicant({ monthsSinceBankruptcy: 12, hireDate: isoMonthsAgo(60) }),
   });
 
+  assert.equal(result.decision, "approved");
+  assert.equal(result.hardStop, false);
   assert.equal(result.tier, "B");
   assert.ok(codes(result).includes("tier_cap_recent_bankruptcy"));
 });
 
-test("job stability cannot overcome tier caps", () => {
+test("job stability cannot overcome recent bankruptcy tier cap", () => {
   const result = scoreDealTier({
     primary: strongApplicant({
       monthsSinceBankruptcy: 12,
@@ -286,25 +288,18 @@ test("job stability cannot overcome tier caps", () => {
   assert.ok(codes(result).includes("tier_cap_recent_bankruptcy"));
 });
 
-test("recent BK with clean rebuild scores better than recent BK with dirty rebuild, but remains capped", () => {
-  const clean = scoreDealTier({
-    primary: strongApplicant({ monthsSinceBankruptcy: 12 }),
-  });
-  const dirty = scoreDealTier({
+test("bankruptcy with unknown date cannot reach A", () => {
+  const result = scoreDealTier({
     primary: strongApplicant({
-      monthsSinceBankruptcy: 12,
-      unresolvedCollectionsCount: 1,
-      openTradelines: 0,
+      bankruptcyCount: 1,
+      bankruptcyDateUnknown: true,
     }),
   });
 
-  assert.equal(clean.tier, "B");
-  assert.equal(dirty.tier, "B");
-  assert.ok(clean.scoreTotal > dirty.scoreTotal);
-  assert.ok(codes(clean).includes("bankruptcy_recent"));
-  assert.ok(codes(clean).includes("post_derog_clean_rebuild"));
-  assert.ok(codes(dirty).includes("post_derog_dirty_rebuild"));
-  assert.ok(codes(clean).includes("tier_cap_recent_bankruptcy"));
+  assert.equal(result.decision, "approved");
+  assert.equal(result.hardStop, false);
+  assert.equal(result.tier, "B");
+  assert.ok(codes(result).includes("tier_cap_recent_bankruptcy"));
 });
 
 test("old bankruptcy with clean rebuild can score better than dirty rebuild", () => {

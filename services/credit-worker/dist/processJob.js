@@ -14,9 +14,53 @@
 //   - bureau_tradelines
 //   - bureau_public_records
 //   - bureau_messages
+function asRecord(value) {
+    return value && typeof value === "object" ? value : null;
+}
+function numberOrNull(value) {
+    if (value === null || value === undefined || value === "")
+        return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+function booleanOrNull(value) {
+    return typeof value === "boolean" ? value : null;
+}
+function getTierCapSignals(summary) {
+    const raw = asRecord(summary.bureau_raw);
+    return (asRecord(raw?.tier_cap_signals) ?? {});
+}
 import { buildRedactedPath, dedupeExtractedReportText, detectBureauFromText, resolveJobOrganization, } from "./jobRules.js";
 import { parseEquifaxReport } from "./parseEquifax.js";
 const REDACTED_BUCKET = process.env.REDACTED_BUCKET || "credit_reports_redacted";
+function toApplicantInput(summary, person, hireDate = null) {
+    if (!summary)
+        return null;
+    const tierCapSignals = getTierCapSignals(summary);
+    return {
+        score: summary.score != null ? Number(summary.score) : null,
+        repoCount: Number(summary.repo_count ?? 0),
+        monthsSinceRepo: summary.months_since_repo != null ? Number(summary.months_since_repo) : null,
+        paidAutoTrades: Number(summary.paid_auto_trades ?? 0),
+        openAutoTrades: Number(summary.open_auto_trades ?? 0),
+        residenceMonths: person?.residence_months != null ? Number(person.residence_months) : null,
+        monthsSinceBankruptcy: numberOrNull(tierCapSignals.months_since_bankruptcy) ??
+            numberOrNull(summary.months_since_bankruptcy),
+        unresolvedCollectionsCount: numberOrNull(tierCapSignals.unresolved_collections_count),
+        unresolvedChargeoffsCount: numberOrNull(tierCapSignals.unresolved_chargeoffs_count),
+        publicRecordCount: numberOrNull(tierCapSignals.public_record_count),
+        bankruptcyCount: numberOrNull(tierCapSignals.bankruptcy_count),
+        bankruptcyDateUnknown: booleanOrNull(tierCapSignals.bankruptcy_date_unknown),
+        pastDueAmount: summary.past_due_amount != null ? Number(summary.past_due_amount) : null,
+        totalTradelines: summary.total_tradelines != null ? Number(summary.total_tradelines) : null,
+        openTradelines: summary.open_tradelines != null ? Number(summary.open_tradelines) : null,
+        autosOnBureau: summary.autos_on_bureau != null ? Number(summary.autos_on_bureau) : null,
+        openAutoDerogatory: booleanOrNull(tierCapSignals.open_auto_derogatory),
+        autoDeficiency: booleanOrNull(tierCapSignals.auto_deficiency),
+        majorDerogAfterPublicRecord: booleanOrNull(tierCapSignals.major_derog_after_public_record),
+        hireDate,
+    };
+}
 export async function processJob(job, dependencies = {}) {
     const gateway = dependencies.gateway ??
         (await import("./gateway.js")).defaultCreditWorkerGateway;
@@ -38,9 +82,9 @@ export async function processJob(job, dependencies = {}) {
             return textToPdfBuffer(text);
         });
     const underwrite = dependencies.underwrite ??
-        (async (args) => {
-            const { underwriteDeal } = await import("./underwriteDeal.js");
-            return underwriteDeal(args);
+        (async ({ scoring }) => {
+            const { underwriteDealTier } = await import("./underwriteDeal.js");
+            return underwriteDealTier(scoring);
         });
     const jobId = job?.id;
     const dealId = job?.deal_id;
@@ -150,25 +194,54 @@ export async function processJob(job, dependencies = {}) {
             publicRecords: parsedBureau.publicRecords,
             messages: parsedBureau.messages,
         });
-        if (applicantRole === "primary") {
-            const applicantPerson = await gateway.loadApplicantPerson(organizationId, dealId, applicantRole);
+        const primarySummary = applicantRole === "primary"
+            ? bureauSummary
+            : await gateway.loadLatestBureauSummary(organizationId, dealId, "primary");
+        if (primarySummary) {
+            const [primaryPerson, coPerson, householdIncome] = await Promise.all([
+                gateway.loadApplicantPerson(organizationId, dealId, "primary"),
+                gateway.loadApplicantPerson(organizationId, dealId, "co"),
+                gateway.getDealHouseholdIncome(organizationId, dealId),
+            ]);
+            if (!primaryPerson) {
+                throw new Error(`Deal ${dealId} is missing primary applicant`);
+            }
+            const coSummary = applicantRole === "co"
+                ? bureauSummary
+                : await gateway.loadLatestBureauSummary(organizationId, dealId, "co");
+            const [primaryHireDate, coHireDate, coHasAppliedIncome] = await Promise.all([
+                gateway.getAppliedIncomeHireDateForPerson(organizationId, primaryPerson.id),
+                coPerson
+                    ? gateway.getAppliedIncomeHireDateForPerson(organizationId, coPerson.id)
+                    : Promise.resolve(null),
+                coPerson
+                    ? gateway.hasAppliedIncomeForPerson(organizationId, coPerson.id)
+                    : Promise.resolve(false),
+            ]);
             const uw = await underwrite({
-                incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
-                score: bureauSummary.score,
-                repoCount: Number(bureauSummary.repo_count ?? 0),
-                monthsSinceRepo: bureauSummary.months_since_repo ?? null,
-                paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
-                openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
-                residenceMonths: applicantPerson.residence_months,
-                jobMonths: null,
-                cashDown: 0,
-                vehiclePrice: 0,
+                scoring: {
+                    primary: toApplicantInput(primarySummary, primaryPerson, primaryHireDate),
+                    coApplicant: toApplicantInput(coSummary, coPerson, coHireDate),
+                    coApplicantContext: {
+                        householdIncome,
+                        hasAppliedIncome: coHasAppliedIncome,
+                        primaryAddress: primaryPerson.address,
+                        coApplicantAddress: coPerson?.address ?? null,
+                    },
+                },
             });
             await gateway.upsertUnderwritingResult({
                 organizationId,
                 dealId,
                 uploadedBy: job.uploaded_by ?? null,
                 result: uw,
+            });
+        }
+        else {
+            console.log("[credit-worker] skipped underwriting refresh; primary bureau missing", {
+                jobId,
+                dealId,
+                applicantRole,
             });
         }
         // 6) Finalize job row

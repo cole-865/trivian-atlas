@@ -468,10 +468,14 @@ function getTierCapFactors(applicant: TierApplicantInput): TierScoreFactor[] {
   const factors: TierScoreFactor[] = [];
   const monthsSincePublicRecord = countOrNull(applicant.monthsSinceBankruptcy);
   const applicantHasPublicRecord = hasPublicRecord(applicant);
+  const hasUndatedBankruptcy =
+    (countOrNull(applicant.bankruptcyCount) ?? 0) > 0 &&
+    applicant.bankruptcyDateUnknown === true;
 
   if (
-    monthsSincePublicRecord !== null &&
-    monthsSincePublicRecord <= TIER_CAP_CONFIG.recentPublicRecordMonths
+    (monthsSincePublicRecord !== null &&
+      monthsSincePublicRecord <= TIER_CAP_CONFIG.recentPublicRecordMonths) ||
+    hasUndatedBankruptcy
   ) {
     factors.push({
       code: "tier_cap_recent_bankruptcy",

@@ -27,6 +27,17 @@ export const defaultCreditWorkerGateway = {
         }
         return organizationId;
     },
+    async getDealHouseholdIncome(organizationId, dealId) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("household_income")
+            .eq("organization_id", organizationId)
+            .eq("id", dealId)
+            .maybeSingle();
+        if (error)
+            throw error;
+        return Boolean(data?.household_income);
+    },
     async stampJobOrganization(jobId, organizationId) {
         const { error } = await supabase
             .from("credit_report_jobs")
@@ -241,16 +252,74 @@ export const defaultCreditWorkerGateway = {
     async loadApplicantPerson(organizationId, dealId, applicantRole) {
         const { data, error } = await supabase
             .from("deal_people")
-            .select("*")
+            .select("id, residence_months, address_line1, city, state, zip")
             .eq("organization_id", organizationId)
             .eq("deal_id", dealId)
             .eq("role", applicantRole)
-            .single();
+            .maybeSingle();
         if (error)
             throw error;
+        if (!data)
+            return null;
         return {
+            id: data.id,
             residence_months: data.residence_months ?? null,
+            address: {
+                addressLine1: data.address_line1 ?? null,
+                city: data.city ?? null,
+                state: data.state ?? null,
+                zip: data.zip ?? null,
+            },
         };
+    },
+    async loadLatestBureauSummary(organizationId, dealId, applicantRole) {
+        const { data, error } = await supabase
+            .from("bureau_summary")
+            .select("*")
+            .eq("organization_id", organizationId)
+            .eq("deal_id", dealId)
+            .eq("applicant_role", applicantRole)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (error)
+            throw error;
+        return data;
+    },
+    async hasAppliedIncomeForPerson(organizationId, personId) {
+        const { data, error } = await supabase
+            .from("income_profiles")
+            .select("monthly_gross_calculated, monthly_gross_manual")
+            .eq("organization_id", organizationId)
+            .eq("deal_person_id", personId)
+            .eq("applied_to_deal", true);
+        if (error)
+            throw error;
+        return (data ?? []).some((row) => {
+            const calculated = Number(row.monthly_gross_calculated ?? 0);
+            const manual = Number(row.monthly_gross_manual ?? 0);
+            return calculated > 0 || manual > 0;
+        });
+    },
+    async getAppliedIncomeHireDateForPerson(organizationId, personId) {
+        const { data, error } = await supabase
+            .from("income_profiles")
+            .select("hire_date, monthly_gross_calculated, monthly_gross_manual")
+            .eq("organization_id", organizationId)
+            .eq("deal_person_id", personId)
+            .eq("applied_to_deal", true);
+        if (error)
+            throw error;
+        const dates = (data ?? [])
+            .filter((row) => {
+            const calculated = Number(row.monthly_gross_calculated ?? 0);
+            const manual = Number(row.monthly_gross_manual ?? 0);
+            return calculated > 0 || manual > 0;
+        })
+            .map((row) => row.hire_date)
+            .filter((value) => Boolean(value))
+            .sort();
+        return dates[0] ?? null;
     },
     async upsertUnderwritingResult(args) {
         const { error } = await supabase.from("underwriting_results").upsert({

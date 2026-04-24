@@ -10,9 +10,10 @@ export function parseEquifaxReport(input) {
     const paymentTradelines = parsePaymentPractice(sections.paymentPractice ?? "");
     const paymentSummary = parsePaymentSummary(sections.paymentSummary ?? "");
     const inquiries = parseInquirySection(sections.inquiryInformation ?? "");
-    const publicRecords = parsePublicRecords(sections.reportSummary ?? "", normalized);
+    const publicRecords = parsePublicRecords(sections.reportSummary ?? "", sections.publicRecordInformation ?? "", normalized);
     const messages = parseMessages(normalized, sections.identityAlert ?? "", scoreInfo);
     const tradelines = [...collectionTradelines, ...paymentTradelines];
+    const tierCapSignals = deriveTierCapSignals(tradelines, publicRecords);
     const autosOnBureau = countAutoTrades(tradelines);
     const openAutoTrades = countOpenAutoTrades(tradelines);
     const paidAutoTrades = countPaidAutoTrades(tradelines);
@@ -29,7 +30,7 @@ export function parseEquifaxReport(input) {
         open_tradelines: countOpenTradelines(tradelines),
         open_auto_trade: openAutoTrades > 0,
         months_since_repo: deriveMonthsSinceRepo(tradelines),
-        months_since_bankruptcy: deriveMonthsSinceBankruptcy(publicRecords),
+        months_since_bankruptcy: tierCapSignals.months_since_bankruptcy,
         total_collections: sumCollectionBalances(tradelines),
         total_chargeoffs: paymentSummary.totalChargeoffs,
         past_due_amount: paymentSummary.totalPastDue,
@@ -50,6 +51,7 @@ export function parseEquifaxReport(input) {
             score: scoreInfo,
             reportSummary: summaryInfo,
             paymentSummary,
+            tier_cap_signals: tierCapSignals,
             inquiries,
             sectionsFound: Object.keys(sections),
             normalizedPreview: normalized.slice(0, 2000),
@@ -91,6 +93,12 @@ function splitEquifaxSections(text) {
             "REPORT SUMMARY",
         ]),
         reportSummary: getSection(text, "REPORT SUMMARY", [
+            "PUBLIC RECORD INFORMATION",
+            "COLLECTION INFORMATION",
+            "PAYMENT PRACTICE",
+            "PAYMENT SUMMARY",
+        ]),
+        publicRecordInformation: getSection(text, "PUBLIC RECORD INFORMATION", [
             "COLLECTION INFORMATION",
             "PAYMENT PRACTICE",
             "PAYMENT SUMMARY",
@@ -186,7 +194,7 @@ function parseCollections(section) {
         return {
             creditor_name: clientMatch ? clientMatch[1].trim() : null,
             account_type: classMatch ? normalizeCollectionClass(classMatch[1].trim()) : "Collection",
-            account_status: statusMatch ? statusMatch[1].trim() : "collection",
+            account_status: normalizeCollectionStatus(statusMatch ? statusMatch[1].trim() : null),
             condition_code: null,
             amount: amountMatch ? safeMoney(amountMatch[1]) : null,
             balance: balanceMatch ? safeMoney(balanceMatch[1]) : null,
@@ -269,6 +277,7 @@ function parseTradelineBlock(block) {
     const chargeOffFromText = extractChargeOffAmount(block, moneyOnlyLine);
     const pastDueAmount = extractPastDueAmount(block);
     const noEffect = /no effect/i.test(block);
+    const bankruptcyReported = /\bBKRPT\b/i.test(header);
     const isCollection = /collection account/i.test(block) ||
         /debt buyer account/i.test(block) ||
         (accountType?.toLowerCase().includes("collection") ?? false) ||
@@ -297,6 +306,7 @@ function parseTradelineBlock(block) {
         !isCollection &&
         !isChargeoff &&
         !isRepo &&
+        !bankruptcyReported &&
         !/unpaid/i.test(block);
     return {
         creditor_name: normalizeCreditorName(creditorName),
@@ -328,6 +338,7 @@ function parseTradelineBlock(block) {
             pastDueAmount,
             paidClosed,
             paidChargeoff,
+            bankruptcyReported,
             actualPayment,
             scheduledPayment,
         },
@@ -414,35 +425,148 @@ function parseInquirySection(section) {
         };
     });
 }
-function parsePublicRecords(reportSummary, fullText) {
+function parsePublicRecords(reportSummary, publicRecordInformation, fullText) {
     const publicRecordCountMatch = reportSummary.match(/PR-(\d+)/i);
     const publicRecordCount = publicRecordCountMatch
         ? safeNumber(publicRecordCountMatch[1]) ?? 0
         : 0;
-    if (publicRecordCount <= 0 && !/bankrupt/i.test(fullText)) {
+    if (publicRecordCount <= 0 && !/bankrupt|BKRPT|BKRPTCY/i.test(fullText)) {
         return [];
     }
+    const structuredRecords = parsePublicRecordInformation(publicRecordInformation);
+    if (structuredRecords.length > 0) {
+        return structuredRecords;
+    }
     const records = [];
-    const bankruptcyLines = fullText
-        .split("\n")
-        .map((s) => s.trim())
-        .filter((s) => /bankrupt/i.test(s));
-    for (const line of bankruptcyLines) {
+    for (const block of extractBankruptcyRecordBlocks(fullText)) {
+        const dates = extractPublicRecordDates(block);
         records.push({
             court_name: null,
             record_type: "bankruptcy",
             plaintiff: null,
             amount: null,
-            status: line,
-            filed_date: null,
-            resolved_date: null,
+            status: firstNonBlankLine(block),
+            filed_date: dates.filed_date,
+            resolved_date: dates.resolved_date,
             no_effect: false,
             good: false,
             bad: true,
-            raw_segment: { raw: line, source: "full_text" },
+            raw_segment: {
+                raw: block,
+                source: "full_text",
+                date_unknown: !dates.filed_date && !dates.resolved_date,
+            },
         });
     }
     return records;
+}
+function parsePublicRecordInformation(section) {
+    if (!section.trim())
+        return [];
+    const lines = section
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const records = [];
+    let current = [];
+    for (const line of lines) {
+        if (/^(?:BKRPTCY|BANKRUPTCY|PUBLIC RECORD)\b/i.test(line)) {
+            if (current.length)
+                records.push(parsePublicRecordBlock(current.join("\n")));
+            current = [line];
+        }
+        else if (current.length) {
+            current.push(line);
+        }
+    }
+    if (current.length)
+        records.push(parsePublicRecordBlock(current.join("\n")));
+    return records.filter((record) => record.record_type);
+}
+function parsePublicRecordBlock(block) {
+    const upper = block.toUpperCase();
+    const isBankruptcy = /BKRPTCY|BANKRUPTCY|CH-?\s*7|CHAPTER\s*7/.test(upper);
+    const dates = extractPublicRecordDates(block);
+    const caseMatch = block.match(/\bCASE:\s*([A-Z0-9-]+)/i);
+    const reportedMatch = block.match(/\bRPTD:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+    const statusMatch = block.match(/\bINTENT:\s*([^\n]+)/i);
+    return {
+        court_name: null,
+        record_type: isBankruptcy ? "bankruptcy" : "public_record",
+        plaintiff: null,
+        amount: null,
+        status: statusMatch ? statusMatch[1].trim() : firstNonBlankLine(block),
+        filed_date: dates.filed_date,
+        resolved_date: dates.resolved_date,
+        no_effect: false,
+        good: false,
+        bad: true,
+        raw_segment: {
+            raw: block,
+            source: "public_record_information",
+            case_number: caseMatch ? caseMatch[1].trim() : null,
+            reported_date: reportedMatch ? normalizeDate(reportedMatch[1]) : null,
+            date_unknown: !dates.filed_date && !dates.resolved_date,
+        },
+    };
+}
+function extractBankruptcyRecordBlocks(fullText) {
+    const lines = fullText.split("\n").map((s) => s.trim());
+    const blocks = [];
+    const seen = new Set();
+    for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i] ?? "";
+        if (!/bankrupt/i.test(line))
+            continue;
+        const blockLines = [line];
+        let cursor = i + 1;
+        while (cursor < lines.length && /bankrupt|discharg|dismiss/i.test(lines[cursor] ?? "")) {
+            blockLines.push(lines[cursor] ?? "");
+            cursor += 1;
+        }
+        const block = blockLines.filter(Boolean).join("\n");
+        const key = normalizeBankruptcyBlockKey(block);
+        if (key && !seen.has(key)) {
+            seen.add(key);
+            blocks.push(block);
+        }
+        i = cursor - 1;
+    }
+    if (blocks.length === 0 && /\bBKRPT\b/i.test(fullText)) {
+        // Some Equifax tradelines only expose bankruptcy through the BKRPT
+        // condition code. Treat that as bankruptcy presence, but do not infer a
+        // filing/discharge date because the neighboring tradeline dates are not
+        // necessarily public-record dates.
+        blocks.push("BKRPT");
+    }
+    return blocks;
+}
+function normalizeBankruptcyBlockKey(block) {
+    return block
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+}
+function firstNonBlankLine(block) {
+    return block
+        .split("\n")
+        .map((line) => line.trim())
+        .find(Boolean) ?? block.trim();
+}
+function extractPublicRecordDates(line) {
+    const filedMatch = line.match(/(?:filed|filing|date filed|reported|rptd|rpt)\D{0,20}(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+    const resolvedMatch = line.match(/(?:resolved|discharged|dismissed|closed|date resolved|disp)\D{0,20}(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+    const allDates = [...line.matchAll(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g)]
+        .map((match) => normalizeDate(match[1]))
+        .filter((date) => Boolean(date));
+    return {
+        filed_date: filedMatch ? normalizeDate(filedMatch[1]) : allDates[0] ?? null,
+        resolved_date: resolvedMatch
+            ? normalizeDate(resolvedMatch[1])
+            : allDates.length > 1
+                ? allDates[allDates.length - 1]
+                : null,
+    };
 }
 function parseMessages(fullText, identityAlertSection, scoreInfo) {
     const out = [];
@@ -496,17 +620,13 @@ function parseMessages(fullText, identityAlertSection, scoreInfo) {
 function countOpenTradelines(tradelines) {
     if (!tradelines.length)
         return null;
-    return tradelines.filter((t) => !looksClosed(t)).length;
+    return tradelines.filter(isOpenTradeline).length;
 }
 function countAutoTrades(tradelines) {
     return tradelines.filter((t) => t.is_auto).length;
 }
 function countOpenAutoTrades(tradelines) {
-    return tradelines.filter((t) => t.is_auto &&
-        !looksClosed(t) &&
-        t.account_status !== "repo" &&
-        t.account_status !== "charged_off" &&
-        t.account_status !== "paid_chargeoff").length;
+    return tradelines.filter((t) => t.is_auto && isOpenTradeline(t)).length;
 }
 function countPaidAutoTrades(tradelines) {
     return tradelines.filter((t) => t.is_auto && (t.account_status === "paid_closed" || looksClosed(t))).length;
@@ -523,6 +643,16 @@ function looksClosed(t) {
         raw.includes("paid and closed") ||
         raw.includes("paid charge off"));
 }
+function isOpenTradeline(t) {
+    const status = (t.account_status ?? "").toLowerCase();
+    return (!looksClosed(t) &&
+        status !== "repo" &&
+        status !== "charged_off" &&
+        status !== "paid_chargeoff" &&
+        status !== "bankruptcy" &&
+        status !== "collection" &&
+        status !== "unpaid");
+}
 function deriveMonthsSinceRepo(tradelines) {
     const repoDates = tradelines
         .filter((t) => t.auto_repo)
@@ -531,19 +661,6 @@ function deriveMonthsSinceRepo(tradelines) {
     if (repoDates.length === 0)
         return null;
     const mostRecent = repoDates
-        .map(parseIsoDate)
-        .filter((d) => Boolean(d))
-        .sort((a, b) => b.getTime() - a.getTime())[0];
-    return mostRecent ? diffMonths(mostRecent, new Date()) : null;
-}
-function deriveMonthsSinceBankruptcy(records) {
-    const dates = records
-        .filter((r) => /bankruptcy/i.test(r.record_type ?? ""))
-        .map((r) => r.resolved_date ?? r.filed_date)
-        .filter(Boolean);
-    if (dates.length === 0)
-        return null;
-    const mostRecent = dates
         .map(parseIsoDate)
         .filter((d) => Boolean(d))
         .sort((a, b) => b.getTime() - a.getTime())[0];
@@ -602,7 +719,9 @@ function deriveOldestTradeMonths(tradelines, fileSinceDate) {
 }
 /* -------------------------------- helpers --------------------------------- */
 function isTradelineHeader(line) {
-    return /^.{3,}\/[A-Z0-9*]{5,}\s+[A-Z0-9]{2}\s+/.test(line);
+    if (/^\s*PYMT HIST-/i.test(line))
+        return false;
+    return /^.{3,}\/[A-Z0-9*]{5,}\s+(?:[A-Z0-9]{2}|BKRPT)\b/.test(line);
 }
 function findDateLine(lines, occurrence) {
     let count = 0;
@@ -648,14 +767,24 @@ function detectSyntheticCreditorName(block) {
     return null;
 }
 function normalizeCollectionClass(v) {
-    const raw = v.toLowerCase();
+    const raw = v.replace(/\s+BAL$/i, "").trim().toLowerCase();
+    if (raw.includes("cable") || raw.includes("cellular"))
+        return "Telecommunication/Cellular";
     if (raw.includes("insurance"))
         return "Insurance";
     if (raw.includes("utilities"))
         return "Utilities";
     if (raw.includes("medical"))
         return "Medical";
-    return v;
+    return v.replace(/\s+BAL$/i, "").trim();
+}
+function normalizeCollectionStatus(v) {
+    const raw = (v ?? "").toLowerCase();
+    if (raw.includes("paid") && !raw.includes("unpaid"))
+        return "paid_closed";
+    if (raw.includes("unpaid"))
+        return "unpaid";
+    return v?.trim() || "collection";
 }
 function normalizeCreditorName(v) {
     return v.replace(/\s{2,}/g, " ").trim();
@@ -663,10 +792,14 @@ function normalizeCreditorName(v) {
 function detectAccountType(block) {
     const ordered = [
         [/secured credit card/i, "Secured Credit Card"],
+        [/credit card/i, "Credit Card"],
         [/charge account/i, "Charge Account"],
         [/debt buyer account/i, "Debt Buyer Account"],
         [/collection account/i, "Collection account"],
         [/installment sales contract/i, "Installment Sales Contract"],
+        [/note loan/i, "Note Loan"],
+        [/rental agreement/i, "Rental Agreement"],
+        [/lease/i, "Lease"],
         [/education loan/i, "Education Loan"],
         [/child support/i, "Child Support"],
         [/telecommunication\/cellular/i, "Telecommunication/Cellular"],
@@ -689,8 +822,12 @@ function detectAccountType(block) {
     return null;
 }
 function detectAccountStatus(block) {
+    const firstLine = block.split("\n")[0] ?? "";
     if (/involuntary repossession/i.test(block) || /voluntary repossession/i.test(block)) {
         return "repo";
+    }
+    if (/\bBKRPT\b/i.test(firstLine)) {
+        return "bankruptcy";
     }
     if (/charged off account/i.test(block)) {
         return "charged_off";
@@ -795,9 +932,15 @@ function normalizeDate(v) {
         return null;
     if (raw.includes(".."))
         return null;
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(raw))
+    const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if (!match)
         return null;
-    const [mm, dd, yyyy] = raw.split("/");
+    const [, rawMonth, rawDay, rawYear] = match;
+    const mm = rawMonth.padStart(2, "0");
+    const dd = rawDay.padStart(2, "0");
+    const yyyy = rawYear.length === 2
+        ? `${Number(rawYear) >= 70 ? "19" : "20"}${rawYear}`
+        : rawYear;
     const m = Number(mm);
     const d = Number(dd);
     const y = Number(yyyy);
@@ -822,4 +965,90 @@ function diffMonths(from, to) {
 }
 function round2(n) {
     return Math.round(n * 100) / 100;
+}
+function deriveTierCapSignals(tradelines, publicRecords) {
+    const publicRecordDates = publicRecords
+        .map(publicRecordDate)
+        .filter((date) => Boolean(date));
+    const bankruptcyRecords = publicRecords.filter((record) => /bankrupt/i.test(record.record_type ?? record.status ?? ""));
+    const bankruptcyDates = bankruptcyRecords
+        .map(publicRecordDate)
+        .filter((date) => Boolean(date));
+    const mostRecentPublicRecord = newestDate(publicRecordDates);
+    const mostRecentBankruptcy = newestDate(bankruptcyDates);
+    return {
+        unresolved_collections_count: tradelines.filter(isUnresolvedCollection).length,
+        unresolved_chargeoffs_count: tradelines.filter(isUnresolvedChargeoff).length,
+        open_auto_derogatory: tradelines.some(isOpenAutoDerogatory),
+        auto_deficiency: tradelines.some(isAutoDeficiency),
+        public_record_count: publicRecords.length,
+        bankruptcy_count: bankruptcyRecords.length,
+        months_since_bankruptcy: mostRecentBankruptcy
+            ? diffMonths(mostRecentBankruptcy, new Date())
+            : null,
+        bankruptcy_date_unknown: bankruptcyRecords.length > 0 && bankruptcyDates.length < bankruptcyRecords.length,
+        major_derog_after_public_record: mostRecentPublicRecord
+            ? tradelines.some((tradeline) => isMajorDerogatoryTradeline(tradeline) &&
+                isTradelineAfterDate(tradeline, mostRecentPublicRecord))
+            : null,
+    };
+}
+function publicRecordDate(record) {
+    const candidate = record.resolved_date ?? record.filed_date;
+    return candidate ? parseIsoDate(candidate) : null;
+}
+function newestDate(dates) {
+    return dates.length
+        ? dates.sort((a, b) => b.getTime() - a.getTime())[0]
+        : null;
+}
+function isUnresolvedCollection(tradeline) {
+    return tradeline.unpaid_collection === true && !looksClosed(tradeline);
+}
+function isUnresolvedChargeoff(tradeline) {
+    return tradeline.unpaid_chargeoff === true && !looksClosed(tradeline);
+}
+function isMajorDerogatoryTradeline(tradeline) {
+    return (tradeline.bad === true ||
+        tradeline.unpaid_collection === true ||
+        tradeline.unpaid_chargeoff === true ||
+        tradeline.auto_repo === true ||
+        (tradeline.past_due_amount ?? 0) > 0);
+}
+function isTradelineAfterDate(tradeline, compareDate) {
+    const dates = [
+        tradeline.last_activity_date,
+        tradeline.last_payment_date,
+        tradeline.opened_date,
+    ]
+        .filter(Boolean)
+        .map((value) => parseIsoDate(value))
+        .filter((date) => Boolean(date));
+    return dates.some((date) => date.getTime() > compareDate.getTime());
+}
+function isOpenAutoDerogatory(tradeline) {
+    if (!tradeline.is_auto || looksClosed(tradeline))
+        return false;
+    const status = (tradeline.account_status ?? "").toLowerCase();
+    const raw = String(tradeline.raw_segment?.raw ?? "").toLowerCase();
+    return (tradeline.bad === true ||
+        tradeline.auto_repo === true ||
+        tradeline.unpaid_chargeoff === true ||
+        (tradeline.past_due_amount ?? 0) > 0 ||
+        status.includes("repo") ||
+        status.includes("charge") ||
+        status.includes("collection") ||
+        status.includes("unpaid") ||
+        raw.includes("bad debt") ||
+        raw.includes("deficien"));
+}
+function isAutoDeficiency(tradeline) {
+    if (!tradeline.is_auto)
+        return false;
+    const raw = String(tradeline.raw_segment?.raw ?? "").toLowerCase();
+    const status = (tradeline.account_status ?? "").toLowerCase();
+    const balance = tradeline.balance ?? tradeline.past_due_amount ?? 0;
+    return (raw.includes("deficien") ||
+        raw.includes("bad debt") ||
+        ((tradeline.auto_repo === true || status.includes("repo")) && balance > 0));
 }
