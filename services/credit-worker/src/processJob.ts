@@ -25,7 +25,7 @@ import {
 import type {
   ScoreDealTierArgs,
   TierApplicantInput,
-} from "../../../src/lib/underwriting/scoreDealTier.js";
+} from "./underwriting/scoreDealTier.js";
 
 type TierCapSignals = {
   unresolved_collections_count?: unknown;

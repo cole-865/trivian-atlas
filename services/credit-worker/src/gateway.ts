@@ -4,7 +4,7 @@ import type {
   BureauPublicRecordRow,
   BureauTradelineRow,
 } from "./parseEquifax.js";
-import type { TierApplicantAddress } from "../../../src/lib/underwriting/scoreDealTier.js";
+import type { TierApplicantAddress } from "./underwriting/scoreDealTier.js";
 
 export type CreditReportJobRow = {
   applicant_role?: "primary" | "co" | null;

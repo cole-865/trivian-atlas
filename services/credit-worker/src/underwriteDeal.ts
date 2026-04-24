@@ -5,7 +5,7 @@ import {
   scoreDealTier,
   type ScoreDealTierArgs,
   type UnderwritingTier,
-} from "../../../src/lib/underwriting/scoreDealTier.js";
+} from "./underwriting/scoreDealTier.js";
 
 type Tier = UnderwritingTier;
 

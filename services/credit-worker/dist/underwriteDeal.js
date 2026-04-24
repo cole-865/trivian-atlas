@@ -1,6 +1,6 @@
 // services/credit-worker/src/underwriteDeal.ts
 import { createClient } from "@supabase/supabase-js";
-import { scoreDealTier, } from "../../../src/lib/underwriting/scoreDealTier.js";
+import { scoreDealTier, } from "./underwriting/scoreDealTier.js";
 function monthsBetween(dateStr) {
     if (!dateStr)
         return null;
