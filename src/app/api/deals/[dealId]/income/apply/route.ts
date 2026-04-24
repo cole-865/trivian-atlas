@@ -112,6 +112,19 @@ export async function POST(
   // 2) Load income profiles for those people (multiple rows per person)
   const personIds = [primary.id, co?.id].filter(Boolean) as string[];
 
+  const { error: markAppliedErr } = await supabase
+    .from("income_profiles")
+    .update({ applied_to_deal: true })
+    .eq("organization_id", organizationId)
+    .in("deal_person_id", personIds);
+
+  if (markAppliedErr) {
+    return NextResponse.json(
+      { error: "Failed to apply income rows", details: markAppliedErr.message },
+      { status: 500 }
+    );
+  }
+
   const { data: incomes, error: incErr } = await scopeQueryToOrganization(
     supabase
       .from("income_profiles")

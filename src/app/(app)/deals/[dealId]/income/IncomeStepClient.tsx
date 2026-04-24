@@ -172,6 +172,12 @@ function applyResultLooksOk(j: unknown) {
   );
 }
 
+function incomeAlreadyApplied(primaryRows: IncomeRow[], coRows: IncomeRow[], includeCo: boolean) {
+  const rows = includeCo ? [...primaryRows, ...coRows] : primaryRows;
+  if (rows.length === 0) return false;
+  return rows.every((r) => r.applied_to_deal === true);
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -221,7 +227,6 @@ export default function IncomeStepClient({
   const saveSequenceRef = useRef<Record<string, number>>({});
   const saveBadgeTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
   const firstLoadDoneRef = useRef(false);
-  const autoApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function getW2Form(rowId: string): W2Form {
     return w2ByRowId[rowId] ?? defaultW2Form;
@@ -292,8 +297,8 @@ export default function IncomeStepClient({
     setErr(null);
     try {
       const [p, c] = await Promise.all([loadRole("primary"), loadRole("co")]);
-      const normalizedP = p.map((r) => ({ ...r, applied_to_deal: true }));
-      const normalizedC = c.map((r) => ({ ...r, applied_to_deal: true }));
+      const normalizedP = p.map((r) => ({ ...r, applied_to_deal: !!r.applied_to_deal }));
+      const normalizedC = c.map((r) => ({ ...r, applied_to_deal: !!r.applied_to_deal }));
 
       setIncomes({ primary: normalizedP, co: normalizedC });
       setLastSavedIncomes({ primary: normalizedP, co: normalizedC });
@@ -306,7 +311,7 @@ export default function IncomeStepClient({
       setSaveStateByRowId(nextStates);
 
       firstLoadDoneRef.current = true;
-      setAppliedOk(false);
+      setAppliedOk(incomeAlreadyApplied(normalizedP, normalizedC, householdIncome));
     } catch (e: unknown) {
       setErr(errorMessage(e, "Load failed"));
     } finally {
@@ -326,34 +331,52 @@ export default function IncomeStepClient({
     return () => {
       Object.values(autosaveTimers).forEach((t) => t && clearTimeout(t));
       Object.values(saveBadgeTimers).forEach((t) => t && clearTimeout(t));
-      if (autoApplyTimerRef.current) clearTimeout(autoApplyTimerRef.current);
     };
   }, []);
 
-  async function applyIncome(opts?: { silent?: boolean }) {
-    const silent = !!opts?.silent;
+  async function triggerUnderwritingRefresh() {
+    try {
+      await fetch(`/api/deals/${effectiveDealId}/refresh-underwriting`, { method: "POST" });
+    } catch {
+      // Income application should not fail just because bureau underwriting is not ready yet.
+    }
+  }
+
+  async function applyIncome() {
+    if (hasUnsavedIncomeChanges || savingHI || deletingRowId || savingRowId) {
+      setErr("Wait for income changes to save before applying income.");
+      return;
+    }
 
     setApplying(true);
-    if (!silent) {
-      setErr(null);
-      setApplyResult(null);
-    }
+    setErr(null);
+    setApplyResult(null);
 
     try {
       const r = await fetch(`/api/deals/${effectiveDealId}/income/apply`, { method: "POST" });
       const j = (await r.json()) as ApplyResult;
       if (!r.ok) throw new Error(j?.details || j?.error || "Failed to update totals");
 
+      const markApplied = (rows: IncomeRow[]) =>
+        rows.map((row) => ({ ...row, applied_to_deal: true }));
+
+      setIncomes((prev) => ({
+        primary: markApplied(prev.primary),
+        co: markApplied(prev.co),
+      }));
+      setLastSavedIncomes((prev) => ({
+        primary: markApplied(prev.primary),
+        co: markApplied(prev.co),
+      }));
       setApplyResult(j);
       setAppliedOk(applyResultLooksOk(j));
+      void triggerUnderwritingRefresh();
       startTransition(() => {
         router.refresh();
       });
     } catch (e: unknown) {
       setAppliedOk(false);
-      if (!silent) {
-        setErr(errorMessage(e, "Failed to update totals"));
-      }
+      setErr(errorMessage(e, "Failed to update totals"));
     } finally {
       setApplying(false);
     }
@@ -401,7 +424,7 @@ export default function IncomeStepClient({
 
       const created: IncomeRow = {
         ...j.income,
-        applied_to_deal: true,
+        applied_to_deal: !!j.income.applied_to_deal,
       };
 
       setIncomes((prev) => ({ ...prev, [role]: [...prev[role], created] }));
@@ -435,7 +458,7 @@ export default function IncomeStepClient({
     setIncomes((prev) => ({
       ...prev,
       [role]: prev[role].map((x) =>
-        x.id === rowId ? { ...next, applied_to_deal: true } : x
+        x.id === rowId ? { ...next, applied_to_deal: false } : x
       ),
     }));
     setSaveStateByRowId((prev) => ({ ...prev, [rowId]: "idle" }));
@@ -444,7 +467,7 @@ export default function IncomeStepClient({
 
   async function saveIncome(role: Role, row: IncomeRow, opts?: { silent?: boolean }) {
     const silent = !!opts?.silent;
-    const normalizedRow = { ...row, applied_to_deal: true };
+    const normalizedRow = { ...row, applied_to_deal: !!row.applied_to_deal };
 
     const lastSavedRow = (lastSavedIncomes[role] ?? []).find((x) => x.id === row.id);
     const currentW2 = getW2Form(row.id);
@@ -469,7 +492,7 @@ export default function IncomeStepClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           income_type: normalizedRow.income_type,
-          applied_to_deal: true,
+          applied_to_deal: normalizedRow.applied_to_deal,
           monthly_gross_manual: normalizedRow.monthly_gross_manual,
           monthly_gross_calculated: normalizedRow.monthly_gross_calculated,
           hire_date: normalizedRow.hire_date,
@@ -491,7 +514,7 @@ export default function IncomeStepClient({
 
       const savedRow: IncomeRow = {
         ...j.income,
-        applied_to_deal: true,
+        applied_to_deal: !!j.income.applied_to_deal,
       };
 
       setIncomes((prev) => ({
@@ -617,7 +640,7 @@ export default function IncomeStepClient({
         const currentW2 = getW2FormForEffect(row.id);
         const lastSavedW2 = lastSavedW2ByRowId[row.id] ?? defaultW2Form;
 
-        const normalizedRow = { ...row, applied_to_deal: true };
+        const normalizedRow = { ...row, applied_to_deal: !!row.applied_to_deal };
         const rowDirty = !lastSavedRow || !rowEqual(normalizedRow, lastSavedRow);
         const w2Dirty = row.income_type === "w2" && !w2FormEqual(currentW2, lastSavedW2);
 
@@ -633,33 +656,6 @@ export default function IncomeStepClient({
       }
     }
   }, [incomes, lastSavedIncomes, w2ByRowId, lastSavedW2ByRowId]);
-
-  useEffect(() => {
-    if (!firstLoadDoneRef.current || loading) return;
-    if (hasUnsavedIncomeChanges || savingHI || deletingRowId || savingRowId) return;
-
-    if (autoApplyTimerRef.current) {
-      clearTimeout(autoApplyTimerRef.current);
-    }
-
-    autoApplyTimerRef.current = setTimeout(() => {
-      void applyIncome({ silent: true });
-    }, 500);
-
-    return () => {
-      const autoApplyTimer = autoApplyTimerRef.current;
-      if (autoApplyTimer) clearTimeout(autoApplyTimer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    hasUnsavedIncomeChanges,
-    householdIncome,
-    incomes,
-    savingHI,
-    deletingRowId,
-    savingRowId,
-    loading,
-  ]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -678,7 +674,7 @@ export default function IncomeStepClient({
 
   function onNext() {
     if (!appliedOk) {
-      setErr("Wait for income totals to finish updating before continuing.");
+      setErr("Apply income before continuing.");
       return;
     }
     router.push(`/deals/${effectiveDealId}/vehicle`);
@@ -686,6 +682,8 @@ export default function IncomeStepClient({
 
   const nextDisabled =
     loading || applying || hasUnsavedIncomeChanges || savingHI || !appliedOk;
+  const applyDisabled =
+    loading || applying || hasUnsavedIncomeChanges || savingHI || !!deletingRowId || !!savingRowId;
 
   const activeRoleSaving = activeRows.some((r) => saveStateByRowId[r.id] === "saving");
 
@@ -697,7 +695,7 @@ export default function IncomeStepClient({
         <div>
           <h2 className="m-0 text-lg font-semibold">Step 2: Income</h2>
           <div className="text-xs uppercase tracking-[0.08em] text-muted-foreground/75">
-            Add income sources and the system will save and update totals automatically.
+            Add income sources, then apply income before continuing.
           </div>
         </div>
 
@@ -719,11 +717,11 @@ export default function IncomeStepClient({
           </span>
         ) : appliedOk ? (
           <span className="rounded-full border border-success/30 bg-success/12 px-2.5 py-1 text-xs font-medium text-success">
-            Income ready
+            Income applied
           </span>
         ) : (
           <span className="rounded-full border border-warning/30 bg-warning/12 px-2.5 py-1 text-xs font-medium text-warning">
-            Waiting on totals
+            Apply income required
           </span>
         )}
 
@@ -733,6 +731,27 @@ export default function IncomeStepClient({
 
         <button type="button" onClick={onPrev} className={btnSecondaryClass}>
           ← Previous
+        </button>
+
+        <button
+          type="button"
+          onClick={() => void applyIncome()}
+          disabled={applyDisabled}
+          className={[
+            "rounded-xl px-3 py-2 text-sm font-semibold text-primary-foreground",
+            applyDisabled
+              ? "cursor-not-allowed bg-muted text-muted-foreground"
+              : "bg-primary hover:bg-primary/90",
+          ].join(" ")}
+          title={
+            hasUnsavedIncomeChanges
+              ? "Wait for changes to save"
+              : applying
+                ? "Applying income"
+                : ""
+          }
+        >
+          {applying ? "Applyingâ€¦" : "Apply income"}
         </button>
 
         <button
@@ -747,9 +766,9 @@ export default function IncomeStepClient({
             hasUnsavedIncomeChanges
               ? "Wait for changes to save"
               : applying
-                ? "Totals are updating"
+                ? "Income is applying"
                 : !appliedOk
-                  ? "Wait for totals to update"
+                  ? "Apply income before continuing"
                   : ""
           }
         >

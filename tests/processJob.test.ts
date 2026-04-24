@@ -84,6 +84,10 @@ function createGateway(overrides?: Partial<CreditWorkerGateway>) {
       calls.push("hasAppliedIncomeForPerson");
       return false;
     },
+    async getAppliedIncomeHireDateForPerson() {
+      calls.push("getAppliedIncomeHireDateForPerson");
+      return null;
+    },
     async upsertUnderwritingResult() {
       calls.push("upsertUnderwritingResult");
     },
@@ -186,6 +190,8 @@ test("processJob orchestrates the happy path and stamps missing organization ids
     "loadApplicantPerson",
     "getDealHouseholdIncome",
     "loadLatestBureauSummary:co",
+    "getAppliedIncomeHireDateForPerson",
+    "getAppliedIncomeHireDateForPerson",
     "hasAppliedIncomeForPerson",
     "upsertUnderwritingResult",
     "updateJobStatus:done",

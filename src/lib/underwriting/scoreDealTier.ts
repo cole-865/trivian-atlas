@@ -28,6 +28,7 @@ export type TierApplicantInput = {
   openAutoDerogatory?: boolean | null;
   autoDeficiency?: boolean | null;
   majorDerogAfterPublicRecord?: boolean | null;
+  hireDate?: string | null;
 };
 
 export type TierApplicantAddress = {
@@ -80,6 +81,28 @@ export const TIER_CAP_CONFIG = {
   heavyPastDueAmount: 2000,
   openAutoDerogMaxTier: "C",
 } as const satisfies Record<string, number | UnderwritingTier>;
+
+export const BEHAVIOR_MODIFIER_CONFIG = {
+  recentPublicRecordPenalty: -1,
+  recentCleanRebuildCredit: 0.5,
+  oldPublicRecordPenalty: -0.5,
+  oldCleanRebuildCredit: 0.5,
+  postPublicRecordDerogPenalty: -1,
+  repeatedCurrentDerogPenalty: -0.5,
+  repeatedCurrentDerogMinCount: 2,
+  cleanCurrentTradesBonus: 0.5,
+  cleanCurrentTradesMinOpenTradelines: 2,
+} as const;
+
+export const JOB_STABILITY_CONFIG = {
+  strongMinMonths: 24,
+  moderateMinMonths: 12,
+  shortMinMonths: 6,
+  strongBonus: 0.5,
+  moderateBonus: 0.25,
+  shortBonus: 0,
+  underSixPenalty: -0.5,
+} as const;
 
 function clampTierIndex(idx: number): number {
   return Math.max(0, Math.min(TIER_ORDER.length - 1, idx));
@@ -181,6 +204,84 @@ function countOrNull(value: number | null | undefined): number | null {
     : Number(value);
 }
 
+function monthsSinceDate(value: string | null | undefined, now = new Date()): number | null {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime()) || parsed.getTime() > now.getTime()) return null;
+
+  let months = (now.getFullYear() - parsed.getFullYear()) * 12;
+  months += now.getMonth() - parsed.getMonth();
+  if (now.getDate() < parsed.getDate()) months -= 1;
+  return Math.max(0, months);
+}
+
+function calculateJobStabilityMovement(applicant: TierApplicantInput) {
+  const tenureMonths = monthsSinceDate(applicant.hireDate);
+
+  if (tenureMonths === null) {
+    return {
+      movement: 0,
+      scoreFactors: [
+        {
+          code: "job_stability_unknown",
+          points: 0,
+          note: "Job tenure was not scored because hire date is unknown.",
+        },
+      ] satisfies TierScoreFactor[],
+    };
+  }
+
+  if (tenureMonths >= JOB_STABILITY_CONFIG.strongMinMonths) {
+    return {
+      movement: JOB_STABILITY_CONFIG.strongBonus,
+      scoreFactors: [
+        {
+          code: "job_stability_strong",
+          points: JOB_STABILITY_CONFIG.strongBonus,
+          note: "Job tenure is 24+ months.",
+        },
+      ],
+    };
+  }
+
+  if (tenureMonths >= JOB_STABILITY_CONFIG.moderateMinMonths) {
+    return {
+      movement: JOB_STABILITY_CONFIG.moderateBonus,
+      scoreFactors: [
+        {
+          code: "job_stability_moderate",
+          points: JOB_STABILITY_CONFIG.moderateBonus,
+          note: "Job tenure is 12-23 months.",
+        },
+      ],
+    };
+  }
+
+  if (tenureMonths >= JOB_STABILITY_CONFIG.shortMinMonths) {
+    return {
+      movement: JOB_STABILITY_CONFIG.shortBonus,
+      scoreFactors: [
+        {
+          code: "job_stability_short",
+          points: JOB_STABILITY_CONFIG.shortBonus,
+          note: "Job tenure is 6-11 months.",
+        },
+      ],
+    };
+  }
+
+  return {
+    movement: JOB_STABILITY_CONFIG.underSixPenalty,
+    scoreFactors: [
+      {
+        code: "job_stability_short",
+        points: JOB_STABILITY_CONFIG.underSixPenalty,
+        note: "Job tenure is under 6 months.",
+      },
+    ],
+  };
+}
+
 function hasHeavyCollectionsOrChargeoffs(applicant: TierApplicantInput): boolean {
   const collections = countOrNull(applicant.unresolvedCollectionsCount);
   const chargeoffs = countOrNull(applicant.unresolvedChargeoffsCount);
@@ -190,6 +291,13 @@ function hasHeavyCollectionsOrChargeoffs(applicant: TierApplicantInput): boolean
     (collections !== null && collections >= TIER_CAP_CONFIG.heavyCollectionsCount) ||
     (chargeoffs !== null && chargeoffs >= TIER_CAP_CONFIG.heavyChargeoffsCount) ||
     (pastDue !== null && pastDue >= TIER_CAP_CONFIG.heavyPastDueAmount)
+  );
+}
+
+function currentDerogCount(applicant: TierApplicantInput): number {
+  return (
+    (countOrNull(applicant.unresolvedCollectionsCount) ?? 0) +
+    (countOrNull(applicant.unresolvedChargeoffsCount) ?? 0)
   );
 }
 
@@ -235,11 +343,131 @@ function hasCleanRebuildAfterPublicRecord(applicant: TierApplicantInput): boolea
   );
 }
 
+function hasPublicRecord(applicant: TierApplicantInput): boolean {
+  return (
+    countOrNull(applicant.monthsSinceBankruptcy) !== null ||
+    (countOrNull(applicant.bankruptcyCount) ?? 0) > 0 ||
+    (countOrNull(applicant.publicRecordCount) ?? 0) > 0
+  );
+}
+
+function hasCleanCurrentTrades(applicant: TierApplicantInput): boolean {
+  const openTradelines = countOrNull(applicant.openTradelines);
+  const pastDue = countOrNull(applicant.pastDueAmount);
+
+  // Missing current-trade fields are unknown, not clean. This keeps older
+  // bureau rows from receiving behavior credits based on absent parser data.
+  return (
+    openTradelines !== null &&
+    openTradelines >= BEHAVIOR_MODIFIER_CONFIG.cleanCurrentTradesMinOpenTradelines &&
+    currentDerogCount(applicant) === 0 &&
+    (pastDue === null || pastDue <= 0) &&
+    !hasOpenAutoDerog(applicant) &&
+    applicant.majorDerogAfterPublicRecord !== true
+  );
+}
+
+function hasCleanBehaviorAfterPublicRecord(applicant: TierApplicantInput): boolean {
+  return hasCleanRebuildAfterPublicRecord(applicant) && hasCleanCurrentTrades(applicant);
+}
+
+function calculateBehaviorModifiers(applicant: TierApplicantInput) {
+  let movement = 0;
+  const scoreFactors: TierScoreFactor[] = [];
+  const monthsSincePublicRecord = countOrNull(applicant.monthsSinceBankruptcy);
+  const applicantHasPublicRecord = hasPublicRecord(applicant);
+  const cleanRebuild = applicantHasPublicRecord && hasCleanBehaviorAfterPublicRecord(applicant);
+
+  if (
+    monthsSincePublicRecord !== null &&
+    monthsSincePublicRecord <= TIER_CAP_CONFIG.recentPublicRecordMonths
+  ) {
+    movement += BEHAVIOR_MODIFIER_CONFIG.recentPublicRecordPenalty;
+    scoreFactors.push({
+      code: "bankruptcy_recent",
+      points: BEHAVIOR_MODIFIER_CONFIG.recentPublicRecordPenalty,
+      note: "Recent bankruptcy/public record worsens tier movement.",
+    });
+
+    if (cleanRebuild) {
+      movement += BEHAVIOR_MODIFIER_CONFIG.recentCleanRebuildCredit;
+      scoreFactors.push({
+        code: "post_derog_clean_rebuild",
+        points: BEHAVIOR_MODIFIER_CONFIG.recentCleanRebuildCredit,
+        note: "Clean rebuild after recent bankruptcy/public record softens the behavior penalty.",
+      });
+    } else {
+      scoreFactors.push({
+        code: "post_derog_dirty_rebuild",
+        points: 0,
+        note: "Bankruptcy/public record rebuild is not clean enough for behavior credit.",
+      });
+    }
+  } else if (monthsSincePublicRecord !== null && applicantHasPublicRecord) {
+    movement += BEHAVIOR_MODIFIER_CONFIG.oldPublicRecordPenalty;
+    scoreFactors.push({
+      code: "bankruptcy_old",
+      points: BEHAVIOR_MODIFIER_CONFIG.oldPublicRecordPenalty,
+      note: "Older bankruptcy/public record modestly worsens tier movement.",
+    });
+
+    if (cleanRebuild) {
+      movement += BEHAVIOR_MODIFIER_CONFIG.oldCleanRebuildCredit;
+      scoreFactors.push({
+        code: "post_derog_clean_rebuild",
+        points: BEHAVIOR_MODIFIER_CONFIG.oldCleanRebuildCredit,
+        note: "Clean rebuild after older bankruptcy/public record reduces the behavior penalty.",
+      });
+    } else {
+      scoreFactors.push({
+        code: "post_derog_dirty_rebuild",
+        points: 0,
+        note: "Older bankruptcy/public record rebuild is not clean enough for behavior credit.",
+      });
+    }
+  }
+
+  if (applicantHasPublicRecord && applicant.majorDerogAfterPublicRecord === true) {
+    movement += BEHAVIOR_MODIFIER_CONFIG.postPublicRecordDerogPenalty;
+    scoreFactors.push({
+      code: "derog_after_bankruptcy",
+      points: BEHAVIOR_MODIFIER_CONFIG.postPublicRecordDerogPenalty,
+      note: "Major derogatory activity after bankruptcy/public record worsens tier movement.",
+    });
+  }
+
+  if (
+    !applicantHasPublicRecord &&
+    (currentDerogCount(applicant) >= BEHAVIOR_MODIFIER_CONFIG.repeatedCurrentDerogMinCount ||
+      hasOpenAutoDerog(applicant))
+  ) {
+    movement += BEHAVIOR_MODIFIER_CONFIG.repeatedCurrentDerogPenalty;
+    scoreFactors.push({
+      code: "repeated_current_derog",
+      points: BEHAVIOR_MODIFIER_CONFIG.repeatedCurrentDerogPenalty,
+      note: "Repeated current derogatory behavior modestly worsens tier movement.",
+    });
+  }
+
+  if (hasCleanCurrentTrades(applicant)) {
+    movement += BEHAVIOR_MODIFIER_CONFIG.cleanCurrentTradesBonus;
+    scoreFactors.push({
+      code: "clean_current_trades",
+      points: BEHAVIOR_MODIFIER_CONFIG.cleanCurrentTradesBonus,
+      note: "Clean active/open tradelines modestly improve tier movement.",
+    });
+  }
+
+  return {
+    movement,
+    scoreFactors,
+  };
+}
+
 function getTierCapFactors(applicant: TierApplicantInput): TierScoreFactor[] {
   const factors: TierScoreFactor[] = [];
   const monthsSincePublicRecord = countOrNull(applicant.monthsSinceBankruptcy);
-  const hasPublicRecord =
-    monthsSincePublicRecord !== null || (countOrNull(applicant.bankruptcyCount) ?? 0) > 0;
+  const applicantHasPublicRecord = hasPublicRecord(applicant);
 
   if (
     monthsSincePublicRecord !== null &&
@@ -252,7 +480,7 @@ function getTierCapFactors(applicant: TierApplicantInput): TierScoreFactor[] {
     });
   } else if (
     monthsSincePublicRecord !== null &&
-    hasPublicRecord &&
+    applicantHasPublicRecord &&
     !hasCleanRebuildAfterPublicRecord(applicant)
   ) {
     factors.push({
@@ -262,7 +490,7 @@ function getTierCapFactors(applicant: TierApplicantInput): TierScoreFactor[] {
     });
   }
 
-  if (hasPublicRecord && applicant.majorDerogAfterPublicRecord === true) {
+  if (applicantHasPublicRecord && applicant.majorDerogAfterPublicRecord === true) {
     factors.push({
       code: "tier_cap_post_bankruptcy_derog",
       points: 0,
@@ -415,23 +643,41 @@ export function scoreDealTier(args: ScoreDealTierArgs): ScoreDealTierResult {
   }
 
   const primaryScoring = calculateApplicantMovement(args.primary);
+  const primaryBehavior = calculateBehaviorModifiers(args.primary);
+  const primaryJobStability = calculateJobStabilityMovement(args.primary);
   const skipFactors = getCoApplicantSkipFactors(args);
   const coApplicantIsValid = skipFactors.length === 0 && Boolean(args.coApplicant);
   let movement = primaryScoring.movement;
+  let behaviorMovement = primaryBehavior.movement;
+  let jobStabilityMovement = primaryJobStability.movement;
   const scoreFactors = [...primaryScoring.scoreFactors, ...skipFactors];
 
   if (coApplicantIsValid && args.coApplicant) {
     const coScoring = calculateApplicantMovement(args.coApplicant);
+    const coBehavior = calculateBehaviorModifiers(args.coApplicant);
+    const coJobStability = calculateJobStabilityMovement(args.coApplicant);
     movement = primaryScoring.movement * 0.7 + coScoring.movement * 0.3;
+    behaviorMovement = primaryBehavior.movement * 0.7 + coBehavior.movement * 0.3;
+    jobStabilityMovement =
+      primaryJobStability.movement * 0.7 + coJobStability.movement * 0.3;
     scoreFactors.push(...coScoring.scoreFactors);
     scoreFactors.push({
       code: "coapp_weighting_applied",
       points: roundHalfStep(movement),
       note: "Co-app bureau was included with 70% primary / 30% co-app weighting.",
     });
+    scoreFactors.push(...primaryBehavior.scoreFactors, ...coBehavior.scoreFactors);
+    scoreFactors.push(
+      ...primaryJobStability.scoreFactors,
+      ...coJobStability.scoreFactors
+    );
+  } else {
+    scoreFactors.push(...primaryBehavior.scoreFactors);
+    scoreFactors.push(...primaryJobStability.scoreFactors);
   }
 
-  const cappedMovement = Math.max(-2, Math.min(2, roundHalfStep(movement)));
+  const behaviorAdjustedMovement = movement + behaviorMovement + jobStabilityMovement;
+  const cappedMovement = Math.max(-2, Math.min(2, roundHalfStep(behaviorAdjustedMovement)));
   const rawTier = moveTier("C", Math.trunc(cappedMovement));
   const capFactors = [
     ...getTierCapFactors(args.primary),
@@ -447,7 +693,7 @@ export function scoreDealTier(args: ScoreDealTierArgs): ScoreDealTierResult {
     hardStop: false,
     hardStopReason: null,
     scoreFactors,
-    notes: `Started at Tier C. Raw movement: ${movement}. Capped movement: ${cappedMovement}. Raw tier: ${rawTier}. Final tier: ${tier}.`,
+    notes: `Started at Tier C. Raw movement: ${movement}. Behavior movement: ${behaviorMovement}. Job stability movement: ${jobStabilityMovement}. Capped movement: ${cappedMovement}. Raw tier: ${rawTier}. Final tier: ${tier}.`,
     coApplicantApplied: coApplicantIsValid,
   };
 }

@@ -27,6 +27,20 @@ function pickMonthly(row: { monthly_gross_calculated: unknown; monthly_gross_man
     return calculated > 0 ? calculated : manual > 0 ? manual : 0;
 }
 
+function pickOldestAppliedHireDate(
+    rows: Array<{
+        hire_date: string | null;
+        monthly_gross_calculated: unknown;
+        monthly_gross_manual: unknown;
+    }>
+) {
+    return rows
+        .filter((row) => pickMonthly(row) > 0)
+        .map((row) => row.hire_date)
+        .filter((value): value is string => Boolean(value))
+        .sort()[0] ?? null;
+}
+
 type BureauSummaryRow = {
     score: number | null;
     repo_count: number | null;
@@ -40,7 +54,39 @@ type BureauSummaryRow = {
     total_tradelines: number | null;
     open_tradelines: number | null;
     autos_on_bureau: number | null;
+    bureau_raw: unknown;
 };
+
+type TierCapSignals = {
+    unresolved_collections_count?: unknown;
+    unresolved_chargeoffs_count?: unknown;
+    open_auto_derogatory?: unknown;
+    auto_deficiency?: unknown;
+    public_record_count?: unknown;
+    bankruptcy_count?: unknown;
+    months_since_bankruptcy?: unknown;
+    bankruptcy_date_unknown?: unknown;
+    major_derog_after_public_record?: unknown;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function numberOrNull(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+    return typeof value === "boolean" ? value : null;
+}
+
+function getTierCapSignals(summary: BureauSummaryRow): TierCapSignals {
+    const raw = asRecord(summary.bureau_raw);
+    return (asRecord(raw?.tier_cap_signals) ?? {}) as TierCapSignals;
+}
 
 type DealPersonRow = {
     id: string;
@@ -54,9 +100,11 @@ type DealPersonRow = {
 
 function toApplicantInput(
     summary: BureauSummaryRow | null,
-    person: DealPersonRow | null
+    person: DealPersonRow | null,
+    hireDate: string | null = null
 ): TierApplicantInput | null {
     if (!summary) return null;
+    const tierCapSignals = getTierCapSignals(summary);
 
     return {
         score: summary.score != null ? Number(summary.score) : null,
@@ -68,13 +116,13 @@ function toApplicantInput(
         residenceMonths:
             person?.residence_months != null ? Number(person.residence_months) : null,
         monthsSinceBankruptcy:
-            summary.months_since_bankruptcy != null
-                ? Number(summary.months_since_bankruptcy)
-                : null,
-        totalCollections:
-            summary.total_collections != null ? Number(summary.total_collections) : null,
-        totalChargeoffs:
-            summary.total_chargeoffs != null ? Number(summary.total_chargeoffs) : null,
+            numberOrNull(tierCapSignals.months_since_bankruptcy) ??
+            numberOrNull(summary.months_since_bankruptcy),
+        unresolvedCollectionsCount: numberOrNull(tierCapSignals.unresolved_collections_count),
+        unresolvedChargeoffsCount: numberOrNull(tierCapSignals.unresolved_chargeoffs_count),
+        publicRecordCount: numberOrNull(tierCapSignals.public_record_count),
+        bankruptcyCount: numberOrNull(tierCapSignals.bankruptcy_count),
+        bankruptcyDateUnknown: booleanOrNull(tierCapSignals.bankruptcy_date_unknown),
         pastDueAmount:
             summary.past_due_amount != null ? Number(summary.past_due_amount) : null,
         totalTradelines:
@@ -83,6 +131,12 @@ function toApplicantInput(
             summary.open_tradelines != null ? Number(summary.open_tradelines) : null,
         autosOnBureau:
             summary.autos_on_bureau != null ? Number(summary.autos_on_bureau) : null,
+        openAutoDerogatory: booleanOrNull(tierCapSignals.open_auto_derogatory),
+        autoDeficiency: booleanOrNull(tierCapSignals.auto_deficiency),
+        majorDerogAfterPublicRecord: booleanOrNull(
+            tierCapSignals.major_derog_after_public_record
+        ),
+        hireDate,
     };
 }
 
@@ -201,11 +255,27 @@ export async function POST(
     }
 
     const coPersonId = coPerson?.id ?? null;
+    const { data: primaryIncomeRows, error: primaryIncomeErr } = await scopeQueryToOrganization(
+        supabase
+            .from("income_profiles")
+            .select("id, applied_to_deal, monthly_gross_calculated, monthly_gross_manual, hire_date"),
+        scopedDeal.organizationId
+    )
+        .eq("deal_person_id", primaryPerson.id)
+        .eq("applied_to_deal", true);
+
+    if (primaryIncomeErr) {
+        return NextResponse.json(
+            { error: "Failed to load primary income", details: primaryIncomeErr.message },
+            { status: 500 }
+        );
+    }
+
     const { data: coIncomeRows, error: coIncomeErr } = coPersonId
         ? await scopeQueryToOrganization(
             supabase
                 .from("income_profiles")
-                .select("id, applied_to_deal, monthly_gross_calculated, monthly_gross_manual"),
+                .select("id, applied_to_deal, monthly_gross_calculated, monthly_gross_manual, hire_date"),
             scopedDeal.organizationId
         )
             .eq("deal_person_id", coPersonId)
@@ -220,10 +290,12 @@ export async function POST(
     }
 
     const coHasAppliedIncome = (coIncomeRows ?? []).some((row) => pickMonthly(row) > 0);
+    const primaryHireDate = pickOldestAppliedHireDate(primaryIncomeRows ?? []);
+    const coHireDate = pickOldestAppliedHireDate(coIncomeRows ?? []);
 
     const scored = scoreDealTier({
-        primary: toApplicantInput(primaryBureauSummary as BureauSummaryRow, primaryPerson),
-        coApplicant: toApplicantInput((coBureauSummary ?? null) as BureauSummaryRow | null, coPerson),
+        primary: toApplicantInput(primaryBureauSummary as BureauSummaryRow, primaryPerson, primaryHireDate),
+        coApplicant: toApplicantInput((coBureauSummary ?? null) as BureauSummaryRow | null, coPerson, coHireDate),
         coApplicantContext: {
             householdIncome: Boolean(scopedDeal.data.household_income),
             hasAppliedIncome: coHasAppliedIncome,

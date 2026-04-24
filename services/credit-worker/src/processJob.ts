@@ -26,6 +26,37 @@ import type {
   ScoreDealTierArgs,
   TierApplicantInput,
 } from "../../../src/lib/underwriting/scoreDealTier.js";
+
+type TierCapSignals = {
+  unresolved_collections_count?: unknown;
+  unresolved_chargeoffs_count?: unknown;
+  open_auto_derogatory?: unknown;
+  auto_deficiency?: unknown;
+  public_record_count?: unknown;
+  bankruptcy_count?: unknown;
+  months_since_bankruptcy?: unknown;
+  bankruptcy_date_unknown?: unknown;
+  major_derog_after_public_record?: unknown;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function getTierCapSignals(summary: BureauSummaryForScoring): TierCapSignals {
+  const raw = asRecord(summary.bureau_raw);
+  return (asRecord(raw?.tier_cap_signals) ?? {}) as TierCapSignals;
+}
 import {
   buildRedactedPath,
   dedupeExtractedReportText,
@@ -49,9 +80,11 @@ type ProcessJobDependencies = {
 
 function toApplicantInput(
   summary: BureauSummaryForScoring | null,
-  person: ApplicantPersonForScoring | null
+  person: ApplicantPersonForScoring | null,
+  hireDate: string | null = null
 ): TierApplicantInput | null {
   if (!summary) return null;
+  const tierCapSignals = getTierCapSignals(summary);
 
   return {
     score: summary.score != null ? Number(summary.score) : null,
@@ -63,13 +96,13 @@ function toApplicantInput(
     residenceMonths:
       person?.residence_months != null ? Number(person.residence_months) : null,
     monthsSinceBankruptcy:
-      summary.months_since_bankruptcy != null
-        ? Number(summary.months_since_bankruptcy)
-        : null,
-    totalCollections:
-      summary.total_collections != null ? Number(summary.total_collections) : null,
-    totalChargeoffs:
-      summary.total_chargeoffs != null ? Number(summary.total_chargeoffs) : null,
+      numberOrNull(tierCapSignals.months_since_bankruptcy) ??
+      numberOrNull(summary.months_since_bankruptcy),
+    unresolvedCollectionsCount: numberOrNull(tierCapSignals.unresolved_collections_count),
+    unresolvedChargeoffsCount: numberOrNull(tierCapSignals.unresolved_chargeoffs_count),
+    publicRecordCount: numberOrNull(tierCapSignals.public_record_count),
+    bankruptcyCount: numberOrNull(tierCapSignals.bankruptcy_count),
+    bankruptcyDateUnknown: booleanOrNull(tierCapSignals.bankruptcy_date_unknown),
     pastDueAmount:
       summary.past_due_amount != null ? Number(summary.past_due_amount) : null,
     totalTradelines:
@@ -78,6 +111,12 @@ function toApplicantInput(
       summary.open_tradelines != null ? Number(summary.open_tradelines) : null,
     autosOnBureau:
       summary.autos_on_bureau != null ? Number(summary.autos_on_bureau) : null,
+    openAutoDerogatory: booleanOrNull(tierCapSignals.open_auto_derogatory),
+    autoDeficiency: booleanOrNull(tierCapSignals.auto_deficiency),
+    majorDerogAfterPublicRecord: booleanOrNull(
+      tierCapSignals.major_derog_after_public_record
+    ),
+    hireDate,
   };
 }
 
@@ -261,14 +300,20 @@ export async function processJob(
         applicantRole === "co"
           ? bureauSummary
           : await gateway.loadLatestBureauSummary(organizationId, dealId, "co");
-      const coHasAppliedIncome = coPerson
-        ? await gateway.hasAppliedIncomeForPerson(organizationId, coPerson.id)
-        : false;
+      const [primaryHireDate, coHireDate, coHasAppliedIncome] = await Promise.all([
+        gateway.getAppliedIncomeHireDateForPerson(organizationId, primaryPerson.id),
+        coPerson
+          ? gateway.getAppliedIncomeHireDateForPerson(organizationId, coPerson.id)
+          : Promise.resolve(null),
+        coPerson
+          ? gateway.hasAppliedIncomeForPerson(organizationId, coPerson.id)
+          : Promise.resolve(false),
+      ]);
 
       const uw = await underwrite({
         scoring: {
-          primary: toApplicantInput(primarySummary, primaryPerson),
-          coApplicant: toApplicantInput(coSummary, coPerson),
+          primary: toApplicantInput(primarySummary, primaryPerson, primaryHireDate),
+          coApplicant: toApplicantInput(coSummary, coPerson, coHireDate),
           coApplicantContext: {
             householdIncome,
             hasAppliedIncome: coHasAppliedIncome,

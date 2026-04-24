@@ -60,6 +60,7 @@ export type BureauSummaryForScoring = {
   total_tradelines?: number | null;
   open_tradelines?: number | null;
   autos_on_bureau?: number | null;
+  bureau_raw?: unknown;
 } & Record<string, unknown>;
 
 export type ApplicantPersonForScoring = {
@@ -126,6 +127,10 @@ export type CreditWorkerGateway = {
     organizationId: string,
     personId: string
   ) => Promise<boolean>;
+  getAppliedIncomeHireDateForPerson: (
+    organizationId: string,
+    personId: string
+  ) => Promise<string | null>;
   upsertUnderwritingResult: (args: {
     organizationId: string;
     dealId: string;
@@ -467,6 +472,29 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
       const manual = Number(row.monthly_gross_manual ?? 0);
       return calculated > 0 || manual > 0;
     });
+  },
+
+  async getAppliedIncomeHireDateForPerson(organizationId, personId) {
+    const { data, error } = await supabase
+      .from("income_profiles")
+      .select("hire_date, monthly_gross_calculated, monthly_gross_manual")
+      .eq("organization_id", organizationId)
+      .eq("deal_person_id", personId)
+      .eq("applied_to_deal", true);
+
+    if (error) throw error;
+
+    const dates = (data ?? [])
+      .filter((row) => {
+        const calculated = Number(row.monthly_gross_calculated ?? 0);
+        const manual = Number(row.monthly_gross_manual ?? 0);
+        return calculated > 0 || manual > 0;
+      })
+      .map((row) => row.hire_date)
+      .filter((value): value is string => Boolean(value))
+      .sort();
+
+    return dates[0] ?? null;
   },
 
   async upsertUnderwritingResult(args) {

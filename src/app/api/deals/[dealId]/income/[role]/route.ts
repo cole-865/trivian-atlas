@@ -230,7 +230,7 @@ export async function POST(
     organization_id: scopedDeal.organizationId,
     deal_person_id: personResult.data.id,
     income_type: incomeType,
-    applied_to_deal: true,
+    applied_to_deal: false,
 
     monthly_gross_manual: null,
     monthly_gross_calculated: null,
