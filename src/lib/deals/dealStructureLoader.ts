@@ -10,10 +10,35 @@ import {
   persistDealStructureState,
   type DealStructureInputsRecord,
 } from "@/lib/deals/dealStructureEngine";
+import { getDealStructureSnapshotAiReview } from "@/lib/deals/dealStructureSnapshot";
 import { supabaseServer } from "@/lib/supabase/server";
+
+async function loadLatestSavedAiReview(args: {
+  supabase: Awaited<ReturnType<typeof supabaseServer>>;
+  organizationId: string;
+  dealId: string;
+}) {
+  const { data, error } = await args.supabase
+    .from("deal_structure")
+    .select("snapshot_json")
+    .eq("organization_id", args.organizationId)
+    .eq("deal_id", args.dealId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load saved AI review: ${error.message}`);
+  }
+
+  return getDealStructureSnapshotAiReview(
+    (data as { snapshot_json?: unknown } | null)?.snapshot_json
+  );
+}
 
 export async function loadDealStructurePageData(args: {
   dealId: string;
+  includeAiReview?: boolean;
   overrideInputs?: Partial<DealStructureInputsRecord> | null;
   persist?: boolean;
 }) {
@@ -58,21 +83,27 @@ export async function loadDealStructurePageData(args: {
     }),
   });
 
-  const aiReview = await loadDealDecisionAssistReview({
-    supabase,
-    context,
-    computed,
-    overrides: {
-      currentFingerprint: overrides.currentFingerprint,
-      rawBlockers: overrides.rawBlockers,
-      effectiveBlockers: overrides.effectiveBlockers,
-      requests: overrides.requests.map((request) => ({
-        id: request.id,
-        blocker_code: request.blocker_code,
-        status: request.status,
-      })),
-    },
-  });
+  const aiReview = args.includeAiReview
+    ? await loadDealDecisionAssistReview({
+        supabase,
+        context,
+        computed,
+        overrides: {
+          currentFingerprint: overrides.currentFingerprint,
+          rawBlockers: overrides.rawBlockers,
+          effectiveBlockers: overrides.effectiveBlockers,
+          requests: overrides.requests.map((request) => ({
+            id: request.id,
+            blocker_code: request.blocker_code,
+            status: request.status,
+          })),
+        },
+      })
+    : await loadLatestSavedAiReview({
+        supabase,
+        organizationId: context.organizationId,
+        dealId: args.dealId,
+      });
 
   if (args.persist !== false) {
     await persistDealStructureState({

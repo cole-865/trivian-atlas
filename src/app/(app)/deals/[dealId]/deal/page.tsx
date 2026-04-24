@@ -603,6 +603,41 @@ export default function DealDealPage() {
     setOverrides(j.overrides ?? null);
   }
 
+  async function generateDecisionAssist() {
+    if (!dealId) return;
+
+    setErr(null);
+    setWorkingKey("decision-assist");
+
+    try {
+      const r = await fetch(`/api/deals/${dealId}/decision-assist`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const j: DealStructureResponse & ApiErrorResponse = await r.json();
+
+      if (!r.ok) {
+        if (j?.error === "STEP_BLOCKED" && j?.redirectTo) {
+          router.replace(`/deals/${dealId}/${j.redirectTo}`);
+          return;
+        }
+
+        throw new Error(j.details || j.error || "Failed to generate AI review");
+      }
+
+      setStructure(j.structure ?? null);
+      setAiReview(j.structure?.ai_review ?? null);
+      setCustomerName(j.customerName ?? null);
+      setSelection(j.selection ?? null);
+      setStructureInputs(j.structureInputs ?? null);
+      setOverrides(j.overrides ?? null);
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Failed to generate AI review");
+    } finally {
+      setWorkingKey(null);
+    }
+  }
+
   async function persistFromQueryThenCleanUrl() {
     if (!dealId) return;
     if (!hasQuerySelection) return;
@@ -1902,7 +1937,21 @@ export default function DealDealPage() {
 
           {aiReview ? (
             <div style={card}>
-              <div style={sectionTitle}>AI Review</div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                <div style={sectionTitle}>AI Review</div>
+                <button
+                  type="button"
+                  style={{
+                    ...btnSecondary,
+                    opacity: workingKey === "decision-assist" ? 0.65 : 1,
+                    cursor: workingKey === "decision-assist" ? "not-allowed" : "pointer",
+                  }}
+                  disabled={workingKey === "decision-assist"}
+                  onClick={() => void generateDecisionAssist()}
+                >
+                  {workingKey === "decision-assist" ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
 
               <div style={{ display: "grid", gap: 16 }}>
                 <div>
@@ -2025,7 +2074,28 @@ export default function DealDealPage() {
                 </div>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div style={card}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                <div>
+                  <div style={sectionTitle}>AI Review</div>
+                  <div style={hintText}>No saved AI review for this structure.</div>
+                </div>
+                <button
+                  type="button"
+                  style={{
+                    ...btnSecondary,
+                    opacity: workingKey === "decision-assist" ? 0.65 : 1,
+                    cursor: workingKey === "decision-assist" ? "not-allowed" : "pointer",
+                  }}
+                  disabled={workingKey === "decision-assist"}
+                  onClick={() => void generateDecisionAssist()}
+                >
+                  {workingKey === "decision-assist" ? "Generating..." : "Generate"}
+                </button>
+              </div>
+            </div>
+          )}
         </>
       ) : null}
     </div>

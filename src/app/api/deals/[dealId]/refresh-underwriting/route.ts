@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import {
-    assertDealInCurrentOrganization,
+    getDealForCurrentOrganization,
     NO_CURRENT_ORGANIZATION_MESSAGE,
 } from "@/lib/deals/organizationScope";
 import { scopeQueryToOrganization } from "@/lib/deals/childOrganizationScope";
@@ -9,37 +9,93 @@ import {
     scopeDealChildQueryToOrganization,
 } from "@/lib/deals/underwritingOrganizationScope";
 import { loadActiveUnderwritingTierPolicy } from "@/lib/los/organizationScope";
-import { getCreditApplicantRole } from "@/lib/deals/creditApplicantRole";
+import { scoreDealTier, type TierApplicantInput } from "@/lib/underwriting/scoreDealTier";
 
 function round2(n: number) {
     return Number((n || 0).toFixed(2));
 }
 
-type Tier = "A" | "B" | "C" | "D" | "BHPH";
-
-const TIER_ORDER: Tier[] = ["BHPH", "D", "C", "B", "A"];
-
-function clampTierIndex(idx: number): number {
-    return Math.max(0, Math.min(TIER_ORDER.length - 1, idx));
+function num(v: unknown): number {
+    if (v === null || v === undefined || v === "") return 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
 }
 
-function moveTier(start: Tier, delta: number): Tier {
-    const startIdx = TIER_ORDER.indexOf(start);
-    return TIER_ORDER[clampTierIndex(startIdx + delta)];
+function pickMonthly(row: { monthly_gross_calculated: unknown; monthly_gross_manual: unknown }) {
+    const calculated = num(row.monthly_gross_calculated);
+    const manual = num(row.monthly_gross_manual);
+    return calculated > 0 ? calculated : manual > 0 ? manual : 0;
 }
 
-function roundHalfStep(value: number): number {
-    return Math.round(value * 2) / 2;
+type BureauSummaryRow = {
+    score: number | null;
+    repo_count: number | null;
+    months_since_repo: number | null;
+    paid_auto_trades: number | null;
+    open_auto_trades: number | null;
+    months_since_bankruptcy: number | null;
+    total_collections: number | null;
+    total_chargeoffs: number | null;
+    past_due_amount: number | null;
+    total_tradelines: number | null;
+    open_tradelines: number | null;
+    autos_on_bureau: number | null;
+};
+
+type DealPersonRow = {
+    id: string;
+    role: string;
+    residence_months: number | null;
+    address_line1: string | null;
+    city: string | null;
+    state: string | null;
+    zip: string | null;
+};
+
+function toApplicantInput(
+    summary: BureauSummaryRow | null,
+    person: DealPersonRow | null
+): TierApplicantInput | null {
+    if (!summary) return null;
+
+    return {
+        score: summary.score != null ? Number(summary.score) : null,
+        repoCount: Number(summary.repo_count ?? 0),
+        monthsSinceRepo:
+            summary.months_since_repo != null ? Number(summary.months_since_repo) : null,
+        paidAutoTrades: Number(summary.paid_auto_trades ?? 0),
+        openAutoTrades: Number(summary.open_auto_trades ?? 0),
+        residenceMonths:
+            person?.residence_months != null ? Number(person.residence_months) : null,
+        monthsSinceBankruptcy:
+            summary.months_since_bankruptcy != null
+                ? Number(summary.months_since_bankruptcy)
+                : null,
+        totalCollections:
+            summary.total_collections != null ? Number(summary.total_collections) : null,
+        totalChargeoffs:
+            summary.total_chargeoffs != null ? Number(summary.total_chargeoffs) : null,
+        pastDueAmount:
+            summary.past_due_amount != null ? Number(summary.past_due_amount) : null,
+        totalTradelines:
+            summary.total_tradelines != null ? Number(summary.total_tradelines) : null,
+        openTradelines:
+            summary.open_tradelines != null ? Number(summary.open_tradelines) : null,
+        autosOnBureau:
+            summary.autos_on_bureau != null ? Number(summary.autos_on_bureau) : null,
+    };
 }
 
 export async function POST(
-    req: Request,
+    _req: Request,
     { params }: { params: Promise<{ dealId: string }> }
 ) {
     const { dealId } = await params;
-    const applicantRole = getCreditApplicantRole(new URL(req.url).searchParams.get("applicantRole"));
     const supabase = await supabaseServer();
-    const scopedDeal = await assertDealInCurrentOrganization(supabase, dealId);
+    const scopedDeal = await getDealForCurrentOrganization<{
+        id: string;
+        household_income: boolean | null;
+    }>(supabase, dealId, "id, household_income");
 
     if (!scopedDeal.organizationId) {
         return NextResponse.json(
@@ -59,55 +115,83 @@ export async function POST(
         return NextResponse.json({ error: "Deal not found" }, { status: 404 });
     }
 
-    if (applicantRole !== "primary") {
-        return NextResponse.json(
-            { error: "Underwriting refresh is currently supported for the driver bureau only" },
-            { status: 400 }
-        );
-    }
-
-    const { data: bureauSummary, error: bureauErr } = await scopeDealChildQueryToOrganization(
+    const { data: primaryBureauSummary, error: primaryBureauErr } = await scopeDealChildQueryToOrganization(
         supabase
             .from("bureau_summary")
-            .select(
-                "score, repo_count, months_since_repo, paid_auto_trades, open_auto_trades"
-            ),
+            .select("*"),
         scopedDeal.organizationId,
         dealId
     )
-        .eq("applicant_role", applicantRole)
+        .eq("applicant_role", "primary")
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-    if (bureauErr) {
+    if (primaryBureauErr) {
         return NextResponse.json(
-            { error: "Failed to load bureau summary", details: bureauErr.message },
+            { error: "Failed to load primary bureau summary", details: primaryBureauErr.message },
             { status: 500 }
         );
     }
 
-    if (!bureauSummary) {
+    if (!primaryBureauSummary) {
+        const skipped = scoreDealTier({
+            primary: null,
+            coApplicantContext: {
+                householdIncome: Boolean(scopedDeal.data.household_income),
+                hasAppliedIncome: false,
+                primaryAddress: null,
+                coApplicantAddress: null,
+            },
+        });
+
         return NextResponse.json(
-            { error: "No bureau summary found for deal" },
+            {
+                error: "No primary bureau summary found for deal",
+                result: skipped,
+            },
             { status: 400 }
         );
     }
 
-    const { data: primaryPerson, error: personErr } = await scopeQueryToOrganization(
-        supabase.from("deal_people").select("id, residence_months"),
-        scopedDeal.organizationId
+    const { data: coBureauSummary, error: coBureauErr } = await scopeDealChildQueryToOrganization(
+        supabase
+            .from("bureau_summary")
+            .select("*"),
+        scopedDeal.organizationId,
+        dealId
     )
-        .eq("deal_id", dealId)
-        .eq("role", "primary")
+        .eq("applicant_role", "co")
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-    if (personErr) {
+    if (coBureauErr) {
         return NextResponse.json(
-            { error: "Failed to load primary applicant", details: personErr.message },
+            { error: "Failed to load co-app bureau summary", details: coBureauErr.message },
             { status: 500 }
         );
     }
+
+    const { data: people, error: personErr } = await scopeQueryToOrganization(
+        supabase
+            .from("deal_people")
+            .select("id, role, residence_months, address_line1, city, state, zip"),
+        scopedDeal.organizationId
+    )
+        .eq("deal_id", dealId)
+        .in("role", ["primary", "co"]);
+
+    if (personErr) {
+        return NextResponse.json(
+            { error: "Failed to load applicants", details: personErr.message },
+            { status: 500 }
+        );
+    }
+
+    const personRows = (people ?? []) as DealPersonRow[];
+    const primaryPerson = personRows.find((person) => person.role === "primary") ?? null;
+    const coPerson = personRows.find((person) => person.role === "co") ?? null;
 
     if (!primaryPerson) {
         return NextResponse.json(
@@ -116,27 +200,58 @@ export async function POST(
         );
     }
 
-    const score = bureauSummary.score != null ? Number(bureauSummary.score) : null;
-    const repoCount = Number(bureauSummary.repo_count ?? 0);
-    const monthsSinceRepo =
-        bureauSummary.months_since_repo != null
-            ? Number(bureauSummary.months_since_repo)
-            : null;
-    const paidAutoTrades = Number(bureauSummary.paid_auto_trades ?? 0);
-    const openAutoTrades = Number(bureauSummary.open_auto_trades ?? 0);
-    const residenceMonths =
-        primaryPerson.residence_months != null
-            ? Number(primaryPerson.residence_months)
-            : null;
+    const coPersonId = coPerson?.id ?? null;
+    const { data: coIncomeRows, error: coIncomeErr } = coPersonId
+        ? await scopeQueryToOrganization(
+            supabase
+                .from("income_profiles")
+                .select("id, applied_to_deal, monthly_gross_calculated, monthly_gross_manual"),
+            scopedDeal.organizationId
+        )
+            .eq("deal_person_id", coPersonId)
+            .eq("applied_to_deal", true)
+        : { data: [], error: null };
 
-    if ((score ?? 999) < 420) {
+    if (coIncomeErr) {
+        return NextResponse.json(
+            { error: "Failed to load co-app income", details: coIncomeErr.message },
+            { status: 500 }
+        );
+    }
+
+    const coHasAppliedIncome = (coIncomeRows ?? []).some((row) => pickMonthly(row) > 0);
+
+    const scored = scoreDealTier({
+        primary: toApplicantInput(primaryBureauSummary as BureauSummaryRow, primaryPerson),
+        coApplicant: toApplicantInput((coBureauSummary ?? null) as BureauSummaryRow | null, coPerson),
+        coApplicantContext: {
+            householdIncome: Boolean(scopedDeal.data.household_income),
+            hasAppliedIncome: coHasAppliedIncome,
+            primaryAddress: {
+                addressLine1: primaryPerson.address_line1,
+                city: primaryPerson.city,
+                state: primaryPerson.state,
+                zip: primaryPerson.zip,
+            },
+            coApplicantAddress: coPerson
+                ? {
+                    addressLine1: coPerson.address_line1,
+                    city: coPerson.city,
+                    state: coPerson.state,
+                    zip: coPerson.zip,
+                }
+                : null,
+        },
+    });
+
+    if (scored.hardStop || !scored.tier) {
         const payload = {
             organization_id: scopedDeal.organizationId,
             deal_id: dealId,
             stage: "bureau_precheck",
-            score_total: 0,
-            decision: "denied",
-            notes: "Hard stop: bureau score below minimum threshold.",
+            score_total: scored.scoreTotal,
+            decision: scored.decision,
+            notes: scored.notes,
             tier: null,
             max_term_months: null,
             min_cash_down: null,
@@ -146,9 +261,9 @@ export async function POST(
             max_vehicle_price: null,
             max_ltv: null,
             apr: null,
-            hard_stop: true,
-            hard_stop_reason: "Score below 420",
-            score_factors: [],
+            hard_stop: scored.hardStop,
+            hard_stop_reason: scored.hardStopReason,
+            score_factors: scored.scoreFactors,
             updated_at: new Date().toISOString(),
         };
 
@@ -165,80 +280,11 @@ export async function POST(
 
         return NextResponse.json({ ok: true, refreshed: true, deal_id: dealId, result: payload });
     }
-
-    if (repoCount > 1 && monthsSinceRepo !== null && monthsSinceRepo < 12) {
-        const payload = {
-            organization_id: scopedDeal.organizationId,
-            deal_id: dealId,
-            stage: "bureau_precheck",
-            score_total: 0,
-            decision: "denied",
-            notes: "Hard stop: excessive recent repos.",
-            tier: null,
-            max_term_months: null,
-            min_cash_down: null,
-            min_down_pct: null,
-            max_pti: null,
-            max_amount_financed: null,
-            max_vehicle_price: null,
-            max_ltv: null,
-            apr: null,
-            hard_stop: true,
-            hard_stop_reason: "More than 1 repo within last 12 months",
-            score_factors: [],
-            updated_at: new Date().toISOString(),
-        };
-
-        const { error: upsertErr } = await supabase
-            .from("underwriting_results")
-            .upsert(payload, { onConflict: "deal_id,stage" });
-
-        if (upsertErr) {
-            return NextResponse.json(
-                { error: "Failed to save underwriting results", details: upsertErr.message },
-                { status: 500 }
-            );
-        }
-
-        return NextResponse.json({ ok: true, refreshed: true, deal_id: dealId, result: payload });
-    }
-
-    let movement = 0;
-    const scoreFactors: Array<{ code: string; points: number; note: string }> = [];
-
-    if (paidAutoTrades >= 2) {
-        movement += 1.5;
-        scoreFactors.push({ code: "PAID_AUTOS_2_PLUS", points: 1.5, note: "2+ paid auto trades" });
-    } else if (paidAutoTrades === 1) {
-        movement += 1;
-        scoreFactors.push({ code: "PAID_AUTOS_1", points: 1, note: "1 paid auto trade" });
-    }
-
-    if (openAutoTrades === 0 && paidAutoTrades === 0) {
-        movement -= 1;
-        scoreFactors.push({ code: "NO_AUTO_HISTORY", points: -1, note: "No auto history" });
-    } else if (openAutoTrades > 0) {
-        scoreFactors.push({ code: "OPEN_AUTO_PRESENT", points: 0, note: "Open auto present; neutral in v1" });
-    }
-
-    if ((residenceMonths ?? 0) > 24) {
-        movement += 1;
-        scoreFactors.push({ code: "RES_OVER_24", points: 1, note: "Residence over 24 months" });
-    } else if ((residenceMonths ?? 0) >= 12) {
-        movement += 0.5;
-        scoreFactors.push({ code: "RES_12_24", points: 0.5, note: "Residence 12-24 months" });
-    } else if ((residenceMonths ?? 0) < 6) {
-        movement -= 1;
-        scoreFactors.push({ code: "RES_UNDER_6", points: -1, note: "Residence under 6 months" });
-    }
-
-    const cappedMovement = Math.max(-2, Math.min(2, roundHalfStep(movement)));
-    const tier = moveTier("C", Math.trunc(cappedMovement));
 
     const { data: policy, error: policyErr } = await loadActiveUnderwritingTierPolicy(
         supabase,
         scopedDeal.organizationId,
-        tier
+        scored.tier
     );
 
     if (policyErr) {
@@ -250,7 +296,7 @@ export async function POST(
 
     if (!policy) {
         return NextResponse.json(
-            { error: `No active underwriting tier policy found for tier ${tier}` },
+            { error: `No active underwriting tier policy found for tier ${scored.tier}` },
             { status: 500 }
         );
     }
@@ -259,10 +305,10 @@ export async function POST(
         organization_id: scopedDeal.organizationId,
         deal_id: dealId,
         stage: "bureau_precheck",
-        score_total: cappedMovement,
-        decision: "approved",
-        notes: `Started at Tier C. Raw movement: ${movement}. Capped movement: ${cappedMovement}. Final tier: ${tier}.`,
-        tier,
+        score_total: scored.scoreTotal,
+        decision: scored.decision,
+        notes: scored.notes,
+        tier: scored.tier,
         max_term_months: Number(policy.max_term_months ?? 0),
         min_cash_down: round2(Number(policy.min_cash_down ?? 0)),
         min_down_pct: Number(policy.min_down_pct ?? 0),
@@ -271,9 +317,9 @@ export async function POST(
         max_vehicle_price: round2(Number(policy.max_vehicle_price ?? 0)),
         max_ltv: Number(policy.max_ltv ?? 0),
         apr: Number(policy.apr ?? 28.99),
-        hard_stop: false,
-        hard_stop_reason: null,
-        score_factors: scoreFactors,
+        hard_stop: scored.hardStop,
+        hard_stop_reason: scored.hardStopReason,
+        score_factors: scored.scoreFactors,
         updated_at: new Date().toISOString(),
     };
 

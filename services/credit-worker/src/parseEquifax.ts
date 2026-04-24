@@ -84,6 +84,18 @@ export type BureauSummaryParsed = {
   bureau_raw: Record<string, unknown>;
 };
 
+export type TierCapSignals = {
+  unresolved_collections_count: number;
+  unresolved_chargeoffs_count: number;
+  open_auto_derogatory: boolean;
+  auto_deficiency: boolean;
+  public_record_count: number;
+  bankruptcy_count: number;
+  months_since_bankruptcy: number | null;
+  bankruptcy_date_unknown: boolean;
+  major_derog_after_public_record: boolean | null;
+};
+
 export type ParsedEquifaxReport = {
   bureau: "equifax";
   summary: BureauSummaryParsed;
@@ -161,6 +173,7 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
   const messages = parseMessages(normalized, sections.identityAlert ?? "", scoreInfo);
 
   const tradelines = [...collectionTradelines, ...paymentTradelines];
+  const tierCapSignals = deriveTierCapSignals(tradelines, publicRecords);
 
   const autosOnBureau = countAutoTrades(tradelines);
   const openAutoTrades = countOpenAutoTrades(tradelines);
@@ -182,7 +195,7 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
     open_tradelines: countOpenTradelines(tradelines),
     open_auto_trade: openAutoTrades > 0,
     months_since_repo: deriveMonthsSinceRepo(tradelines),
-    months_since_bankruptcy: deriveMonthsSinceBankruptcy(publicRecords),
+    months_since_bankruptcy: tierCapSignals.months_since_bankruptcy,
     total_collections: sumCollectionBalances(tradelines),
     total_chargeoffs: paymentSummary.totalChargeoffs,
     past_due_amount: paymentSummary.totalPastDue,
@@ -206,6 +219,7 @@ export function parseEquifaxReport(input: string): ParsedEquifaxReport {
       score: scoreInfo,
       reportSummary: summaryInfo,
       paymentSummary,
+      tier_cap_signals: tierCapSignals,
       inquiries,
       sectionsFound: Object.keys(sections),
       normalizedPreview: normalized.slice(0, 2000),
@@ -670,22 +684,51 @@ function parsePublicRecords(reportSummary: string, fullText: string): BureauPubl
     .filter((s) => /bankrupt/i.test(s));
 
   for (const line of bankruptcyLines) {
+    const dates = extractPublicRecordDates(line);
     records.push({
       court_name: null,
       record_type: "bankruptcy",
       plaintiff: null,
       amount: null,
       status: line,
-      filed_date: null,
-      resolved_date: null,
+      filed_date: dates.filed_date,
+      resolved_date: dates.resolved_date,
       no_effect: false,
       good: false,
       bad: true,
-      raw_segment: { raw: line, source: "full_text" },
+      raw_segment: {
+        raw: line,
+        source: "full_text",
+        date_unknown: !dates.filed_date && !dates.resolved_date,
+      },
     });
   }
 
   return records;
+}
+
+function extractPublicRecordDates(line: string): {
+  filed_date: string | null;
+  resolved_date: string | null;
+} {
+  const filedMatch = line.match(
+    /(?:filed|filing|date filed|reported|rptd|rpt)\D{0,20}(\d{1,2}\/\d{1,2}\/\d{2,4})/i
+  );
+  const resolvedMatch = line.match(
+    /(?:resolved|discharged|dismissed|closed|date resolved)\D{0,20}(\d{1,2}\/\d{1,2}\/\d{2,4})/i
+  );
+  const allDates = [...line.matchAll(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g)]
+    .map((match) => normalizeDate(match[1]))
+    .filter((date): date is string => Boolean(date));
+
+  return {
+    filed_date: filedMatch ? normalizeDate(filedMatch[1]) : allDates[0] ?? null,
+    resolved_date: resolvedMatch
+      ? normalizeDate(resolvedMatch[1])
+      : allDates.length > 1
+        ? allDates[allDates.length - 1]
+        : null,
+  };
 }
 
 function parseMessages(
@@ -1141,4 +1184,117 @@ function diffMonths(from: Date, to: Date): number {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function deriveTierCapSignals(
+  tradelines: BureauTradelineRow[],
+  publicRecords: BureauPublicRecordRow[]
+): TierCapSignals {
+  const publicRecordDates = publicRecords
+    .map(publicRecordDate)
+    .filter((date): date is Date => Boolean(date));
+  const bankruptcyRecords = publicRecords.filter((record) =>
+    /bankrupt/i.test(record.record_type ?? record.status ?? "")
+  );
+  const bankruptcyDates = bankruptcyRecords
+    .map(publicRecordDate)
+    .filter((date): date is Date => Boolean(date));
+  const mostRecentPublicRecord = newestDate(publicRecordDates);
+  const mostRecentBankruptcy = newestDate(bankruptcyDates);
+
+  return {
+    unresolved_collections_count: tradelines.filter(isUnresolvedCollection).length,
+    unresolved_chargeoffs_count: tradelines.filter(isUnresolvedChargeoff).length,
+    open_auto_derogatory: tradelines.some(isOpenAutoDerogatory),
+    auto_deficiency: tradelines.some(isAutoDeficiency),
+    public_record_count: publicRecords.length,
+    bankruptcy_count: bankruptcyRecords.length,
+    months_since_bankruptcy: mostRecentBankruptcy
+      ? diffMonths(mostRecentBankruptcy, new Date())
+      : null,
+    bankruptcy_date_unknown:
+      bankruptcyRecords.length > 0 && bankruptcyDates.length < bankruptcyRecords.length,
+    major_derog_after_public_record: mostRecentPublicRecord
+      ? tradelines.some((tradeline) =>
+          isMajorDerogatoryTradeline(tradeline) &&
+          isTradelineAfterDate(tradeline, mostRecentPublicRecord)
+        )
+      : null,
+  };
+}
+
+function publicRecordDate(record: BureauPublicRecordRow): Date | null {
+  const candidate = record.resolved_date ?? record.filed_date;
+  return candidate ? parseIsoDate(candidate) : null;
+}
+
+function newestDate(dates: Date[]): Date | null {
+  return dates.length
+    ? dates.sort((a, b) => b.getTime() - a.getTime())[0]
+    : null;
+}
+
+function isUnresolvedCollection(tradeline: BureauTradelineRow): boolean {
+  return tradeline.unpaid_collection === true && !looksClosed(tradeline);
+}
+
+function isUnresolvedChargeoff(tradeline: BureauTradelineRow): boolean {
+  return tradeline.unpaid_chargeoff === true && !looksClosed(tradeline);
+}
+
+function isMajorDerogatoryTradeline(tradeline: BureauTradelineRow): boolean {
+  return (
+    tradeline.bad === true ||
+    tradeline.unpaid_collection === true ||
+    tradeline.unpaid_chargeoff === true ||
+    tradeline.auto_repo === true ||
+    (tradeline.past_due_amount ?? 0) > 0
+  );
+}
+
+function isTradelineAfterDate(tradeline: BureauTradelineRow, compareDate: Date): boolean {
+  const dates = [
+    tradeline.last_activity_date,
+    tradeline.last_payment_date,
+    tradeline.opened_date,
+  ]
+    .filter(Boolean)
+    .map((value) => parseIsoDate(value as string))
+    .filter((date): date is Date => Boolean(date));
+
+  return dates.some((date) => date.getTime() > compareDate.getTime());
+}
+
+function isOpenAutoDerogatory(tradeline: BureauTradelineRow): boolean {
+  if (!tradeline.is_auto || looksClosed(tradeline)) return false;
+
+  const status = (tradeline.account_status ?? "").toLowerCase();
+  const raw = String(tradeline.raw_segment?.raw ?? "").toLowerCase();
+
+  return (
+    tradeline.bad === true ||
+    tradeline.auto_repo === true ||
+    tradeline.unpaid_chargeoff === true ||
+    (tradeline.past_due_amount ?? 0) > 0 ||
+    status.includes("repo") ||
+    status.includes("charge") ||
+    status.includes("collection") ||
+    status.includes("unpaid") ||
+    raw.includes("bad debt") ||
+    raw.includes("deficien")
+  );
+}
+
+function isAutoDeficiency(tradeline: BureauTradelineRow): boolean {
+  if (!tradeline.is_auto) return false;
+
+  const raw = String(tradeline.raw_segment?.raw ?? "").toLowerCase();
+  const status = (tradeline.account_status ?? "").toLowerCase();
+  const balance = tradeline.balance ?? tradeline.past_due_amount ?? 0;
+
+  return (
+    raw.includes("deficien") ||
+    raw.includes("bad debt") ||
+    ((tradeline.auto_repo === true || status.includes("repo")) && balance > 0)
+  );
 }

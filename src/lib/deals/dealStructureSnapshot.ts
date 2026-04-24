@@ -15,3 +15,12 @@ export function getDealStructureSnapshotPti(snapshot: unknown) {
   const structure = (snapshot as { structure?: { pti?: unknown } }).structure;
   return toNullableNumber(structure?.pti);
 }
+
+export function getDealStructureSnapshotAiReview(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+
+  const aiReview = (snapshot as { ai_review?: unknown }).ai_review;
+  return aiReview ?? null;
+}

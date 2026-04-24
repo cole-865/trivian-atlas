@@ -16,6 +16,10 @@ function createGateway(overrides?: Partial<CreditWorkerGateway>) {
       calls.push("getDealOrganizationId");
       return "org-1";
     },
+    async getDealHouseholdIncome() {
+      calls.push("getDealHouseholdIncome");
+      return false;
+    },
     async stampJobOrganization() {
       calls.push("stampJobOrganization");
     },
@@ -52,7 +56,33 @@ function createGateway(overrides?: Partial<CreditWorkerGateway>) {
     },
     async loadApplicantPerson() {
       calls.push("loadApplicantPerson");
-      return { residence_months: 24 };
+      return {
+        id: "person-1",
+        residence_months: 24,
+        address: {
+          addressLine1: "123 Main St",
+          city: "Austin",
+          state: "TX",
+          zip: "78701",
+        },
+      };
+    },
+    async loadLatestBureauSummary(_organizationId, _dealId, applicantRole) {
+      calls.push(`loadLatestBureauSummary:${applicantRole}`);
+      return applicantRole === "primary"
+        ? {
+            id: "summary-primary",
+            score: 640,
+            repo_count: 0,
+            months_since_repo: null,
+            paid_auto_trades: 2,
+            open_auto_trades: 1,
+          }
+        : null;
+    },
+    async hasAppliedIncomeForPerson() {
+      calls.push("hasAppliedIncomeForPerson");
+      return false;
     },
     async upsertUnderwritingResult() {
       calls.push("upsertUnderwritingResult");
@@ -153,6 +183,10 @@ test("processJob orchestrates the happy path and stamps missing organization ids
     "upsertBureauSummary",
     "replaceBureauDetails",
     "loadApplicantPerson",
+    "loadApplicantPerson",
+    "getDealHouseholdIncome",
+    "loadLatestBureauSummary:co",
+    "hasAppliedIncomeForPerson",
     "upsertUnderwritingResult",
     "updateJobStatus:done",
   ]);
@@ -250,8 +284,13 @@ test("processJob fails unsupported bureau formats before any downstream upserts"
   assert.equal(calls.includes("markJobFailed"), true);
 });
 
-test("processJob stores co-app bureau data without refreshing deal underwriting", async () => {
-  const { gateway, calls } = createGateway();
+test("processJob stores co-app bureau data without refreshing deal underwriting when primary bureau is missing", async () => {
+  const { gateway, calls } = createGateway({
+    async loadLatestBureauSummary(_organizationId, _dealId, applicantRole) {
+      calls.push(`loadLatestBureauSummary:${applicantRole}`);
+      return null;
+    },
+  });
 
   await processJob(
     {
@@ -273,6 +312,60 @@ test("processJob stores co-app bureau data without refreshing deal underwriting"
     }
   );
 
-  assert.equal(calls.includes("loadApplicantPerson"), false);
+  assert.equal(calls.includes("loadLatestBureauSummary:primary"), true);
   assert.equal(calls.includes("upsertUnderwritingResult"), false);
+});
+
+test("processJob refreshes underwriting from a co-app bureau when primary bureau already exists", async () => {
+  const { gateway, calls } = createGateway({
+    async getDealHouseholdIncome() {
+      calls.push("getDealHouseholdIncome");
+      return true;
+    },
+    async loadApplicantPerson(_organizationId, _dealId, applicantRole) {
+      calls.push(`loadApplicantPerson:${applicantRole}`);
+      return {
+        id: applicantRole === "primary" ? "primary-person" : "co-person",
+        residence_months: applicantRole === "primary" ? 18 : 36,
+        address: {
+          addressLine1: "123 Main St.",
+          city: "Austin",
+          state: "TX",
+          zip: "78701",
+        },
+      };
+    },
+    async hasAppliedIncomeForPerson() {
+      calls.push("hasAppliedIncomeForPerson");
+      return true;
+    },
+  });
+
+  await processJob(
+    {
+      id: "job-6",
+      deal_id: "deal-6",
+      organization_id: "org-1",
+      uploaded_by: "user-1",
+      raw_bucket: "raw",
+      raw_path: "deal/6/report.pdf",
+      applicant_role: "co",
+    },
+    {
+      gateway,
+      parsePdfText: async () => "Equifax-Style Report Generated from Equifax v6 Data",
+      parseBureau: () => createParsedBureau(),
+      scrubText: (text) => text,
+      renderRedactedPdf: async () => Buffer.from("pdf"),
+      underwrite: async ({ scoring }) => {
+        assert.equal(scoring.primary?.paidAutoTrades, 2);
+        assert.equal(scoring.coApplicant?.paidAutoTrades, 2);
+        assert.equal(scoring.coApplicantContext?.householdIncome, true);
+        assert.equal(scoring.coApplicantContext?.hasAppliedIncome, true);
+        return createUnderwriteResult();
+      },
+    }
+  );
+
+  assert.equal(calls.includes("upsertUnderwritingResult"), true);
 });

@@ -4,6 +4,7 @@ import type {
   BureauPublicRecordRow,
   BureauTradelineRow,
 } from "./parseEquifax.js";
+import type { TierApplicantAddress } from "../../../src/lib/underwriting/scoreDealTier.js";
 
 export type CreditReportJobRow = {
   applicant_role?: "primary" | "co" | null;
@@ -45,8 +46,34 @@ export type UnderwriteResult = {
   notes: string;
 };
 
+export type BureauSummaryForScoring = {
+  id: string;
+  score: number | null;
+  repo_count?: number | null;
+  months_since_repo?: number | null;
+  paid_auto_trades?: number | null;
+  open_auto_trades?: number | null;
+  months_since_bankruptcy?: number | null;
+  total_collections?: number | null;
+  total_chargeoffs?: number | null;
+  past_due_amount?: number | null;
+  total_tradelines?: number | null;
+  open_tradelines?: number | null;
+  autos_on_bureau?: number | null;
+} & Record<string, unknown>;
+
+export type ApplicantPersonForScoring = {
+  id: string;
+  residence_months: number | null;
+  address: TierApplicantAddress;
+};
+
 export type CreditWorkerGateway = {
   getDealOrganizationId: (dealId: string) => Promise<string>;
+  getDealHouseholdIncome: (
+    organizationId: string,
+    dealId: string
+  ) => Promise<boolean>;
   stampJobOrganization: (jobId: string, organizationId: string) => Promise<void>;
   updateJobStatus: (
     jobId: string,
@@ -75,7 +102,7 @@ export type CreditWorkerGateway = {
     creditReportId: string;
     jobId: string;
     parsed: ParsedBureauReport;
-  }) => Promise<{ id: string; score: number | null; repo_count?: number | null; months_since_repo?: number | null; paid_auto_trades?: number | null; open_auto_trades?: number | null } & Record<string, unknown>>;
+  }) => Promise<BureauSummaryForScoring>;
   replaceBureauDetails: (args: {
     applicantRole: "primary" | "co";
     organizationId: string;
@@ -89,7 +116,16 @@ export type CreditWorkerGateway = {
     organizationId: string,
     dealId: string,
     applicantRole: "primary" | "co"
-  ) => Promise<{ residence_months: number | null }>;
+  ) => Promise<ApplicantPersonForScoring | null>;
+  loadLatestBureauSummary: (
+    organizationId: string,
+    dealId: string,
+    applicantRole: "primary" | "co"
+  ) => Promise<BureauSummaryForScoring | null>;
+  hasAppliedIncomeForPerson: (
+    organizationId: string,
+    personId: string
+  ) => Promise<boolean>;
   upsertUnderwritingResult: (args: {
     organizationId: string;
     dealId: string;
@@ -137,6 +173,18 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
     }
 
     return organizationId;
+  },
+
+  async getDealHouseholdIncome(organizationId, dealId) {
+    const { data, error } = await supabase
+      .from("deals")
+      .select("household_income")
+      .eq("organization_id", organizationId)
+      .eq("id", dealId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return Boolean(data?.household_income);
   },
 
   async stampJobOrganization(jobId, organizationId) {
@@ -368,16 +416,57 @@ export const defaultCreditWorkerGateway: CreditWorkerGateway = {
   async loadApplicantPerson(organizationId, dealId, applicantRole) {
     const { data, error } = await supabase
       .from("deal_people")
-      .select("*")
+      .select("id, residence_months, address_line1, city, state, zip")
       .eq("organization_id", organizationId)
       .eq("deal_id", dealId)
       .eq("role", applicantRole)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) return null;
+
     return {
+      id: data.id,
       residence_months: data.residence_months ?? null,
+      address: {
+        addressLine1: data.address_line1 ?? null,
+        city: data.city ?? null,
+        state: data.state ?? null,
+        zip: data.zip ?? null,
+      },
     };
+  },
+
+  async loadLatestBureauSummary(organizationId, dealId, applicantRole) {
+    const { data, error } = await supabase
+      .from("bureau_summary")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("deal_id", dealId)
+      .eq("applicant_role", applicantRole)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data as BureauSummaryForScoring | null;
+  },
+
+  async hasAppliedIncomeForPerson(organizationId, personId) {
+    const { data, error } = await supabase
+      .from("income_profiles")
+      .select("monthly_gross_calculated, monthly_gross_manual")
+      .eq("organization_id", organizationId)
+      .eq("deal_person_id", personId)
+      .eq("applied_to_deal", true);
+
+    if (error) throw error;
+
+    return (data ?? []).some((row) => {
+      const calculated = Number(row.monthly_gross_calculated ?? 0);
+      const manual = Number(row.monthly_gross_manual ?? 0);
+      return calculated > 0 || manual > 0;
+    });
   },
 
   async upsertUnderwritingResult(args) {

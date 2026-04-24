@@ -10,7 +10,10 @@ export async function GET(
     const { dealId } = await params;
 
     try {
-        const data = await loadDealStructurePageData({ dealId });
+        const data = await loadDealStructurePageData({
+            dealId,
+            includeAiReview: false,
+        });
         const supabase = await supabaseServer();
         const access = await canAccessStep({
             supabase,
@@ -49,7 +52,7 @@ export async function GET(
                     : 500;
 
         return NextResponse.json(
-            { error: isValidationIssue ? "Failed to generate AI review" : message },
+            { error: isValidationIssue ? "Failed to load saved AI review" : message },
             { status }
         );
     }

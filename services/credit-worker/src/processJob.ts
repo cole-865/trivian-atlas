@@ -16,10 +16,16 @@
 //   - bureau_messages
 
 import {
+  type ApplicantPersonForScoring,
+  type BureauSummaryForScoring,
   type CreditReportJobRow,
   type CreditWorkerGateway,
   type ParsedBureauReport,
 } from "./gateway.js";
+import type {
+  ScoreDealTierArgs,
+  TierApplicantInput,
+} from "../../../src/lib/underwriting/scoreDealTier.js";
 import {
   buildRedactedPath,
   dedupeExtractedReportText,
@@ -37,18 +43,43 @@ type ProcessJobDependencies = {
   scrubText?: (text: string) => string | Promise<string>;
   renderRedactedPdf?: (text: string) => Promise<Buffer>;
   underwrite?: (args: {
-    incomeMonthly: number;
-    score: number | null;
-    repoCount: number;
-    monthsSinceRepo: number | null;
-    paidAutoTrades: number;
-    openAutoTrades: number;
-    residenceMonths: number | null;
-    jobMonths: number | null;
-    cashDown: number;
-    vehiclePrice: number;
+    scoring: ScoreDealTierArgs;
   }) => Promise<import("./gateway.js").UnderwriteResult>;
 };
+
+function toApplicantInput(
+  summary: BureauSummaryForScoring | null,
+  person: ApplicantPersonForScoring | null
+): TierApplicantInput | null {
+  if (!summary) return null;
+
+  return {
+    score: summary.score != null ? Number(summary.score) : null,
+    repoCount: Number(summary.repo_count ?? 0),
+    monthsSinceRepo:
+      summary.months_since_repo != null ? Number(summary.months_since_repo) : null,
+    paidAutoTrades: Number(summary.paid_auto_trades ?? 0),
+    openAutoTrades: Number(summary.open_auto_trades ?? 0),
+    residenceMonths:
+      person?.residence_months != null ? Number(person.residence_months) : null,
+    monthsSinceBankruptcy:
+      summary.months_since_bankruptcy != null
+        ? Number(summary.months_since_bankruptcy)
+        : null,
+    totalCollections:
+      summary.total_collections != null ? Number(summary.total_collections) : null,
+    totalChargeoffs:
+      summary.total_chargeoffs != null ? Number(summary.total_chargeoffs) : null,
+    pastDueAmount:
+      summary.past_due_amount != null ? Number(summary.past_due_amount) : null,
+    totalTradelines:
+      summary.total_tradelines != null ? Number(summary.total_tradelines) : null,
+    openTradelines:
+      summary.open_tradelines != null ? Number(summary.open_tradelines) : null,
+    autosOnBureau:
+      summary.autos_on_bureau != null ? Number(summary.autos_on_bureau) : null,
+  };
+}
 
 export async function processJob(
   job: CreditReportJobRow,
@@ -79,9 +110,9 @@ export async function processJob(
     });
   const underwrite =
     dependencies.underwrite ??
-    (async (args) => {
-      const { underwriteDeal } = await import("./underwriteDeal.js");
-      return underwriteDeal(args);
+    (async ({ scoring }) => {
+      const { underwriteDealTier } = await import("./underwriteDeal.js");
+      return underwriteDealTier(scoring);
     });
   const jobId: string = job?.id;
   const dealId: string = job?.deal_id;
@@ -210,20 +241,41 @@ export async function processJob(
       messages: parsedBureau.messages,
     });
 
-    if (applicantRole === "primary") {
-      const applicantPerson = await gateway.loadApplicantPerson(organizationId, dealId, applicantRole);
+    const primarySummary =
+      applicantRole === "primary"
+        ? bureauSummary
+        : await gateway.loadLatestBureauSummary(organizationId, dealId, "primary");
+
+    if (primarySummary) {
+      const [primaryPerson, coPerson, householdIncome] = await Promise.all([
+        gateway.loadApplicantPerson(organizationId, dealId, "primary"),
+        gateway.loadApplicantPerson(organizationId, dealId, "co"),
+        gateway.getDealHouseholdIncome(organizationId, dealId),
+      ]);
+
+      if (!primaryPerson) {
+        throw new Error(`Deal ${dealId} is missing primary applicant`);
+      }
+
+      const coSummary =
+        applicantRole === "co"
+          ? bureauSummary
+          : await gateway.loadLatestBureauSummary(organizationId, dealId, "co");
+      const coHasAppliedIncome = coPerson
+        ? await gateway.hasAppliedIncomeForPerson(organizationId, coPerson.id)
+        : false;
 
       const uw = await underwrite({
-        incomeMonthly: 999999, // placeholder so Step 1 doesn't false-deny for missing income
-        score: bureauSummary.score,
-        repoCount: Number(bureauSummary.repo_count ?? 0),
-        monthsSinceRepo: bureauSummary.months_since_repo ?? null,
-        paidAutoTrades: Number(bureauSummary.paid_auto_trades ?? 0),
-        openAutoTrades: Number(bureauSummary.open_auto_trades ?? 0),
-        residenceMonths: applicantPerson.residence_months,
-        jobMonths: null,
-        cashDown: 0,
-        vehiclePrice: 0,
+        scoring: {
+          primary: toApplicantInput(primarySummary, primaryPerson),
+          coApplicant: toApplicantInput(coSummary, coPerson),
+          coApplicantContext: {
+            householdIncome,
+            hasAppliedIncome: coHasAppliedIncome,
+            primaryAddress: primaryPerson.address,
+            coApplicantAddress: coPerson?.address ?? null,
+          },
+        },
       });
 
       await gateway.upsertUnderwritingResult({
@@ -231,6 +283,12 @@ export async function processJob(
         dealId,
         uploadedBy: job.uploaded_by ?? null,
         result: uw,
+      });
+    } else {
+      console.log("[credit-worker] skipped underwriting refresh; primary bureau missing", {
+        jobId,
+        dealId,
+        applicantRole,
       });
     }
 
