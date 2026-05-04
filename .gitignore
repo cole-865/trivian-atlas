@@ -17,6 +17,7 @@
 # next.js
 /.next/
 /out/
+.next-dev*.log
 
 # production
 /build
@@ -33,6 +34,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.local-cookie.txt
 
 # vercel
 .vercel

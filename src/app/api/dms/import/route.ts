@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { hasDealershipPermission } from "@/lib/auth/dealershipPermissions";
 import { getAuthContext } from "@/lib/auth/userRole";
-import { importDmsCsv } from "@/lib/dms/importService";
-import { isDmsReportType } from "@/lib/dms/reportTypes";
+import { importDmsCsv, type DmsImportSummary } from "@/lib/dms/importService";
+import { isDmsReportType, type DmsReportType } from "@/lib/dms/reportTypes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -37,6 +37,37 @@ async function parseImportRequest(req: Request): Promise<ParsedImportRequest> {
     csvContent:
       typeof body.csv_content === "string" ? body.csv_content : null,
   };
+}
+
+function failedImportSummary(args: {
+  reportType: DmsReportType;
+  sourceFilename: string | null;
+  code: string;
+  message: string;
+}): DmsImportSummary {
+  return {
+    ok: false,
+    batch_id: null,
+    report_type: args.reportType,
+    source_filename: args.sourceFilename,
+    row_count: 0,
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    errors: [
+      {
+        row: null,
+        code: args.code,
+        message: args.message,
+      },
+    ],
+  };
+}
+
+function logDmsImportFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unknown DMS import error.";
+  // Do not log request bodies, raw CSV rows, cookies, or raw_data here.
+  console.error("[dms-import] unexpected import failure:", message);
 }
 
 export async function POST(req: Request) {
@@ -82,15 +113,35 @@ export async function POST(req: Request) {
     );
   }
 
-  const admin = createAdminClient();
-  const summary = await importDmsCsv({
-    supabase: admin,
-    organizationId,
-    importedByUserId: auth.data.user.id,
-    reportType: parsed.reportType,
-    sourceFilename: parsed.sourceFilename,
-    csvContent: parsed.csvContent,
-  });
+  let summary: DmsImportSummary;
+  try {
+    const admin = createAdminClient();
+    summary = await importDmsCsv({
+      supabase: admin,
+      organizationId,
+      importedByUserId: auth.data.user.id,
+      reportType: parsed.reportType,
+      sourceFilename: parsed.sourceFilename,
+      csvContent: parsed.csvContent,
+    });
+  } catch (error) {
+    logDmsImportFailure(error);
+
+    const adminClientUnavailable =
+      error instanceof Error && error.message.includes("SUPABASE_SERVICE_ROLE_KEY");
+
+    return NextResponse.json(
+      failedImportSummary({
+        reportType: parsed.reportType,
+        sourceFilename: parsed.sourceFilename,
+        code: adminClientUnavailable ? "admin_client_unavailable" : "import_failed",
+        message: adminClientUnavailable
+          ? "DMS import service is not configured. Confirm local Supabase service role env vars are set and restart the dev server."
+          : "DMS import failed unexpectedly. Check the local Next.js dev server logs for sanitized details.",
+      }),
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json(summary, { status: summary.ok ? 200 : 400 });
 }

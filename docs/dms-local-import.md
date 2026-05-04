@@ -17,7 +17,11 @@ npm run dev
    - a current organization selected
    - `manage_integrations` permission
 
-4. In browser devtools, copy the request `Cookie` header from a request to `http://localhost:3000`.
+4. In browser devtools, copy the request `Cookie` header from a request to `http://localhost:3000` into an ignored local file:
+
+```bash
+Set-Content -Path .local-cookie.txt -Value "<localhost cookie>"
+```
 
 Do not copy or use production cookies. Do not commit cookies. If authentication fails, get a fresh localhost cookie from the browser.
 
@@ -26,21 +30,21 @@ Do not copy or use production cookies. Do not commit cookies. If authentication 
 All commands default to `http://localhost:3000/api/dms/import`.
 
 ```bash
-npm run dms:import:local -- --report-type all_accounts --file "C:\Users\coleh\Downloads\All Accounts - IQ (2).csv" --cookie "<localhost cookie>"
+npm run dms:import:local -- --report-type all_accounts --file "C:\Users\coleh\Downloads\All Accounts - IQ (2).csv" --cookie-file .local-cookie.txt
 ```
 
 ```bash
-npm run dms:import:local -- --report-type payment_ledger --file "C:\Users\coleh\Downloads\Payment Ledger - IQ (1).csv" --cookie "<localhost cookie>"
+npm run dms:import:local -- --report-type payment_ledger --file "C:\Users\coleh\Downloads\Payment Ledger - IQ (1).csv" --cookie-file .local-cookie.txt
 ```
 
 ```bash
-npm run dms:import:local -- --report-type bhph_activities --file "C:\Users\coleh\Downloads\BHPH Activities - IQ (3).csv" --cookie "<localhost cookie>"
+npm run dms:import:local -- --report-type bhph_activities --file "C:\Users\coleh\Downloads\BHPH Activities - IQ (3).csv" --cookie-file .local-cookie.txt
 ```
 
 The script refuses to post to non-local URLs by default. If a non-local dev target is intentional, pass both `--url` and `--allow-non-local`:
 
 ```bash
-npm run dms:import:local -- --report-type all_accounts --file "C:\path\to\file.csv" --cookie "<cookie>" --url "https://dev.example.test" --allow-non-local
+npm run dms:import:local -- --report-type all_accounts --file "C:\path\to\file.csv" --cookie-file .local-cookie.txt --url "https://dev.example.test" --allow-non-local
 ```
 
 ## Verification SQL

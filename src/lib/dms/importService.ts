@@ -69,6 +69,8 @@ const UNIQUE_FIELD: Record<DmsReportType, string> = {
   bhph_activities: "event_hash",
 };
 
+const EXISTING_KEY_LOOKUP_CHUNK_SIZE = 100;
+
 function safeSourceFilename(value: string | null | undefined) {
   const trimmed = String(value ?? "").trim();
   return trimmed ? trimmed.slice(0, 255) : null;
@@ -142,20 +144,28 @@ async function loadExistingKeys(args: {
   }
 
   const field = UNIQUE_FIELD[args.reportType];
-  const { data, error } = await fromTable(args.supabase, TARGET_TABLE[args.reportType])
-    .select(field)
-    .eq("organization_id", args.organizationId)
-    .in(field, args.keys);
+  const found = new Set<string>();
 
-  if (error) {
-    throw new Error(error.message);
+  for (let index = 0; index < args.keys.length; index += EXISTING_KEY_LOOKUP_CHUNK_SIZE) {
+    const chunk = args.keys.slice(index, index + EXISTING_KEY_LOOKUP_CHUNK_SIZE);
+    const { data, error } = await fromTable(args.supabase, TARGET_TABLE[args.reportType])
+      .select(field)
+      .eq("organization_id", args.organizationId)
+      .in(field, chunk);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const key = String(row[field] ?? "");
+      if (key) {
+        found.add(key);
+      }
+    }
   }
 
-  return new Set(
-    ((data ?? []) as Array<Record<string, unknown>>)
-      .map((row) => String(row[field] ?? ""))
-      .filter(Boolean)
-  );
+  return found;
 }
 
 export async function importDmsCsv(input: DmsImportInput): Promise<DmsImportSummary> {

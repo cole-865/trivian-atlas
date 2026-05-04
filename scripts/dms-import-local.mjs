@@ -18,6 +18,7 @@ Options:
   --report-type       all_accounts | payment_ledger | bhph_activities
   --file              Path to the DMS CSV export
   --cookie            Cookie header copied from an authenticated localhost Atlas request
+  --cookie-file       Path to a local file containing the localhost cookie header
   --url               Import endpoint base URL or full endpoint URL, defaults to http://localhost:3000
   --source-filename   Optional source filename to store on the import batch
   --allow-non-local   Required if --url is not localhost or 127.0.0.1
@@ -52,6 +53,7 @@ function parseArgs(argv) {
     if (key === "report-type") args.reportType = value;
     else if (key === "file") args.file = value;
     else if (key === "cookie") args.cookie = value;
+    else if (key === "cookie-file") args.cookieFile = value;
     else if (key === "url") args.url = value;
     else if (key === "source-filename") args.sourceFilename = value;
     else throw new Error(`Unknown option: ${arg}`);
@@ -75,6 +77,13 @@ function isLocalUrl(url) {
 function sanitizedSummary(summary) {
   if (!summary || typeof summary !== "object") {
     return summary;
+  }
+
+  if (!("ok" in summary) && "error" in summary) {
+    return {
+      ok: false,
+      error: String(summary.error ?? "Import error."),
+    };
   }
 
   const errors = Array.isArray(summary.errors)
@@ -109,8 +118,12 @@ async function main() {
     throw new Error("--file is required.");
   }
 
-  if (!args.cookie) {
-    throw new Error("--cookie is required.");
+  if (!args.cookie && !args.cookieFile) {
+    throw new Error("--cookie or --cookie-file is required.");
+  }
+
+  if (args.cookie && args.cookieFile) {
+    throw new Error("Use either --cookie or --cookie-file, not both.");
   }
 
   const endpoint = importEndpoint(args.url);
@@ -123,6 +136,9 @@ async function main() {
   const filePath = path.resolve(args.file);
   const fileBuffer = await readFile(filePath);
   const sourceFilename = args.sourceFilename || path.basename(filePath);
+  const cookie = args.cookieFile
+    ? await readFile(path.resolve(args.cookieFile), "utf8")
+    : args.cookie;
 
   const form = new FormData();
   form.set("report_type", args.reportType);
@@ -136,7 +152,7 @@ async function main() {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Cookie: args.cookie,
+      Cookie: cookie.trim(),
     },
     body: form,
   });
@@ -157,6 +173,10 @@ async function main() {
     console.error(`Import failed with HTTP ${response.status}.`);
     if (payload) {
       console.error(JSON.stringify(sanitizedSummary(payload), null, 2));
+    } else {
+      console.error(
+        "The server returned a non-JSON error response. Check the local Next.js dev server terminal for sanitized DMS import details."
+      );
     }
     process.exit(1);
   }
