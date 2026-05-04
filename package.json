@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.tests.json && node --test --test-concurrency=1 --experimental-test-isolation=none .test-dist/tests/*.test.js",
     "test:integration": "tsc -p tsconfig.tests.json && node --test --test-concurrency=1 --experimental-test-isolation=none .test-dist/tests/integration/*.test.js",
-    "db:types": "npx supabase gen types typescript --project-id qrpzvhuorhitxmxoylts --schema public > src/lib/supabase/database.generated.ts"
+    "db:types": "npx supabase gen types typescript --project-id qrpzvhuorhitxmxoylts --schema public > src/lib/supabase/database.generated.ts",
+    "dms:import:local": "node scripts/dms-import-local.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
