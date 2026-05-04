@@ -346,10 +346,15 @@ export async function POST(
   }
 
   if (docType === "credit_bureau") {
+    const creditApplicantRole = applicantRole;
+    if (!creditApplicantRole) {
+      return NextResponse.json({ error: "Invalid applicant_role" }, { status: 400 });
+    }
+
     await purgeCreditReportArtifacts(dbClient, {
       organizationId: authorizedDeal.organizationId,
       dealId,
-      applicantRole: applicantRole ?? undefined,
+      applicantRole: creditApplicantRole,
     });
 
     await dbClient
@@ -357,13 +362,13 @@ export async function POST(
       .update({ status: "failed", error_message: "Superseded by newer upload" })
       .eq("organization_id", authorizedDeal.organizationId)
       .eq("deal_id", dealId)
-      .eq("applicant_role", applicantRole)
+      .eq("applicant_role", creditApplicantRole)
       .in("status", ["queued", "uploaded", "parsing", "redacting", "scoring"]);
 
     const { error: jobErr } = await dbClient.from("credit_report_jobs").insert({
       organization_id: authorizedDeal.organizationId,
       deal_id: dealId,
-      applicant_role: applicantRole,
+      applicant_role: creditApplicantRole,
       uploaded_by: uploadedBy,
       bureau: "unknown",
       raw_bucket: BUCKET_CREDIT_BUREAU_RAW,

@@ -112,23 +112,36 @@ cross join (
 ) as role_permissions(role, permission_key, allowed)
 on conflict (organization_id, role, permission_key) do nothing;
 
-insert into public.organization_user_permission_overrides (
-  organization_id,
-  user_id,
-  permission_key,
-  allowed
-)
-select
-  organization_id,
-  user_id,
-  'approve_overrides',
-  true
-from public.organization_users
-where can_approve_deal_overrides = true
-on conflict (organization_id, user_id, permission_key) do update
-set
-  allowed = excluded.allowed,
-  updated_at = timezone('utc', now());
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'organization_users'
+      and column_name = 'can_approve_deal_overrides'
+  ) then
+    execute $backfill$
+      insert into public.organization_user_permission_overrides (
+        organization_id,
+        user_id,
+        permission_key,
+        allowed
+      )
+      select
+        organization_id,
+        user_id,
+        'approve_overrides',
+        true
+      from public.organization_users
+      where can_approve_deal_overrides = true
+      on conflict (organization_id, user_id, permission_key) do update
+      set
+        allowed = excluded.allowed,
+        updated_at = timezone('utc', now())
+    $backfill$;
+  end if;
+end $$;
 
 alter table public.audit_log
   add column if not exists organization_id uuid null references public.organizations(id) on delete set null,

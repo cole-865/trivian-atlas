@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -7,11 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.1"
-  }
   public: {
     Tables: {
       app_notifications: {
@@ -727,7 +722,7 @@ export type Database = {
           {
             foreignKeyName: "credit_reports_deal_id_fkey"
             columns: ["deal_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "deals"
             referencedColumns: ["id"]
           },
@@ -1527,6 +1522,701 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "deals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dms_accounts_snapshot: {
+        Row: {
+          account_closed_date: string | null
+          account_conditions: string | null
+          account_sale_received_amount: number | null
+          account_sell_date: string | null
+          account_status: string | null
+          apr: number | null
+          auto_pay_status: string | null
+          backend_gross_amount: number | null
+          bad_debt_amount: number | null
+          balance_down_amount: number | null
+          balance_principal_amount: number | null
+          balance_side_note_amount: number | null
+          buy_back_cost: number | null
+          buy_back_date: string | null
+          buy_back_reason: string | null
+          charge_off_date: string | null
+          charge_off_reason: string | null
+          collateral_status: string | null
+          collector_name: string | null
+          created_at: string
+          credit_due_amount: number | null
+          cured_date: string | null
+          current_insurance_carrier: string | null
+          current_insurance_effective_date: string | null
+          current_insurance_expiry_date: string | null
+          custom_account_status: string | null
+          days_past_due: number | null
+          deal_date: string | null
+          deal_number: string
+          dealer_gross_amount: number | null
+          down_amount: number | null
+          down_due_amount: number | null
+          exposure: number | null
+          final_payment_amount: number | null
+          first_payment_date: string | null
+          front_gross_amount: number | null
+          gps_provider: string | null
+          gps_tracking_number: string | null
+          id: string
+          import_batch_id: string
+          insurance_status: string | null
+          interest_balance_amount: number | null
+          interest_due_amount: number | null
+          interest_paid_amount: number | null
+          last_contacted_date: string | null
+          last_paid_amount: number | null
+          last_paid_date: string | null
+          last_repo_date: string | null
+          late_balance_amount: number | null
+          late_due_amount: number | null
+          lender_name: string | null
+          lender_type: string | null
+          loan_modification_date: string | null
+          loan_modification_reason: string | null
+          net_cash_in_deal: number | null
+          net_profit: number | null
+          new_due_date: string | null
+          next_call_back_date: string | null
+          notes: string | null
+          num_of_extensions: number | null
+          num_of_loan_modification: number | null
+          num_of_payments_till_break_even: number | null
+          organization_id: string
+          original_due_date: string | null
+          original_financed_amount: number | null
+          original_financed_charge: number | null
+          other_balance_amount: number | null
+          other_due_amount: number | null
+          out_for_repo_date: string | null
+          payment_end_date: string | null
+          payment_frequency: string | null
+          payment_status: string | null
+          previous_payment_amount: number | null
+          principal_bad_debt_amount: number | null
+          principal_due_amount: number | null
+          principal_paid_amount: number | null
+          promise_amount: number | null
+          promise_created_date: string | null
+          promise_date: string | null
+          promise_note: string | null
+          promised_result: string | null
+          raw_data: Json
+          recovery_amount: number | null
+          recovery_without_repo_credit: number | null
+          remaining_payment: number | null
+          repo_company_name: string | null
+          repo_completed_date: string | null
+          repo_created_date: string | null
+          repo_credit: number | null
+          repo_fees: number | null
+          repo_location: string | null
+          repo_reason: string | null
+          repo_stage: string | null
+          repo_status: string | null
+          repo_type: string | null
+          side_note_due_amount: number | null
+          snapshot_date: string
+          tax_balance_amount: number | null
+          total_cash_in_deal: number | null
+          total_down_amount: number | null
+          total_down_paid_amount: number | null
+          total_gross: number | null
+          total_late_fees_paid_amount: number | null
+          total_other_fees_paid_amount: number | null
+          total_paid_amount: number | null
+          total_paid_without_down_side_note: number | null
+          total_past_due_amount: number | null
+          total_payment_amount: number | null
+          total_payment_due_amount: number | null
+          total_payoff_amount: number | null
+          total_price: number | null
+          total_side_note_paid_amount: number | null
+          vehicle_cost: number | null
+          vehicle_exterior_color: string | null
+          vehicle_fuel_type: string | null
+          vehicle_mileage: number | null
+          vehicle_price: number | null
+          vehicle_stock_number: string | null
+          vehicle_vin: string | null
+          vehicle_year_make_model: string | null
+          vin_last_six: string | null
+        }
+        Insert: {
+          account_closed_date?: string | null
+          account_conditions?: string | null
+          account_sale_received_amount?: number | null
+          account_sell_date?: string | null
+          account_status?: string | null
+          apr?: number | null
+          auto_pay_status?: string | null
+          backend_gross_amount?: number | null
+          bad_debt_amount?: number | null
+          balance_down_amount?: number | null
+          balance_principal_amount?: number | null
+          balance_side_note_amount?: number | null
+          buy_back_cost?: number | null
+          buy_back_date?: string | null
+          buy_back_reason?: string | null
+          charge_off_date?: string | null
+          charge_off_reason?: string | null
+          collateral_status?: string | null
+          collector_name?: string | null
+          created_at?: string
+          credit_due_amount?: number | null
+          cured_date?: string | null
+          current_insurance_carrier?: string | null
+          current_insurance_effective_date?: string | null
+          current_insurance_expiry_date?: string | null
+          custom_account_status?: string | null
+          days_past_due?: number | null
+          deal_date?: string | null
+          deal_number: string
+          dealer_gross_amount?: number | null
+          down_amount?: number | null
+          down_due_amount?: number | null
+          exposure?: number | null
+          final_payment_amount?: number | null
+          first_payment_date?: string | null
+          front_gross_amount?: number | null
+          gps_provider?: string | null
+          gps_tracking_number?: string | null
+          id?: string
+          import_batch_id: string
+          insurance_status?: string | null
+          interest_balance_amount?: number | null
+          interest_due_amount?: number | null
+          interest_paid_amount?: number | null
+          last_contacted_date?: string | null
+          last_paid_amount?: number | null
+          last_paid_date?: string | null
+          last_repo_date?: string | null
+          late_balance_amount?: number | null
+          late_due_amount?: number | null
+          lender_name?: string | null
+          lender_type?: string | null
+          loan_modification_date?: string | null
+          loan_modification_reason?: string | null
+          net_cash_in_deal?: number | null
+          net_profit?: number | null
+          new_due_date?: string | null
+          next_call_back_date?: string | null
+          notes?: string | null
+          num_of_extensions?: number | null
+          num_of_loan_modification?: number | null
+          num_of_payments_till_break_even?: number | null
+          organization_id: string
+          original_due_date?: string | null
+          original_financed_amount?: number | null
+          original_financed_charge?: number | null
+          other_balance_amount?: number | null
+          other_due_amount?: number | null
+          out_for_repo_date?: string | null
+          payment_end_date?: string | null
+          payment_frequency?: string | null
+          payment_status?: string | null
+          previous_payment_amount?: number | null
+          principal_bad_debt_amount?: number | null
+          principal_due_amount?: number | null
+          principal_paid_amount?: number | null
+          promise_amount?: number | null
+          promise_created_date?: string | null
+          promise_date?: string | null
+          promise_note?: string | null
+          promised_result?: string | null
+          raw_data: Json
+          recovery_amount?: number | null
+          recovery_without_repo_credit?: number | null
+          remaining_payment?: number | null
+          repo_company_name?: string | null
+          repo_completed_date?: string | null
+          repo_created_date?: string | null
+          repo_credit?: number | null
+          repo_fees?: number | null
+          repo_location?: string | null
+          repo_reason?: string | null
+          repo_stage?: string | null
+          repo_status?: string | null
+          repo_type?: string | null
+          side_note_due_amount?: number | null
+          snapshot_date?: string
+          tax_balance_amount?: number | null
+          total_cash_in_deal?: number | null
+          total_down_amount?: number | null
+          total_down_paid_amount?: number | null
+          total_gross?: number | null
+          total_late_fees_paid_amount?: number | null
+          total_other_fees_paid_amount?: number | null
+          total_paid_amount?: number | null
+          total_paid_without_down_side_note?: number | null
+          total_past_due_amount?: number | null
+          total_payment_amount?: number | null
+          total_payment_due_amount?: number | null
+          total_payoff_amount?: number | null
+          total_price?: number | null
+          total_side_note_paid_amount?: number | null
+          vehicle_cost?: number | null
+          vehicle_exterior_color?: string | null
+          vehicle_fuel_type?: string | null
+          vehicle_mileage?: number | null
+          vehicle_price?: number | null
+          vehicle_stock_number?: string | null
+          vehicle_vin?: string | null
+          vehicle_year_make_model?: string | null
+          vin_last_six?: string | null
+        }
+        Update: {
+          account_closed_date?: string | null
+          account_conditions?: string | null
+          account_sale_received_amount?: number | null
+          account_sell_date?: string | null
+          account_status?: string | null
+          apr?: number | null
+          auto_pay_status?: string | null
+          backend_gross_amount?: number | null
+          bad_debt_amount?: number | null
+          balance_down_amount?: number | null
+          balance_principal_amount?: number | null
+          balance_side_note_amount?: number | null
+          buy_back_cost?: number | null
+          buy_back_date?: string | null
+          buy_back_reason?: string | null
+          charge_off_date?: string | null
+          charge_off_reason?: string | null
+          collateral_status?: string | null
+          collector_name?: string | null
+          created_at?: string
+          credit_due_amount?: number | null
+          cured_date?: string | null
+          current_insurance_carrier?: string | null
+          current_insurance_effective_date?: string | null
+          current_insurance_expiry_date?: string | null
+          custom_account_status?: string | null
+          days_past_due?: number | null
+          deal_date?: string | null
+          deal_number?: string
+          dealer_gross_amount?: number | null
+          down_amount?: number | null
+          down_due_amount?: number | null
+          exposure?: number | null
+          final_payment_amount?: number | null
+          first_payment_date?: string | null
+          front_gross_amount?: number | null
+          gps_provider?: string | null
+          gps_tracking_number?: string | null
+          id?: string
+          import_batch_id?: string
+          insurance_status?: string | null
+          interest_balance_amount?: number | null
+          interest_due_amount?: number | null
+          interest_paid_amount?: number | null
+          last_contacted_date?: string | null
+          last_paid_amount?: number | null
+          last_paid_date?: string | null
+          last_repo_date?: string | null
+          late_balance_amount?: number | null
+          late_due_amount?: number | null
+          lender_name?: string | null
+          lender_type?: string | null
+          loan_modification_date?: string | null
+          loan_modification_reason?: string | null
+          net_cash_in_deal?: number | null
+          net_profit?: number | null
+          new_due_date?: string | null
+          next_call_back_date?: string | null
+          notes?: string | null
+          num_of_extensions?: number | null
+          num_of_loan_modification?: number | null
+          num_of_payments_till_break_even?: number | null
+          organization_id?: string
+          original_due_date?: string | null
+          original_financed_amount?: number | null
+          original_financed_charge?: number | null
+          other_balance_amount?: number | null
+          other_due_amount?: number | null
+          out_for_repo_date?: string | null
+          payment_end_date?: string | null
+          payment_frequency?: string | null
+          payment_status?: string | null
+          previous_payment_amount?: number | null
+          principal_bad_debt_amount?: number | null
+          principal_due_amount?: number | null
+          principal_paid_amount?: number | null
+          promise_amount?: number | null
+          promise_created_date?: string | null
+          promise_date?: string | null
+          promise_note?: string | null
+          promised_result?: string | null
+          raw_data?: Json
+          recovery_amount?: number | null
+          recovery_without_repo_credit?: number | null
+          remaining_payment?: number | null
+          repo_company_name?: string | null
+          repo_completed_date?: string | null
+          repo_created_date?: string | null
+          repo_credit?: number | null
+          repo_fees?: number | null
+          repo_location?: string | null
+          repo_reason?: string | null
+          repo_stage?: string | null
+          repo_status?: string | null
+          repo_type?: string | null
+          side_note_due_amount?: number | null
+          snapshot_date?: string
+          tax_balance_amount?: number | null
+          total_cash_in_deal?: number | null
+          total_down_amount?: number | null
+          total_down_paid_amount?: number | null
+          total_gross?: number | null
+          total_late_fees_paid_amount?: number | null
+          total_other_fees_paid_amount?: number | null
+          total_paid_amount?: number | null
+          total_paid_without_down_side_note?: number | null
+          total_past_due_amount?: number | null
+          total_payment_amount?: number | null
+          total_payment_due_amount?: number | null
+          total_payoff_amount?: number | null
+          total_price?: number | null
+          total_side_note_paid_amount?: number | null
+          vehicle_cost?: number | null
+          vehicle_exterior_color?: string | null
+          vehicle_fuel_type?: string | null
+          vehicle_mileage?: number | null
+          vehicle_price?: number | null
+          vehicle_stock_number?: string | null
+          vehicle_vin?: string | null
+          vehicle_year_make_model?: string | null
+          vin_last_six?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_accounts_snapshot_import_batch_id_fkey"
+            columns: ["import_batch_id"]
+            isOneToOne: false
+            referencedRelation: "dms_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dms_accounts_snapshot_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dms_activity_events: {
+        Row: {
+          account_status: string | null
+          activity_status: string | null
+          activity_type: string | null
+          assigned_rep_on_activity: string | null
+          collector: string | null
+          created_at: string
+          created_date: string | null
+          customer_name: string | null
+          deal_number: string
+          disposition: string | null
+          event_hash: string
+          has_promise: boolean
+          id: string
+          import_batch_id: string
+          is_call: boolean
+          is_email: boolean
+          is_inbound: boolean
+          is_outbound: boolean
+          is_sms: boolean
+          last_updated_by: string | null
+          last_updated_date: string | null
+          organization_id: string
+          payment_due_date: string | null
+          promise_amount: number | null
+          promise_broken: boolean
+          promise_date: string | null
+          promise_kept: boolean
+          promised_result: string | null
+          raw_data: Json
+          subject: string | null
+        }
+        Insert: {
+          account_status?: string | null
+          activity_status?: string | null
+          activity_type?: string | null
+          assigned_rep_on_activity?: string | null
+          collector?: string | null
+          created_at?: string
+          created_date?: string | null
+          customer_name?: string | null
+          deal_number: string
+          disposition?: string | null
+          event_hash: string
+          has_promise?: boolean
+          id?: string
+          import_batch_id: string
+          is_call?: boolean
+          is_email?: boolean
+          is_inbound?: boolean
+          is_outbound?: boolean
+          is_sms?: boolean
+          last_updated_by?: string | null
+          last_updated_date?: string | null
+          organization_id: string
+          payment_due_date?: string | null
+          promise_amount?: number | null
+          promise_broken?: boolean
+          promise_date?: string | null
+          promise_kept?: boolean
+          promised_result?: string | null
+          raw_data: Json
+          subject?: string | null
+        }
+        Update: {
+          account_status?: string | null
+          activity_status?: string | null
+          activity_type?: string | null
+          assigned_rep_on_activity?: string | null
+          collector?: string | null
+          created_at?: string
+          created_date?: string | null
+          customer_name?: string | null
+          deal_number?: string
+          disposition?: string | null
+          event_hash?: string
+          has_promise?: boolean
+          id?: string
+          import_batch_id?: string
+          is_call?: boolean
+          is_email?: boolean
+          is_inbound?: boolean
+          is_outbound?: boolean
+          is_sms?: boolean
+          last_updated_by?: string | null
+          last_updated_date?: string | null
+          organization_id?: string
+          payment_due_date?: string | null
+          promise_amount?: number | null
+          promise_broken?: boolean
+          promise_date?: string | null
+          promise_kept?: boolean
+          promised_result?: string | null
+          raw_data?: Json
+          subject?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_activity_events_import_batch_id_fkey"
+            columns: ["import_batch_id"]
+            isOneToOne: false
+            referencedRelation: "dms_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dms_activity_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dms_import_batches: {
+        Row: {
+          created_at: string
+          id: string
+          imported_at: string
+          imported_by_user_id: string | null
+          notes: string | null
+          organization_id: string
+          raw_metadata: Json | null
+          report_type: string
+          row_count: number | null
+          source_filename: string | null
+          source_headers: Json | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          imported_at?: string
+          imported_by_user_id?: string | null
+          notes?: string | null
+          organization_id: string
+          raw_metadata?: Json | null
+          report_type: string
+          row_count?: number | null
+          source_filename?: string | null
+          source_headers?: Json | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          imported_at?: string
+          imported_by_user_id?: string | null
+          notes?: string | null
+          organization_id?: string
+          raw_metadata?: Json | null
+          report_type?: string
+          row_count?: number | null
+          source_filename?: string | null
+          source_headers?: Json | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_import_batches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dms_payment_ledger: {
+        Row: {
+          account_conditions: string | null
+          account_status: string | null
+          balance_amount: number | null
+          collector_name: string | null
+          created_at: string
+          credit_applied_amt: number | null
+          days_late: number | null
+          deal_number: string
+          deal_status: string | null
+          down_applied_amt: number | null
+          due_amount: number | null
+          id: string
+          import_batch_id: string
+          interest_applied_amt: number | null
+          interest_due_amount: number | null
+          is_ach_returned: boolean | null
+          is_auto_nsf: boolean | null
+          is_reversal: boolean
+          last_updated_by_name: string | null
+          last_updated_date: string | null
+          late_fee_amount: number | null
+          late_fees_applied_amt: number | null
+          organization_id: string
+          other_fees_applied_amt: number | null
+          other_fees_due_amount: number | null
+          paid_amount: number | null
+          paid_date: string | null
+          period_num: string | null
+          positive_payment_amount: number | null
+          principal_applied_amt: number | null
+          principal_due_amount: number | null
+          processing_fee_due_amount: number | null
+          raw_data: Json
+          ref_num: string | null
+          reversal_amount: number | null
+          side_note_applied_amt: number | null
+          side_note_due_amount: number | null
+          transaction_hash: string
+          transaction_type: string | null
+        }
+        Insert: {
+          account_conditions?: string | null
+          account_status?: string | null
+          balance_amount?: number | null
+          collector_name?: string | null
+          created_at?: string
+          credit_applied_amt?: number | null
+          days_late?: number | null
+          deal_number: string
+          deal_status?: string | null
+          down_applied_amt?: number | null
+          due_amount?: number | null
+          id?: string
+          import_batch_id: string
+          interest_applied_amt?: number | null
+          interest_due_amount?: number | null
+          is_ach_returned?: boolean | null
+          is_auto_nsf?: boolean | null
+          is_reversal?: boolean
+          last_updated_by_name?: string | null
+          last_updated_date?: string | null
+          late_fee_amount?: number | null
+          late_fees_applied_amt?: number | null
+          organization_id: string
+          other_fees_applied_amt?: number | null
+          other_fees_due_amount?: number | null
+          paid_amount?: number | null
+          paid_date?: string | null
+          period_num?: string | null
+          positive_payment_amount?: number | null
+          principal_applied_amt?: number | null
+          principal_due_amount?: number | null
+          processing_fee_due_amount?: number | null
+          raw_data: Json
+          ref_num?: string | null
+          reversal_amount?: number | null
+          side_note_applied_amt?: number | null
+          side_note_due_amount?: number | null
+          transaction_hash: string
+          transaction_type?: string | null
+        }
+        Update: {
+          account_conditions?: string | null
+          account_status?: string | null
+          balance_amount?: number | null
+          collector_name?: string | null
+          created_at?: string
+          credit_applied_amt?: number | null
+          days_late?: number | null
+          deal_number?: string
+          deal_status?: string | null
+          down_applied_amt?: number | null
+          due_amount?: number | null
+          id?: string
+          import_batch_id?: string
+          interest_applied_amt?: number | null
+          interest_due_amount?: number | null
+          is_ach_returned?: boolean | null
+          is_auto_nsf?: boolean | null
+          is_reversal?: boolean
+          last_updated_by_name?: string | null
+          last_updated_date?: string | null
+          late_fee_amount?: number | null
+          late_fees_applied_amt?: number | null
+          organization_id?: string
+          other_fees_applied_amt?: number | null
+          other_fees_due_amount?: number | null
+          paid_amount?: number | null
+          paid_date?: string | null
+          period_num?: string | null
+          positive_payment_amount?: number | null
+          principal_applied_amt?: number | null
+          principal_due_amount?: number | null
+          processing_fee_due_amount?: number | null
+          raw_data?: Json
+          ref_num?: string | null
+          reversal_amount?: number | null
+          side_note_applied_amt?: number | null
+          side_note_due_amount?: number | null
+          transaction_hash?: string
+          transaction_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_payment_ledger_import_batch_id_fkey"
+            columns: ["import_batch_id"]
+            isOneToOne: false
+            referencedRelation: "dms_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dms_payment_ledger_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -2517,7 +3207,160 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      account_collections_signals: {
+        Row: {
+          collections_effort_score: number | null
+          collections_tier: string | null
+          contacts_30d: number | null
+          contacts_60d: number | null
+          contacts_90d: number | null
+          customer_behavior_type: string | null
+          days_since_last_activity: number | null
+          deal_number: string | null
+          inbound_90d: number | null
+          organization_id: string | null
+          outbound_90d: number | null
+          promise_reliability_life: number | null
+          promises_90d: number | null
+          response_rate_90d: number | null
+          total_promise_amount: number | null
+          total_promise_broken: number | null
+          total_promise_kept: number | null
+          total_promises: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_accounts_snapshot_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_outcomes: {
+        Row: {
+          account_sale_received_amount: number | null
+          account_status_normalized: string | null
+          bad_debt_amount: number | null
+          buy_back_cost: number | null
+          days_to_charge_off: number | null
+          days_to_close: number | null
+          days_to_repo: number | null
+          deal_number: string | null
+          exposure: number | null
+          is_bad_outcome: boolean | null
+          is_excluded: boolean | null
+          is_good_outcome: boolean | null
+          loss_severity: number | null
+          net_outcome_estimate: number | null
+          net_profit: number | null
+          organization_id: string | null
+          outcome_bucket: string | null
+          recovery_amount: number | null
+          repo_credit: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_accounts_snapshot_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_payment_signals: {
+        Row: {
+          avg_payment_60d: number | null
+          catchup_gap_estimated: number | null
+          days_past_due: number | null
+          days_since_last_payment: number | null
+          deal_number: string | null
+          expected_paid_30d: number | null
+          expected_paid_60d: number | null
+          expected_paid_90d: number | null
+          first_ledger_payment: string | null
+          fragmented_payment_flag: boolean | null
+          last_positive_payment_date: string | null
+          latest_snapshot_date: string | null
+          lifetime_paid_from_ledger: number | null
+          organization_id: string | null
+          payment_frequency: string | null
+          payment_ratio_30d: number | null
+          payment_ratio_60d: number | null
+          payment_ratio_90d: number | null
+          payments_30d: number | null
+          payments_60d: number | null
+          payments_90d: number | null
+          reversals_30d: number | null
+          reversals_60d: number | null
+          reversals_90d: number | null
+          survival_payment_flag: boolean | null
+          total_paid_30d: number | null
+          total_paid_60d: number | null
+          total_paid_90d: number | null
+          total_payment_amount: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_accounts_snapshot_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_repo_signals: {
+        Row: {
+          account_status: string | null
+          balance_principal_amount: number | null
+          collateral_status: string | null
+          collector_name: string | null
+          current_insurance_expiry_date: string | null
+          days_past_due: number | null
+          days_since_last_payment: number | null
+          deal_number: string | null
+          exposure: number | null
+          insurance_status: string | null
+          latest_snapshot_date: string | null
+          organization_id: string | null
+          payment_ratio_60d: number | null
+          payment_status: string | null
+          payments_60d: number | null
+          pre_repo: boolean | null
+          promise_date: string | null
+          promised_result: string | null
+          recommended_status: string | null
+          repo_now: boolean | null
+          repo_reason: string | null
+          repo_score: number | null
+          repo_stage: string | null
+          repo_status: string | null
+          repo_type: string | null
+          reversals_60d: number | null
+          risk_flags: string[] | null
+          total_past_due_amount: number | null
+          total_payment_amount: number | null
+          total_payment_due_amount: number | null
+          total_payoff_amount: number | null
+          vehicle_stock_number: string | null
+          vehicle_vin: string | null
+          vehicle_year_make_model: string | null
+          vin_last_six: string | null
+          watch: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dms_accounts_snapshot_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       atlas_dashboard_metrics: { Args: never; Returns: Json }
@@ -2546,6 +3389,15 @@ export type Database = {
             }[]
           }
       current_app_role: { Args: never; Returns: string }
+      dms_hash_part: { Args: { raw_value: string }; Returns: string }
+      dms_parse_boolean: { Args: { raw_value: string }; Returns: boolean }
+      dms_parse_date: { Args: { raw_value: string }; Returns: string }
+      dms_parse_numeric: { Args: { raw_value: string }; Returns: number }
+      dms_parse_timestamptz: { Args: { raw_value: string }; Returns: string }
+      dms_payment_frequency_days: {
+        Args: { raw_value: string }
+        Returns: number
+      }
       has_organization_role: {
         Args: {
           p_organization_id: string
@@ -2867,3 +3719,4 @@ export const Constants = {
     },
   },
 } as const
+
