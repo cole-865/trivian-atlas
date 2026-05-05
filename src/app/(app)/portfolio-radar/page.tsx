@@ -581,7 +581,7 @@ function Payments({
       <CompactTable
         emptyTitle="No payment signals found"
         emptyDescription="No accounts matched the current filters."
-        heads={["Account", "30D", "60D", "90D", "60D Pays", "Avg 60D", "Catchup Gap", "Last Pay", "Flags", "Detail"]}
+        heads={["Account", "30D", "60D", "90D", "60D Pays", "Avg 60D", "60 Day Shortfall", "Last Pay", "Flags", "Detail"]}
       >
         {rows.map((row) => (
           <TableRow key={row.deal_number}>
@@ -728,7 +728,7 @@ function AccountDetail({
             <DetailMetric label="Behavior" value={collections?.customer_behavior_type ?? "n/a"} />
             <DetailMetric label="Scheduled Pay" value={formatMoney(payment?.scheduled_payment_amount)} />
             <DetailMetric label="Past Due" value={formatMoney(repo?.total_past_due_amount)} />
-            <DetailMetric label="Catchup Gap" value={formatMoney(payment?.catchup_gap_estimated)} />
+            <DetailMetric label="60 Day Shortfall" value={formatMoney(payment?.catchup_gap_estimated)} />
             <DetailMetric label="Last Pay" value={`${formatNumber(repo?.days_since_last_payment ?? payment?.days_since_last_payment)} days`} />
             <DetailMetric label="Snapshot" value={formatDate(repo?.latest_snapshot_date ?? payment?.latest_snapshot_date)} />
           </div>
