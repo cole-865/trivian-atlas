@@ -49,6 +49,15 @@ function bool(row: DmsCsvRow, header: string) {
   return parseDmsBoolean(row[header]);
 }
 
+function customerName(row: DmsCsvRow) {
+  return blankToNull(
+    [row["Signer First Name"], row["Signer Last Name"]]
+      .map((part) => part?.trim() ?? "")
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
 export function mapAllAccountsRow(args: BaseMapArgs) {
   const { organizationId, importBatchId, row } = args;
   const dealNumber = idText(row, "Deal Number");
@@ -58,6 +67,7 @@ export function mapAllAccountsRow(args: BaseMapArgs) {
     organization_id: organizationId,
     import_batch_id: importBatchId,
     deal_number: dealNumber,
+    customer_name: customerName(row),
     lender_name: text(row, "Lender Name"),
     lender_type: text(row, "Lender Type"),
     account_status: text(row, "Account Status"),

@@ -154,6 +154,8 @@ test("DMS All Accounts sample row maps to normalized account snapshot fields", (
     importBatchId: "batch-1",
     row: {
       "Deal Number": "A-100",
+      "Signer First Name": "Synthetic",
+      "Signer Last Name": "Customer",
       "Deal Date": "05/01/2026",
       "Payment Frequency": "Weekly",
       "Total Payment Amount": "$125.50",
@@ -166,6 +168,7 @@ test("DMS All Accounts sample row maps to normalized account snapshot fields", (
   });
 
   assert.equal(mapped?.deal_number, "A-100");
+  assert.equal(mapped?.customer_name, "Synthetic Customer");
   assert.equal(mapped?.deal_date, "2026-05-01");
   assert.equal(mapped?.total_payment_amount, 125.5);
   assert.equal(mapped?.days_past_due, 12);

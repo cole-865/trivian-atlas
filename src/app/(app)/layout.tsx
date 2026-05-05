@@ -71,11 +71,19 @@ export default async function AppLayout({
       platformDev,
     })
   );
+  const canViewPortfolioRadar =
+    !!authContext.currentOrganizationId &&
+    (platformDev ||
+      authContext.effectiveOrganizationRole === "admin" ||
+      authContext.effectiveOrganizationRole === "management");
   const navItems: NavItem[] = [
     { href: "/home", label: "Home" },
     { href: "/approvals", label: "Approvals" },
     { href: "/messages", label: "Messages" },
     { href: "/deals", label: "Deals" },
+    ...(canViewPortfolioRadar
+      ? [{ href: "/portfolio-radar", label: "Portfolio Radar" }]
+      : []),
     ...(canViewSettings ? [{ href: "/settings", label: "Settings" }] : []),
     ...(authContext.realRole === "dev" ? [{ href: "/dev-tools", label: "GOD MODE" }] : []),
   ];
