@@ -155,15 +155,16 @@ function humanFlag(flag: string) {
 
 function flagBadges(flags: string[] | null | undefined, max = 3) {
   if (!flags?.length) return <span className="text-muted-foreground/70">None</span>;
+  const uniqueFlags = Array.from(new Set(flags.filter(Boolean)));
 
   return (
     <div className="flex max-w-[18rem] flex-wrap gap-1">
-      {flags.slice(0, max).map((flag) => (
+      {uniqueFlags.slice(0, max).map((flag) => (
         <Badge key={flag} variant="warning" className="normal-case tracking-normal">
           {humanFlag(flag)}
         </Badge>
       ))}
-      {flags.length > max ? <Badge variant="outline">+{flags.length - max}</Badge> : null}
+      {uniqueFlags.length > max ? <Badge variant="outline">+{uniqueFlags.length - max}</Badge> : null}
     </div>
   );
 }
