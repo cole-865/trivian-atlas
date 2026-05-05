@@ -18,6 +18,7 @@ type BaseMapArgs = {
   organizationId: string;
   importBatchId: string;
   row: DmsCsvRow;
+  ledgerOccurrenceIndex?: number;
 };
 
 function text(row: DmsCsvRow, header: string) {
@@ -194,7 +195,7 @@ export function mapPaymentLedgerRow(args: BaseMapArgs) {
   return {
     organization_id: organizationId,
     import_batch_id: importBatchId,
-    transaction_hash: transactionHash(row),
+    transaction_hash: transactionHash(row, args.ledgerOccurrenceIndex ?? 1),
     deal_number: dealNumber,
     paid_date: date(row, "Paid Date"),
     paid_amount: paidAmount,

@@ -1,4 +1,5 @@
 import { parseDmsCsv } from "./csv";
+import { dmsHash, transactionHashBase } from "./hashes";
 import { mapDmsRow } from "./mappers";
 import {
   REPORT_JOIN_HEADER,
@@ -80,6 +81,10 @@ function uniqueKeyForRecord(reportType: DmsReportType, record: Record<string, un
   if (reportType === "all_accounts") return String(record.deal_number ?? "");
   if (reportType === "payment_ledger") return String(record.transaction_hash ?? "");
   return String(record.event_hash ?? "");
+}
+
+function paymentLedgerOccurrenceKey(row: Record<string, string>) {
+  return dmsHash(transactionHashBase(row));
 }
 
 async function createPendingBatch(args: {
@@ -210,6 +215,7 @@ export async function importDmsCsv(input: DmsImportInput): Promise<DmsImportSumm
   const joinHeader = REPORT_JOIN_HEADER[input.reportType];
   const errors: DmsImportSummary["errors"] = [];
   const recordsByKey = new Map<string, Record<string, unknown>>();
+  const ledgerOccurrenceCounts = new Map<string, number>();
   let skipped = 0;
 
   for (const [index, row] of parsed.rows.entries()) {
@@ -223,11 +229,19 @@ export async function importDmsCsv(input: DmsImportInput): Promise<DmsImportSumm
       continue;
     }
 
+    let ledgerOccurrenceIndex: number | undefined;
+    if (input.reportType === "payment_ledger") {
+      const occurrenceKey = paymentLedgerOccurrenceKey(row);
+      ledgerOccurrenceIndex = (ledgerOccurrenceCounts.get(occurrenceKey) ?? 0) + 1;
+      ledgerOccurrenceCounts.set(occurrenceKey, ledgerOccurrenceIndex);
+    }
+
     const mapped = mapDmsRow({
       reportType: input.reportType,
       organizationId: input.organizationId,
       importBatchId: batchId,
       row,
+      ledgerOccurrenceIndex,
     });
 
     if (!mapped) {

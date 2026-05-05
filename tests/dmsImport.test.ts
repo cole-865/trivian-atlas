@@ -84,6 +84,35 @@ test("DMS transaction hash is stable under whitespace and case normalization", (
   assert.notEqual(transactionHash(base), transactionHash(different));
 });
 
+test("DMS transaction hash preserves payment allocation edits and repeated events", () => {
+  const base = {
+    "Deal Identifier": "2563",
+    "Paid Date": "06/02/2022",
+    "Paid Amount": "$250.00",
+    "Transaction Type": "PAYMENT",
+    "Reference Number": "CUSTOMER ONLINE PAYMENT",
+    "Last Updated Date": "07/06/2022 02:07:51 AM",
+    "Period Number": "5",
+    "Principal Applied Amount": "$137.25",
+    "Interest Applied Amount": "$87.75",
+    "Late Fees Applied Amount": "$25.00",
+    "Other Fees Applied Amount": "$0.00",
+    "Balance Amount": "$11553.11",
+    "Due Amount": "$250.00",
+  };
+  const editedAllocation = {
+    ...base,
+    "Principal Applied Amount": "$132.25",
+    "Other Fees Applied Amount": "$5.00",
+    "Balance Amount": "$11798.11",
+    "Due Amount": "$255.00",
+  };
+
+  assert.notEqual(transactionHash(base), transactionHash(editedAllocation));
+  assert.notEqual(transactionHash(base, 1), transactionHash(base, 2));
+  assert.equal(transactionHash(base, 2), transactionHash({ ...base }, 2));
+});
+
 test("DMS activity event hash is stable and changes when event identity changes", () => {
   const base = {
     "Account Number": " 12345 ",
@@ -311,4 +340,31 @@ test("DMS import service returns sanitized summary and writes batch plus upserts
   assert.equal("raw_data" in summary, false);
   assert.equal(db.calls.some((call) => call.table === "dms_payment_ledger" && call.op === "upsert"), true);
   assert.equal(db.calls.some((call) => call.table === "dms_import_batches" && call.op === "update"), true);
+});
+
+test("DMS payment ledger import preserves identical repeated ledger events", async () => {
+  const db = new MockSupabase();
+
+  const summary = await importDmsCsv({
+    supabase: db,
+    organizationId: "org-1",
+    importedByUserId: "user-1",
+    reportType: "payment_ledger",
+    sourceFilename: "payments.csv",
+    csvContent:
+      "Paid Date,Paid Amount,Transaction Type,Period Number,Reference Number,Deal Identifier,Principal Applied Amount,Interest Applied Amount\n" +
+      "04/29/2026,$200.00,Payment,22,,2563,$107.26,$92.74\n" +
+      "04/29/2026,$200.00,Payment,22,,2563,$107.26,$92.74\n",
+  });
+
+  const upsertCall = db.calls.find(
+    (call) => call.table === "dms_payment_ledger" && call.op === "upsert"
+  );
+  const payload = upsertCall?.payload as Array<{ transaction_hash: string }> | undefined;
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.row_count, 2);
+  assert.equal(summary.skipped, 0);
+  assert.equal(payload?.length, 2);
+  assert.notEqual(payload?.[0]?.transaction_hash, payload?.[1]?.transaction_hash);
 });
