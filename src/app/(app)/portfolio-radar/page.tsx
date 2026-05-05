@@ -20,7 +20,7 @@ import {
 
 type RepoSignal = Tables<"account_repo_signals"> & { customer_name: string | null };
 type CollectionsSignal = Tables<"account_collections_signals">;
-type PaymentSignal = Tables<"account_payment_signals">;
+type PaymentSignal = Tables<"account_payment_signals"> & { scheduled_payment_amount: number | null };
 type OutcomeSignal = Tables<"account_outcomes">;
 type ImportStatus = Pick<
   Tables<"dms_import_batches">,
@@ -722,13 +722,13 @@ function AccountDetail({
             <DetailMetric label="Repo Score" value={formatNumber(repo?.repo_score)} />
             <DetailMetric label="DPD" value={formatNumber(repo?.days_past_due ?? payment?.days_past_due)} />
             <DetailMetric label="60D Ratio" value={formatPercent(payment?.payment_ratio_60d ?? repo?.payment_ratio_60d)} />
-            <DetailMetric label="Reversals" value={formatNumber(repo?.reversals_60d ?? payment?.reversals_60d)} />
+            <DetailMetric label="60D Reversals" value={formatNumber(repo?.reversals_60d ?? payment?.reversals_60d)} />
             <DetailMetric label="Collections" value={formatNumber(collections?.collections_effort_score)} />
             <DetailMetric label="Outcome" value={outcome?.outcome_bucket ?? "n/a"} />
             <DetailMetric label="Behavior" value={collections?.customer_behavior_type ?? "n/a"} />
+            <DetailMetric label="Scheduled Pay" value={formatMoney(payment?.scheduled_payment_amount)} />
+            <DetailMetric label="Past Due" value={formatMoney(repo?.total_past_due_amount)} />
             <DetailMetric label="Catchup Gap" value={formatMoney(payment?.catchup_gap_estimated)} />
-            <DetailMetric label="Loss" value={formatMoney(outcome?.loss_severity)} />
-            <DetailMetric label="Net" value={formatMoney(outcome?.net_outcome_estimate)} />
             <DetailMetric label="Last Pay" value={`${formatNumber(repo?.days_since_last_payment ?? payment?.days_since_last_payment)} days`} />
             <DetailMetric label="Snapshot" value={formatDate(repo?.latest_snapshot_date ?? payment?.latest_snapshot_date)} />
           </div>
@@ -799,7 +799,7 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
   const collectionsColumns =
     "organization_id, deal_number, collections_effort_score, collections_tier, customer_behavior_type, contacts_30d, contacts_60d, contacts_90d, outbound_90d, inbound_90d, response_rate_90d, promises_90d, total_promises, total_promise_amount, total_promise_kept, total_promise_broken, promise_reliability_life, days_since_last_activity";
   const paymentColumns =
-    "organization_id, deal_number, latest_snapshot_date, payment_frequency, total_payment_amount, days_past_due, payments_30d, payments_60d, payments_90d, total_paid_30d, total_paid_60d, total_paid_90d, avg_payment_60d, reversals_30d, reversals_60d, reversals_90d, first_ledger_payment, last_positive_payment_date, expected_paid_30d, expected_paid_60d, expected_paid_90d, payment_ratio_30d, payment_ratio_60d, payment_ratio_90d, catchup_gap_estimated, days_since_last_payment, fragmented_payment_flag, survival_payment_flag";
+    "organization_id, deal_number, latest_snapshot_date, payment_frequency, total_payment_amount, days_past_due, payments_30d, payments_60d, payments_90d, total_paid_30d, total_paid_60d, total_paid_90d, avg_payment_60d, reversals_30d, reversals_60d, reversals_90d, first_ledger_payment, last_positive_payment_date, expected_paid_30d, expected_paid_60d, expected_paid_90d, payment_ratio_30d, payment_ratio_60d, payment_ratio_90d, catchup_gap_estimated, days_since_last_payment, fragmented_payment_flag, survival_payment_flag, scheduled_payment_amount";
   const outcomeColumns =
     "organization_id, deal_number, outcome_bucket, account_status_normalized, is_bad_outcome, is_good_outcome, is_excluded, loss_severity, net_outcome_estimate, days_to_close, days_to_charge_off, days_to_repo, bad_debt_amount, recovery_amount, repo_credit, account_sale_received_amount, buy_back_cost, net_profit, exposure";
 

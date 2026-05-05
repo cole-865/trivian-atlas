@@ -32,10 +32,10 @@ function AppSidebarNav({
       <div className="border-b border-border/70 bg-gradient-to-b from-primary/[0.06] to-transparent px-5 py-5">
         <Link href="/home" className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           <Image
-            src="/atlas-logo.png"
+            src="/atlas-logo-wordmark.png"
             alt="Atlas"
-            width={180}
-            height={120}
+            width={1249}
+            height={324}
             priority
             className="h-auto w-[180px] max-w-full"
           />
