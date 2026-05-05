@@ -159,6 +159,7 @@ test("DMS All Accounts sample row maps to normalized account snapshot fields", (
       "Deal Date": "05/01/2026",
       "Payment Frequency": "Weekly",
       "Total Payment Amount": "$125.50",
+      "Monthly Payment": "$275.00",
       "Days Past Due": "12",
       "Vehicle VIN": "VIN123",
       "Vehicle Stock Number": "STK-1",
@@ -171,6 +172,7 @@ test("DMS All Accounts sample row maps to normalized account snapshot fields", (
   assert.equal(mapped?.customer_name, "Synthetic Customer");
   assert.equal(mapped?.deal_date, "2026-05-01");
   assert.equal(mapped?.total_payment_amount, 125.5);
+  assert.equal(mapped?.monthly_payment_amount, 275);
   assert.equal(mapped?.days_past_due, 12);
   assert.equal(mapped?.vehicle_vin, "VIN123");
   assert.equal(mapped?.vehicle_stock_number, "STK-1");

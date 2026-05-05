@@ -86,6 +86,7 @@ export function mapAllAccountsRow(args: BaseMapArgs) {
     original_financed_amount: money(row, "Original Financed Amount"),
     original_financed_charge: money(row, "Original Financed Charge"),
     total_payment_amount: money(row, "Total Payment Amount"),
+    monthly_payment_amount: money(row, "Monthly Payment"),
     remaining_payment: money(row, "Remaining Payment"),
     final_payment_amount: money(row, "Final Payment Amount"),
     previous_payment_amount: money(row, "Previous Payment Amount"),
