@@ -212,10 +212,21 @@ export default function CustomerDocuments({
 
   function cleanErrorMessage(value: unknown, fallback = "Something went wrong") {
     if (!value) return fallback;
-    if (typeof value === "string") return value;
+    if (typeof value === "string") {
+      return value === "[object Object]"
+        ? "Processing failed before a readable error was stored. Re-upload the bureau to capture the underlying error."
+        : value;
+    }
     if (typeof value === "object") {
       const v = value as ApiErrorLike;
-      return v.details || v.error || v.message || JSON.stringify(v);
+      const candidate = v.details || v.error || v.message;
+      if (typeof candidate === "string") return candidate;
+      if (candidate) return cleanErrorMessage(candidate, fallback);
+      try {
+        return JSON.stringify(v);
+      } catch {
+        return fallback;
+      }
     }
     return String(value);
   }

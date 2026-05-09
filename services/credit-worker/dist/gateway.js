@@ -1,17 +1,5 @@
 import { supabase } from "./supabase.js";
-function formatWorkerError(err) {
-    if (err instanceof Error) {
-        return `${err.name}: ${err.message}`;
-    }
-    if (err && typeof err === "object") {
-        const candidate = err;
-        return (candidate.details ||
-            candidate.message ||
-            candidate.error ||
-            JSON.stringify(candidate));
-    }
-    return String(err);
-}
+import { formatWorkerError } from "./errorFormatting.js";
 export const defaultCreditWorkerGateway = {
     async getDealOrganizationId(dealId) {
         const { data, error } = await supabase

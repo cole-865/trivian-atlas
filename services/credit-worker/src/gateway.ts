@@ -1,4 +1,5 @@
 import { supabase } from "./supabase.js";
+import { formatWorkerError } from "./errorFormatting.js";
 import type {
   BureauMessageRow,
   BureauPublicRecordRow,
@@ -138,29 +139,6 @@ export type CreditWorkerGateway = {
     result: UnderwriteResult;
   }) => Promise<void>;
 };
-
-function formatWorkerError(err: unknown) {
-  if (err instanceof Error) {
-    return `${err.name}: ${err.message}`;
-  }
-
-  if (err && typeof err === "object") {
-    const candidate = err as {
-      details?: string | null;
-      error?: string | null;
-      message?: string | null;
-    };
-
-    return (
-      candidate.details ||
-      candidate.message ||
-      candidate.error ||
-      JSON.stringify(candidate)
-    );
-  }
-
-  return String(err);
-}
 
 export const defaultCreditWorkerGateway: CreditWorkerGateway = {
   async getDealOrganizationId(dealId) {

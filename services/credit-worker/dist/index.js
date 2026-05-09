@@ -20,24 +20,12 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env" });
 import { supabase } from "./supabase.js";
 import { processJob } from "./processJob.js";
+import { formatWorkerError } from "./errorFormatting.js";
 const WORKER_ID = process.env.WORKER_ID || "credit-worker-1";
 const CATCHUP_LIMIT = Number(process.env.CATCHUP_LIMIT || "25");
 const CATCHUP_INTERVAL_MS = Number(process.env.CATCHUP_INTERVAL_MS || "5000");
 // Prevent duplicate processing bursts (INSERT + UPDATE can both fire)
 const inFlight = new Set();
-function formatWorkerError(err) {
-    if (err instanceof Error) {
-        return `${err.name}: ${err.message}`;
-    }
-    if (err && typeof err === "object") {
-        const candidate = err;
-        return (candidate.details ||
-            candidate.message ||
-            candidate.error ||
-            JSON.stringify(candidate));
-    }
-    return String(err);
-}
 console.log("[credit-worker] boot", new Date().toISOString());
 console.log("[credit-worker] cwd:", process.cwd());
 console.log("[credit-worker] WORKER_ID:", WORKER_ID);
