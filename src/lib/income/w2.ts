@@ -81,8 +81,8 @@ export function getYtdStart(hireDate: Date, payPeriodEnd: Date): Date {
  */
 export function countWorkedMonthsInclusive(start: Date, end: Date): number {
   if (end.getTime() < start.getTime()) return 0;
-  const startKey = start.getFullYear() * 12 + start.getMonth();
-  const endKey = end.getFullYear() * 12 + end.getMonth();
+  const startKey = start.getUTCFullYear() * 12 + start.getUTCMonth();
+  const endKey = end.getUTCFullYear() * 12 + end.getUTCMonth();
   return Math.max(1, endKey - startKey + 1);
 }
 
@@ -92,10 +92,69 @@ export function calcMonthlyFromPaycheck(grossThisPeriod: number, frequency: PayF
   return clampMoney((grossThisPeriod * ppy) / 12);
 }
 
-export function calcMonthlyFromYtd(ytdGross: number, ytdStart: Date, payPeriodEnd: Date): number {
-  const months = countWorkedMonthsInclusive(ytdStart, payPeriodEnd);
-  if (months <= 0) return 0;
-  return clampMoney(ytdGross / months);
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function utcDayNumber(date: Date): number {
+  return Math.floor(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / MS_PER_DAY,
+  );
+}
+
+export function countDaysInclusive(start: Date, end: Date): number {
+  const days = utcDayNumber(end) - utcDayNumber(start) + 1;
+  return Math.max(0, days);
+}
+
+export function countSemimonthlyPeriodsInclusive(start: Date, end: Date): number {
+  if (end.getTime() < start.getTime()) return 0;
+
+  const startKey =
+    start.getUTCFullYear() * 24 + start.getUTCMonth() * 2 + (start.getUTCDate() <= 15 ? 0 : 1);
+  const endKey =
+    end.getUTCFullYear() * 24 + end.getUTCMonth() * 2 + (end.getUTCDate() <= 15 ? 0 : 1);
+
+  return Math.max(1, endKey - startKey + 1);
+}
+
+export function countYtdPayPeriodsInclusive(
+  ytdStart: Date,
+  payPeriodEnd: Date,
+  frequency: PayFrequency,
+): number {
+  if (payPeriodEnd.getTime() < ytdStart.getTime()) return 0;
+
+  if (frequency === "weekly") {
+    return Math.max(1, Math.ceil(countDaysInclusive(ytdStart, payPeriodEnd) / 7));
+  }
+
+  if (frequency === "biweekly") {
+    return Math.max(1, Math.ceil(countDaysInclusive(ytdStart, payPeriodEnd) / 14));
+  }
+
+  if (frequency === "semimonthly") {
+    return countSemimonthlyPeriodsInclusive(ytdStart, payPeriodEnd);
+  }
+
+  return countWorkedMonthsInclusive(ytdStart, payPeriodEnd);
+}
+
+export function calcMonthlyFromYtd(
+  ytdGross: number,
+  ytdStart: Date,
+  payPeriodEnd: Date,
+  frequency: PayFrequency,
+): number {
+  const periodCount = countYtdPayPeriodsInclusive(ytdStart, payPeriodEnd, frequency);
+  if (periodCount <= 0) return 0;
+
+  if (frequency === "annually") {
+    return clampMoney(ytdGross / periodCount);
+  }
+
+  const ppy = periodsPerYear[frequency] ?? 0;
+  if (ppy <= 0) return 0;
+
+  return clampMoney((ytdGross / periodCount) * (ppy / 12));
 }
 
 export function calcW2Income(params: {
@@ -114,7 +173,7 @@ export function calcW2Income(params: {
 
   const monthlyFromYtd =
     typeof ytdGross === "number" && ytdGross > 0
-      ? calcMonthlyFromYtd(ytdGross, ytdStart, payPeriodEnd)
+      ? calcMonthlyFromYtd(ytdGross, ytdStart, payPeriodEnd, payFrequency)
       : 0;
 
   return {
