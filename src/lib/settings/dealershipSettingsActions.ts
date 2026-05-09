@@ -20,6 +20,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logOrganizationSettingsChange } from "@/lib/settings/audit";
 import {
+  INCOME_VERIFICATION_SETTINGS_KEY,
   INTEGRATION_SETTINGS_KEY,
   NOTIFICATION_SETTINGS_KEY,
   PRODUCT_PRICING_SETTINGS_KEY,
@@ -104,6 +105,10 @@ const workflowSchema = z.object({
   allowAdminBypass: z.boolean(),
   lockCompletedStepsAfterSubmit: z.boolean(),
   requireManagerApprovalToReopenSubmittedDeals: z.boolean(),
+});
+
+const incomeVerificationSchema = z.object({
+  ytdCurrentCheckWarningThresholdPercent: z.coerce.number().min(0).max(100),
 });
 
 function toBoolean(value: FormDataEntryValue | null) {
@@ -502,6 +507,52 @@ export async function updateWorkflowSettingsAction(formData: FormData) {
   } catch (error) {
     if (isNextRedirectError(error)) throw error;
     redirectWithMessage("workflow", "error", error instanceof Error ? error.message : "Failed to save workflow settings.");
+  }
+}
+
+export async function updateIncomeVerificationSettingsAction(formData: FormData) {
+  try {
+    const { organizationId, userId } =
+      await getAuthorizedContext("manage_underwriting_settings");
+    const parsed = incomeVerificationSchema.parse({
+      ytdCurrentCheckWarningThresholdPercent: formData.get(
+        "ytd_current_check_warning_threshold_percent"
+      ),
+    });
+    const after = {
+      ytdCurrentCheckWarningThresholdPercent:
+        parsed.ytdCurrentCheckWarningThresholdPercent,
+    };
+    const before = await loadOrganizationSetting(
+      organizationId,
+      INCOME_VERIFICATION_SETTINGS_KEY
+    );
+
+    await upsertOrganizationSetting({
+      organizationId,
+      key: INCOME_VERIFICATION_SETTINGS_KEY,
+      value: after,
+    });
+
+    await logOrganizationSettingsChange({
+      organizationId,
+      changedByUserId: userId,
+      changeType: "settings.income_verification.updated",
+      entityType: "organization_settings",
+      before: objectPayload(before),
+      after,
+    });
+
+    revalidatePath("/settings");
+    revalidatePath("/deals/[dealId]/income", "page");
+    redirectWithMessage("underwriting", "notice", "Income verification settings saved.");
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    redirectWithMessage(
+      "underwriting",
+      "error",
+      error instanceof Error ? error.message : "Failed to save income verification settings."
+    );
   }
 }
 

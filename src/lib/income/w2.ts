@@ -157,6 +157,33 @@ export function calcMonthlyFromYtd(
   return clampMoney((ytdGross / periodCount) * (ppy / 12));
 }
 
+export function calcYtdHigherThanCurrentGapPercent(
+  monthlyFromPaycheck: number,
+  monthlyFromYtd: number,
+): number {
+  if (monthlyFromPaycheck <= 0 || monthlyFromYtd <= monthlyFromPaycheck) {
+    return 0;
+  }
+
+  return Math.round(((monthlyFromYtd - monthlyFromPaycheck) / monthlyFromPaycheck) * 1000) / 10;
+}
+
+export function shouldWarnYtdHigherThanCurrent(args: {
+  monthlyFromPaycheck: number;
+  monthlyFromYtd: number;
+  thresholdPercent: number;
+}) {
+  const gapPercent = calcYtdHigherThanCurrentGapPercent(
+    args.monthlyFromPaycheck,
+    args.monthlyFromYtd,
+  );
+
+  return {
+    gapPercent,
+    shouldWarn: args.thresholdPercent > 0 && gapPercent >= args.thresholdPercent,
+  };
+}
+
 export function calcW2Income(params: {
   hireDate: Date;
   payPeriodEnd: Date;

@@ -39,6 +39,7 @@ import {
 import {
   updateGeneralSettingsAction,
   updateIntegrationsAction,
+  updateIncomeVerificationSettingsAction,
   updateNotificationsAction,
   updateRolePermissionsAction,
   updateTrivianConfigAction,
@@ -464,6 +465,26 @@ function Underwriting({ data }: { data: DealershipSettingsData }) {
   const lastUpdated = lastAuditDate(data, ["underwriting_tier_policy", "vehicle_term_policy"]);
   return (
     <div className="grid gap-6">
+      <SettingsForm action={updateIncomeVerificationSettingsAction} className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
+        <Header title="Income Verification" text="Controls W2 paystub warnings used during income review." meta={`Last updated: ${date(lastAuditDate(data, ["organization_settings"]))}`} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field
+            label="YTD higher-than-current warning"
+            name="ytd_current_check_warning_threshold_percent"
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            suffix="%"
+            value={data.incomeVerification.ytdCurrentCheckWarningThresholdPercent}
+            helper="Show a warning when YTD average monthly income is this much higher than the current check annualized monthly income. Use 0 to disable."
+          />
+        </div>
+        <EffectNote>
+          When triggered, Atlas prompts the reviewer to verify a prior paystub before relying on the YTD average.
+        </EffectNote>
+        <div className="mt-5"><Button /></div>
+      </SettingsForm>
       <div className="rounded-xl border border-border/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_16px_36px_rgba(0,0,0,0.2)]">
         <Header title="Underwriting" text="These rules control deal approvals and limits. Changes apply to new deals only." meta={`Last updated: ${date(lastUpdated)}`} />
         <EffectNote>Existing deals will not be recalculated until they are restructured.</EffectNote>

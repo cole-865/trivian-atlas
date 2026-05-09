@@ -14,6 +14,7 @@ import type {
 export const NOTIFICATION_SETTINGS_KEY = "notifications";
 export const INTEGRATION_SETTINGS_KEY = "integrations";
 export const PRODUCT_PRICING_SETTINGS_KEY = "product_pricing";
+export const INCOME_VERIFICATION_SETTINGS_KEY = "income_verification";
 
 export type OrganizationProfileSettings = {
   organization_id: string;
@@ -115,6 +116,10 @@ export type ProductPricingSettings = {
   supportedPaymentFrequencies: string[];
 };
 
+export type IncomeVerificationSettings = {
+  ytdCurrentCheckWarningThresholdPercent: number;
+};
+
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   dealSubmittedAlerts: true,
   overrideRequestAlerts: true,
@@ -133,6 +138,10 @@ export const DEFAULT_PRODUCT_PRICING_SETTINGS: ProductPricingSettings = {
   supportedPaymentFrequencies: ["monthly"],
 };
 
+export const DEFAULT_INCOME_VERIFICATION_SETTINGS: IncomeVerificationSettings = {
+  ytdCurrentCheckWarningThresholdPercent: 10,
+};
+
 export type DealershipSettingsData = {
   organization: OrganizationSummary | null;
   profile: OrganizationProfileSettings | null;
@@ -144,6 +153,7 @@ export type DealershipSettingsData = {
   notifications: NotificationSettings;
   integrations: IntegrationSettings;
   productPricing: ProductPricingSettings;
+  incomeVerification: IncomeVerificationSettings;
   auditLogs: AuditLogRow[];
 };
 
@@ -215,6 +225,18 @@ function mapProductPricingSettings(value: unknown): ProductPricingSettings {
   };
 }
 
+function mapIncomeVerificationSettings(value: unknown): IncomeVerificationSettings {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const threshold = nullableNumber(record.ytdCurrentCheckWarningThresholdPercent);
+
+  return {
+    ytdCurrentCheckWarningThresholdPercent:
+      threshold === null
+        ? DEFAULT_INCOME_VERIFICATION_SETTINGS.ytdCurrentCheckWarningThresholdPercent
+        : Math.min(100, Math.max(0, threshold)),
+  };
+}
+
 export async function loadOrganizationSetting(
   organizationId: string,
   key: string
@@ -237,6 +259,12 @@ export async function loadOrganizationSetting(
 export async function getNotificationSettingsForOrganization(organizationId: string) {
   return mapNotificationSettings(
     await loadOrganizationSetting(organizationId, NOTIFICATION_SETTINGS_KEY)
+  );
+}
+
+export async function getIncomeVerificationSettingsForOrganization(organizationId: string) {
+  return mapIncomeVerificationSettings(
+    await loadOrganizationSetting(organizationId, INCOME_VERIFICATION_SETTINGS_KEY)
   );
 }
 
@@ -276,6 +304,7 @@ export async function loadDealershipSettingsData(
     notificationSetting,
     integrationSetting,
     productPricingSetting,
+    incomeVerificationSetting,
     auditLogs,
   ] = await Promise.all([
     admin
@@ -316,6 +345,7 @@ export async function loadDealershipSettingsData(
     loadOrganizationSetting(organizationId, NOTIFICATION_SETTINGS_KEY),
     loadOrganizationSetting(organizationId, INTEGRATION_SETTINGS_KEY),
     loadOrganizationSetting(organizationId, PRODUCT_PRICING_SETTINGS_KEY),
+    loadOrganizationSetting(organizationId, INCOME_VERIFICATION_SETTINGS_KEY),
     admin
       .from("audit_log")
       .select("id, organization_id, changed_by_user_id, change_type, entity_type, before, after, created_at")
@@ -354,6 +384,7 @@ export async function loadDealershipSettingsData(
     notifications: mapNotificationSettings(notificationSetting),
     integrations: mapIntegrationSettings(integrationSetting),
     productPricing: mapProductPricingSettings(productPricingSetting),
+    incomeVerification: mapIncomeVerificationSettings(incomeVerificationSetting),
     auditLogs: (auditLogs.data ?? []) as AuditLogRow[],
   };
 }

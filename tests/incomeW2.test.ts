@@ -5,6 +5,7 @@ import {
   calcW2Income,
   countDaysInclusive,
   countYtdPayPeriodsInclusive,
+  shouldWarnYtdHigherThanCurrent,
 } from "../src/lib/income/w2.js";
 
 test("counts YTD days through the pay period end inclusively", () => {
@@ -34,4 +35,24 @@ test("W2 calculation keeps paycheck annualized value and frequency-aware YTD val
   assert.equal(result.ytdStartISO, "2026-01-01");
   assert.equal(result.monthlyFromPaycheck, 2627.37);
   assert.equal(result.monthlyFromYtd, 3226.84);
+});
+
+test("flags materially higher YTD average income compared with the current check", () => {
+  assert.deepEqual(
+    shouldWarnYtdHigherThanCurrent({
+      monthlyFromPaycheck: 2627.37,
+      monthlyFromYtd: 3226.89,
+      thresholdPercent: 10,
+    }),
+    { gapPercent: 22.8, shouldWarn: true }
+  );
+
+  assert.equal(
+    shouldWarnYtdHigherThanCurrent({
+      monthlyFromPaycheck: 2627.37,
+      monthlyFromYtd: 2800,
+      thresholdPercent: 10,
+    }).shouldWarn,
+    false
+  );
 });

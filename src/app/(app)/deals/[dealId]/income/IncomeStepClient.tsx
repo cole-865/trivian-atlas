@@ -15,6 +15,7 @@ import {
   formatTenure,
   parseMoney,
   safeDate,
+  shouldWarnYtdHigherThanCurrent,
   type PayFrequency,
 } from "@/lib/income/w2";
 
@@ -185,9 +186,11 @@ function errorMessage(error: unknown, fallback: string) {
 export default function IncomeStepClient({
   dealId,
   initialHouseholdIncome,
+  ytdCurrentCheckWarningThresholdPercent,
 }: {
   dealId: string;
   initialHouseholdIncome: boolean;
+  ytdCurrentCheckWarningThresholdPercent: number;
 }) {
   const router = useRouter();
 
@@ -931,6 +934,7 @@ export default function IncomeStepClient({
             saving={savingRowId === row.id}
             deleting={deletingRowId === row.id}
             w2Form={getW2Form(row.id)}
+            ytdCurrentCheckWarningThresholdPercent={ytdCurrentCheckWarningThresholdPercent}
             onChangeW2={(next) => {
               setW2Form(row.id, next);
               setAppliedOk(false);
@@ -952,6 +956,7 @@ function IncomeCard({
   saving,
   deleting,
   w2Form,
+  ytdCurrentCheckWarningThresholdPercent,
   onChangeW2,
   onChange,
   onSave,
@@ -963,6 +968,7 @@ function IncomeCard({
   saving: boolean;
   deleting: boolean;
   w2Form: W2Form;
+  ytdCurrentCheckWarningThresholdPercent: number;
   onChangeW2: (next: W2Form) => void;
   onChange: (next: IncomeRow) => void;
   onSave: () => void;
@@ -994,6 +1000,15 @@ function IncomeCard({
       ytdGross: ytd > 0 ? ytd : undefined,
     });
   }, [row.income_type, hireDateObj, payEndObj, w2Form.payFrequency, grossThis, ytd]);
+  const ytdVarianceWarning = useMemo(() => {
+    if (!w2Calc) return null;
+    const result = shouldWarnYtdHigherThanCurrent({
+      monthlyFromPaycheck: w2Calc.monthlyFromPaycheck,
+      monthlyFromYtd: w2Calc.monthlyFromYtd,
+      thresholdPercent: ytdCurrentCheckWarningThresholdPercent,
+    });
+    return result.shouldWarn ? result : null;
+  }, [w2Calc, ytdCurrentCheckWarningThresholdPercent]);
 
   const canUseCalculated = row.income_type === "w2" && !!w2Calc && grossThis > 0;
 
@@ -1194,6 +1209,13 @@ function IncomeCard({
               Monthly (YTD avg):{" "}
               <b>{w2Calc && w2Calc.monthlyFromYtd > 0 ? money(w2Calc.monthlyFromYtd) : "—"}</b>
             </div>
+
+            {ytdVarianceWarning ? (
+              <div className="basis-full rounded-xl border border-warning/35 bg-warning/10 px-3 py-2 text-sm text-warning">
+                YTD average is <b>{ytdVarianceWarning.gapPercent.toFixed(1)}%</b> higher than
+                this check. Verify a prior paystub before using YTD average.
+              </div>
+            ) : null}
 
             <div className="flex-1" />
 
