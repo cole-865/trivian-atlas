@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Radar, Search } from "lucide-react";
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient, hasAdminAccess } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/auth/userRole";
 import type { Tables } from "@/lib/supabase/database.generated";
 import { EmptyState, NoticeBanner, PageHeader, SectionCard } from "@/components/atlas/page";
@@ -795,6 +796,16 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
     );
   }
 
+  if (!hasAdminAccess()) {
+    return (
+      <NoticeBanner tone="error">
+        Portfolio Radar requires server database access to load scoped DMS signal views.
+      </NoticeBanner>
+    );
+  }
+
+  const portfolioDb = createAdminClient();
+
   const repoColumns =
     "organization_id, deal_number, recommended_status, repo_score, repo_now, pre_repo, watch, days_past_due, payment_ratio_60d, payments_60d, reversals_60d, days_since_last_payment, insurance_status, repo_status, repo_stage, repo_type, repo_reason, risk_flags, latest_snapshot_date, account_status, payment_status, collector_name, vehicle_year_make_model, vehicle_stock_number, vin_last_six, balance_principal_amount, total_past_due_amount, total_payment_amount, total_payment_due_amount, total_payoff_amount, exposure, customer_name";
   const collectionsColumns =
@@ -804,7 +815,7 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
   const outcomeColumns =
     "organization_id, deal_number, outcome_bucket, account_status_normalized, is_bad_outcome, is_good_outcome, is_excluded, loss_severity, net_outcome_estimate, days_to_close, days_to_charge_off, days_to_repo, bad_debt_amount, recovery_amount, repo_credit, account_sale_received_amount, buy_back_cost, net_profit, exposure";
 
-  const activeAccounts = await supabase
+  const activeAccounts = await portfolioDb
     .from("account_repo_signals")
     .select(repoColumns)
     .eq("organization_id", organizationId)
@@ -828,7 +839,7 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
   const emptyRows = Promise.resolve({ data: [], error: null });
   const emptyDetail = Promise.resolve({ data: null, error: null });
 
-  let repoQuery = supabase
+  let repoQuery = portfolioDb
     .from("account_repo_signals")
     .select(repoColumns)
     .eq("organization_id", organizationId)
@@ -837,7 +848,7 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
   if (search) repoQuery = repoQuery.ilike("deal_number", `%${search}%`);
   if (flagFilters.length) repoQuery = repoQuery.or(flagFilters.join(","));
 
-  let collectionsQuery = supabase
+  let collectionsQuery = portfolioDb
     .from("account_collections_signals")
     .select(collectionsColumns)
     .eq("organization_id", organizationId)
@@ -845,14 +856,14 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
   if (collectionsTier) collectionsQuery = collectionsQuery.eq("collections_tier", collectionsTier);
   if (search) collectionsQuery = collectionsQuery.ilike("deal_number", `%${search}%`);
 
-  let paymentQuery = supabase
+  let paymentQuery = portfolioDb
     .from("account_payment_signals")
     .select(paymentColumns)
     .eq("organization_id", organizationId)
     .in("deal_number", operationalDeals);
   if (search) paymentQuery = paymentQuery.ilike("deal_number", `%${search}%`);
 
-  let outcomesQuery = supabase
+  let outcomesQuery = portfolioDb
     .from("account_outcomes")
     .select(outcomeColumns)
     .eq("organization_id", organizationId)
@@ -874,7 +885,7 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
     detailOutcomeResponse,
   ] = await Promise.all([
     operationalDeals.length
-      ? supabase
+      ? portfolioDb
           .from("account_collections_signals")
           .select("deal_number, collections_tier")
           .eq("organization_id", organizationId)
@@ -893,24 +904,49 @@ export default async function PortfolioRadarPage({ searchParams }: Props) {
           .limit(25)
       : emptyRows,
     operationalDeals.length
-      ? supabase
+      ? portfolioDb
           .from("account_outcomes")
           .select("deal_number, outcome_bucket, is_bad_outcome, is_good_outcome, is_excluded")
           .eq("organization_id", organizationId)
           .in("deal_number", operationalDeals)
       : emptyRows,
-    supabase.from("dms_import_batches").select("report_type, source_filename, imported_at, row_count, status").eq("organization_id", organizationId).order("imported_at", { ascending: false }).limit(10),
+    portfolioDb
+      .from("dms_import_batches")
+      .select("report_type, source_filename, imported_at, row_count, status")
+      .eq("organization_id", organizationId)
+      .order("imported_at", { ascending: false })
+      .limit(10),
     selectedDeal && inOperationalUniverse(selectedDeal)
-      ? supabase.from("account_repo_signals").select(repoColumns).eq("organization_id", organizationId).eq("deal_number", selectedDeal).maybeSingle()
+      ? portfolioDb
+          .from("account_repo_signals")
+          .select(repoColumns)
+          .eq("organization_id", organizationId)
+          .eq("deal_number", selectedDeal)
+          .maybeSingle()
       : emptyDetail,
     selectedDeal && inOperationalUniverse(selectedDeal)
-      ? supabase.from("account_collections_signals").select(collectionsColumns).eq("organization_id", organizationId).eq("deal_number", selectedDeal).maybeSingle()
+      ? portfolioDb
+          .from("account_collections_signals")
+          .select(collectionsColumns)
+          .eq("organization_id", organizationId)
+          .eq("deal_number", selectedDeal)
+          .maybeSingle()
       : emptyDetail,
     selectedDeal && inOperationalUniverse(selectedDeal)
-      ? supabase.from("account_payment_signals").select(paymentColumns).eq("organization_id", organizationId).eq("deal_number", selectedDeal).maybeSingle()
+      ? portfolioDb
+          .from("account_payment_signals")
+          .select(paymentColumns)
+          .eq("organization_id", organizationId)
+          .eq("deal_number", selectedDeal)
+          .maybeSingle()
       : emptyDetail,
     selectedDeal && inOperationalUniverse(selectedDeal)
-      ? supabase.from("account_outcomes").select(outcomeColumns).eq("organization_id", organizationId).eq("deal_number", selectedDeal).maybeSingle()
+      ? portfolioDb
+          .from("account_outcomes")
+          .select(outcomeColumns)
+          .eq("organization_id", organizationId)
+          .eq("deal_number", selectedDeal)
+          .maybeSingle()
       : emptyDetail,
   ]);
 

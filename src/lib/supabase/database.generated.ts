@@ -3296,6 +3296,7 @@ export type Database = {
           reversals_30d: number | null
           reversals_60d: number | null
           reversals_90d: number | null
+          scheduled_payment_amount: number | null
           survival_payment_flag: boolean | null
           total_paid_30d: number | null
           total_paid_60d: number | null
@@ -3319,6 +3320,7 @@ export type Database = {
           collateral_status: string | null
           collector_name: string | null
           current_insurance_expiry_date: string | null
+          customer_name: string | null
           days_past_due: number | null
           days_since_last_payment: number | null
           deal_number: string | null
@@ -3719,4 +3721,3 @@ export const Constants = {
     },
   },
 } as const
-
