@@ -9,6 +9,7 @@
 | Credit bureau upload/delete cleanup | hardened | Bureau uploads and bureau document deletion now purge downstream org-scoped artifacts (`credit_reports`, `bureau_summary`, `bureau_tradelines`, `bureau_public_records`, `bureau_messages`) through one shared helper. |
 | Credit bureau rollback path | hardened | Queue failure rollback now deletes the inserted document row with both `organization_id` and `id`. |
 | Credit worker organization propagation | verified | Worker now has explicit tested helpers for bureau detection, duplicate extraction handling, redacted-path generation, and organization stamping when queued jobs arrive without `organization_id`. |
+| Legacy permissive RLS/function grants | migration tracked | `20260521031120_harden_legacy_rls_and_function_grants.sql` defensively drops only confirmed permissive authenticated deal/person/income policies with tracked scoped replacements, and revokes direct `public`/`anon`/`authenticated` execution on confirmed-unused legacy SQL helpers. It intentionally leaves legacy table/anon policies in place until live RLS validation confirms removal safety. |
 
 ## Remaining follow-up
 
@@ -18,3 +19,5 @@
 | Credit worker integration coverage | medium | Pure worker rules are now covered, but the async write path still lacks mocked integration tests around Supabase mutations and storage operations. |
 | Regression coverage | high | Add tests for invite boundaries, impersonation boundaries, and cross-org denial cases. |
 | Transitional global config fallback | medium | `src/lib/los/organizationScope.ts` still falls back to global `trivian_config` rows where `organization_id is null`; keep only if that migration is intentionally incomplete. |
+| Legacy table policy hardening | high | `audit_log_all_authenticated`, `documents_all_authenticated`, `vehicle_options_all_authenticated`, `vehicle_selection_all_authenticated`, and `*_insert_anon_dev` policies need live policy inventory and row-usage validation before a production removal migration. |
+| Deprecated schema removal | medium | Use `docs/schema-surfaces.md` as the Phase 2 removal checklist after production row counts, dependency checks, and rollback steps are documented. |

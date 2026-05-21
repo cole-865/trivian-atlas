@@ -108,7 +108,7 @@ export async function GET(
   // 5) Vehicle options are now derived from the saved structure snapshot.
   const { data: dealStructure, error: voErr } = await supabase
     .from("deal_structure")
-    .select("id, deal_id, vehicle_id, created_at, updated_at")
+    .select("deal_id, vehicle_id, created_at, updated_at")
     .eq("organization_id", organizationId)
     .eq("deal_id", dealId)
     .maybeSingle();
@@ -124,7 +124,7 @@ export async function GET(
   const { data: vehicle_selection, error: vsErr } = await supabase
     .from("deal_vehicle_selection")
     .select(
-      "id, deal_id, vehicle_id, option_label, include_vsc, include_gap, term_months, monthly_payment, cash_down, created_at, updated_at"
+      "deal_id, vehicle_id, option_label, include_vsc, include_gap, term_months, monthly_payment, cash_down, created_at, updated_at"
     )
     .eq("organization_id", organizationId)
     .eq("deal_id", dealId)

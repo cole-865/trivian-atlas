@@ -31,6 +31,7 @@ Atlas is a multi-tenant dealership LOS built around Supabase Auth, organization 
 
 - Business tables are expected to be organization-scoped with matching RLS.
 - Migration planning is documented in `docs/supabase/multi-tenant-next-targets.md`.
+- Current and deprecated schema ownership is documented in `docs/schema-surfaces.md`.
 - Org-management indexes and invitation table setup live in `docs/supabase/organization-management.sql`.
 
 ## Core Multi-Tenant Flows
@@ -91,4 +92,5 @@ Before finishing implementation work, run:
 
 - The repo now has lightweight boundary tests, but not full integration coverage for server actions and route handlers.
 - `trivian_config` still contains a transitional fallback for global rows with `organization_id is null`.
+- Legacy `documents`, `vehicle_options`, `vehicle_selection`, `bhph_evaluate_bureau`, and `trivian_*` SQL helper surfaces remain in migration history and generated types. They are marked deprecated in `docs/schema-surfaces.md`; direct public/anon/authenticated access to confirmed-unused legacy SQL helpers is hardened by the Phase 1 migration, but the objects are intentionally not dropped.
 - The credit worker should get its own dedicated audit and test pass if bureau processing is on the critical path.
