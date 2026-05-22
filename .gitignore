@@ -36,6 +36,9 @@ yarn-error.log*
 .env*
 .local-cookie.txt
 
+# Supabase local CLI metadata
+supabase/.temp/
+
 # vercel
 .vercel
 

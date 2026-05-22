@@ -6,6 +6,9 @@ import { resolve } from "node:path";
 const migrationPath =
   "supabase/migrations/20260521031120_harden_legacy_rls_and_function_grants.sql";
 const migrationSql = readRepoFile(migrationPath);
+const phase1bMigrationPath =
+  "supabase/migrations/20260522152654_harden_deal_structure_inputs_rls.sql";
+const phase1bMigrationSql = readRepoFile(phase1bMigrationPath);
 const baselineSql = readRepoFile(
   "supabase/migrations/20260409000000_baseline_existing_schema.sql"
 );
@@ -150,6 +153,74 @@ test("deal detail route selects only real structure primary-key columns", () => 
     routeSource,
     /\.from\("deal_vehicle_selection"\)\s*\.select\(\s*"id,/
   );
+});
+
+test("Phase 1B enables deal_structure_inputs RLS with authenticated scoped policies", () => {
+  assert.match(
+    phase1bMigrationSql,
+    /alter table public\.deal_structure_inputs enable row level security/i
+  );
+
+  for (const operation of ["select", "insert", "update", "delete"]) {
+    assert.match(
+      phase1bMigrationSql,
+      new RegExp(
+        `create policy "deal_structure_inputs_${operation}_active_members"[\\s\\S]+?for ${operation}[\\s\\S]+?to authenticated`,
+        "i"
+      ),
+      `${phase1bMigrationPath} should create an authenticated ${operation} policy`
+    );
+  }
+
+  assert.doesNotMatch(phase1bMigrationSql, /\bto\s+anon\b/i);
+  assert.doesNotMatch(phase1bMigrationSql, /using\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase1bMigrationSql, /with\s+check\s*\(\s*true\s*\)/i);
+});
+
+test("Phase 1B deal_structure_inputs policies match parent deal and vehicle organization", () => {
+  const dealOrgMatch =
+    /from public\.deals d[\s\S]+?where d\.id = deal_structure_inputs\.deal_id[\s\S]+?and d\.organization_id = deal_structure_inputs\.organization_id/i;
+  const vehicleOrgMatch =
+    /deal_structure_inputs\.vehicle_id is null[\s\S]+?from public\.trivian_inventory v[\s\S]+?where v\.id = deal_structure_inputs\.vehicle_id[\s\S]+?and v\.organization_id = deal_structure_inputs\.organization_id/i;
+
+  assert.match(phase1bMigrationSql, dealOrgMatch);
+  assert.match(phase1bMigrationSql, vehicleOrgMatch);
+
+  for (const operation of ["insert", "update"]) {
+    const policyMatch = phase1bMigrationSql.match(
+      new RegExp(
+        `create policy "deal_structure_inputs_${operation}_active_members"([\\s\\S]+?)(?=drop policy|commit;)`,
+        "i"
+      )
+    );
+
+    assert.ok(policyMatch, `missing ${operation} policy`);
+    assert.match(policyMatch[0], dealOrgMatch);
+    assert.match(policyMatch[0], vehicleOrgMatch);
+  }
+});
+
+test("Phase 1B migration only touches deal_structure_inputs", () => {
+  const allowedTouchedRelations = new Set([
+    "public.deal_structure_inputs",
+    "public.deals",
+    "public.trivian_inventory",
+  ]);
+
+  const relationMatches = phase1bMigrationSql.matchAll(
+    /\b(?:alter table|on|from|join)\s+(public\.[a-z_]+)/gi
+  );
+
+  for (const match of relationMatches) {
+    assert.ok(
+      allowedTouchedRelations.has(match[1]),
+      `${phase1bMigrationPath} should not touch ${match[1]}`
+    );
+  }
+
+  assert.doesNotMatch(phase1bMigrationSql, /\bdrop\s+table\b/i);
+  assert.doesNotMatch(phase1bMigrationSql, /\bdrop\s+function\b/i);
+  assert.doesNotMatch(phase1bMigrationSql, /\bset\s+not\s+null\b/i);
 });
 
 function escapeRegExp(value: string): string {
