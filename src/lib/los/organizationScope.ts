@@ -26,7 +26,6 @@ type QueryBuilder<T> = PromiseLike<QueryListResult<T>> & {
   ) => QueryBuilder<T>;
   limit: (count: number) => QueryBuilder<T>;
   maybeSingle: () => Promise<QuerySingleResult<T>>;
-  is: (column: string, value: null) => QueryBuilder<T>;
   range: (from: number, to: number) => Promise<QueryListResult<T>>;
 };
 
@@ -92,28 +91,10 @@ export async function loadLatestTrivianConfig<
 ): Promise<QuerySingleResult<T>> {
   const client = asSupabaseClient(supabase);
 
-  const organizationScopedResponse = await scopeQueryToOrganization(
+  return scopeQueryToOrganization(
     client.from("trivian_config").select<T>(columns),
     organizationId
   )
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (organizationScopedResponse.error) {
-    return organizationScopedResponse;
-  }
-
-  if (organizationScopedResponse.data) {
-    return organizationScopedResponse;
-  }
-
-  // Transitional fallback while trivian_config rows are being migrated from
-  // global/default rows into organization-scoped rows.
-  return client
-    .from("trivian_config")
-    .select<T>(columns)
-    .is("organization_id", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

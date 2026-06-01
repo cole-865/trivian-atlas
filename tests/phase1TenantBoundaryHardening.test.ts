@@ -12,6 +12,9 @@ const phase1bMigrationSql = readRepoFile(phase1bMigrationPath);
 const phase2MigrationPath =
   "supabase/migrations/20260601023230_phase2_harden_legacy_rls_surfaces.sql";
 const phase2MigrationSql = readRepoFile(phase2MigrationPath);
+const phase3aMigrationPath =
+  "supabase/migrations/20260601034246_phase3a_remove_global_settings_fallbacks.sql";
+const phase3aMigrationSql = readRepoFile(phase3aMigrationPath);
 const baselineSql = readRepoFile(
   "supabase/migrations/20260409000000_baseline_existing_schema.sql"
 );
@@ -328,6 +331,79 @@ test("Phase 2 migration does not touch active global or user-scoped tables", () 
       `${phase2MigrationPath} should not touch ${tableName}`
     );
   }
+});
+
+test("Phase 3A backfills org settings before tightening global fallback policies", () => {
+  assert.match(
+    phase3aMigrationSql,
+    /insert into public\.organization_settings[\s\S]+?'workflow'/i
+  );
+  assert.match(
+    phase3aMigrationSql,
+    /from public\.organizations org[\s\S]+?where org\.is_active = true[\s\S]+?existing_workflow\.organization_id is null/i
+  );
+  assert.match(
+    phase3aMigrationSql,
+    /insert into public\.trivian_config[\s\S]+?organization_id[\s\S]+?from public\.organizations org[\s\S]+?where org\.is_active = true[\s\S]+?existing_config\.organization_id is null/i
+  );
+  assert.match(
+    phase3aMigrationSql,
+    /from public\.trivian_config[\s\S]+?where organization_id is null[\s\S]+?order by created_at desc[\s\S]+?limit 1/i
+  );
+});
+
+test("Phase 3A removes broad app_settings and global trivian_config access", () => {
+  for (const policyName of [
+    "authenticated users can read app settings",
+    "admin and dev can insert app settings",
+    "admin and dev can update app settings",
+    "config_read",
+    "config_update",
+    "trivian_config_select_active_members",
+  ]) {
+    assert.match(
+      phase3aMigrationSql,
+      new RegExp(`drop policy if exists "${escapeRegExp(policyName)}"`, "i"),
+      `${phase3aMigrationPath} should drop ${policyName}`
+    );
+  }
+
+  for (const operation of ["select", "insert", "update", "delete"]) {
+    assert.match(
+      phase3aMigrationSql,
+      new RegExp(
+        `create policy "app_settings_${operation}_platform_dev"[\\s\\S]+?for ${operation}[\\s\\S]+?to authenticated[\\s\\S]+?\\(select public\\.current_app_role\\(\\)\\) = 'dev'`,
+        "i"
+      )
+    );
+  }
+
+  assert.match(
+    phase3aMigrationSql,
+    /create policy "trivian_config_select_active_members"[\s\S]+?organization_id is not null[\s\S]+?public\.is_active_organization_member\(organization_id\)/i
+  );
+  assert.doesNotMatch(phase3aMigrationSql, /\busing\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase3aMigrationSql, /\bwith\s+check\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase3aMigrationSql, /\bto\s+anon\b/i);
+  assert.doesNotMatch(phase3aMigrationSql, /\bdrop\s+table\b/i);
+  assert.doesNotMatch(phase3aMigrationSql, /\bdrop\s+function\b/i);
+  assert.doesNotMatch(phase3aMigrationSql, /\bset\s+not\s+null\b/i);
+});
+
+test("Phase 3A removes app/global fallback code paths", () => {
+  const appSettingsSource = readRepoFile("src/lib/settings/appSettings.ts");
+  const organizationScopeSource = readRepoFile("src/lib/los/organizationScope.ts");
+
+  assert.doesNotMatch(appSettingsSource, /\.from\("app_settings"\)/);
+  assert.match(
+    appSettingsSource,
+    /throw new Error\("Select an account before changing workflow settings\."\)/
+  );
+  assert.doesNotMatch(organizationScopeSource, /\.is\("organization_id", null\)/);
+  assert.doesNotMatch(
+    organizationScopeSource,
+    /global\/default rows|organization_id is null/i
+  );
 });
 
 function escapeRegExp(value: string): string {

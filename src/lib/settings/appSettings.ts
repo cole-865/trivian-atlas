@@ -103,53 +103,36 @@ export async function getWorkflowSettings(supabase: TypedSupabaseClient) {
   const client = supabase;
   const organizationId = await getCurrentOrganizationId(client);
 
-  if (organizationId) {
-    const workflowResponse = await client
-      .from("organization_settings")
-      .select("value_json")
-      .eq("organization_id", organizationId)
-      .eq("key", WORKFLOW_SETTINGS_KEY)
-      .maybeSingle();
-
-    if (workflowResponse.error) {
-      throw new Error(
-        `Failed to load organization workflow settings: ${workflowResponse.error.message}`
-      );
-    }
-
-    if (workflowResponse.data?.value_json) {
-      return mapWorkflowSettings(workflowResponse.data.value_json);
-    }
-
-    const { data, error } = await client
-      .from("organization_settings")
-      .select("value_json")
-      .eq("organization_id", organizationId)
-      .eq("key", STEP_ENFORCEMENT_SETTING_KEY)
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(`Failed to load organization setting: ${error.message}`);
-    }
-
-    if (typeof data?.value_json === "boolean") {
-      return {
-        ...DEFAULT_WORKFLOW_SETTINGS,
-        stepEnforcementEnabled: data.value_json,
-      };
-    }
+  if (!organizationId) {
+    return DEFAULT_WORKFLOW_SETTINGS;
   }
 
-  // Transitional fallback while the existing dealership is being migrated from
-  // global app_settings into organization_settings.
-  const { data, error } = await client
-    .from("app_settings")
+  const workflowResponse = await client
+    .from("organization_settings")
     .select("value_json")
+    .eq("organization_id", organizationId)
+    .eq("key", WORKFLOW_SETTINGS_KEY)
+    .maybeSingle();
+
+  if (workflowResponse.error) {
+    throw new Error(
+      `Failed to load organization workflow settings: ${workflowResponse.error.message}`
+    );
+  }
+
+  if (workflowResponse.data?.value_json) {
+    return mapWorkflowSettings(workflowResponse.data.value_json);
+  }
+
+  const { data, error } = await client
+    .from("organization_settings")
+    .select("value_json")
+    .eq("organization_id", organizationId)
     .eq("key", STEP_ENFORCEMENT_SETTING_KEY)
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Failed to load app setting: ${error.message}`);
+    throw new Error(`Failed to load organization setting: ${error.message}`);
   }
 
   return typeof data?.value_json === "boolean"
@@ -179,26 +162,17 @@ export async function setWorkflowSettings(
   const organizationId = await getCurrentOrganizationId(client);
   const next = mapWorkflowSettings(settings);
 
-  if (organizationId) {
-    return client.from("organization_settings").upsert(
-      {
-        organization_id: organizationId,
-        key: WORKFLOW_SETTINGS_KEY,
-        value_json: next as unknown as Json,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "organization_id,key" }
-    );
+  if (!organizationId) {
+    throw new Error("Select an account before changing workflow settings.");
   }
 
-  // Transitional fallback while organization memberships/settings are being
-  // seeded for the current dealership.
-  return client.from("app_settings").upsert(
+  return client.from("organization_settings").upsert(
     {
-      key: STEP_ENFORCEMENT_SETTING_KEY,
-      value_json: next.stepEnforcementEnabled,
+      organization_id: organizationId,
+      key: WORKFLOW_SETTINGS_KEY,
+      value_json: next as unknown as Json,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "key" }
+    { onConflict: "organization_id,key" }
   );
 }
