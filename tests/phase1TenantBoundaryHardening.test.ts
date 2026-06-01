@@ -9,6 +9,9 @@ const migrationSql = readRepoFile(migrationPath);
 const phase1bMigrationPath =
   "supabase/migrations/20260522152654_harden_deal_structure_inputs_rls.sql";
 const phase1bMigrationSql = readRepoFile(phase1bMigrationPath);
+const phase2MigrationPath =
+  "supabase/migrations/20260601023230_phase2_harden_legacy_rls_surfaces.sql";
+const phase2MigrationSql = readRepoFile(phase2MigrationPath);
 const baselineSql = readRepoFile(
   "supabase/migrations/20260409000000_baseline_existing_schema.sql"
 );
@@ -221,6 +224,110 @@ test("Phase 1B migration only touches deal_structure_inputs", () => {
   assert.doesNotMatch(phase1bMigrationSql, /\bdrop\s+table\b/i);
   assert.doesNotMatch(phase1bMigrationSql, /\bdrop\s+function\b/i);
   assert.doesNotMatch(phase1bMigrationSql, /\bset\s+not\s+null\b/i);
+});
+
+test("Phase 2 hardens only approved legacy RLS surfaces", () => {
+  const approvedTables = [
+    "public.deal_management_notes",
+    "public.bhph_bureau_rules",
+    "public.documents",
+    "public.vehicle_options",
+    "public.vehicle_selection",
+  ];
+
+  for (const tableName of approvedTables) {
+    assert.match(
+      phase2MigrationSql,
+      new RegExp(escapeRegExp(tableName)),
+      `${phase2MigrationPath} should touch ${tableName}`
+    );
+  }
+
+  assert.match(
+    phase2MigrationSql,
+    /alter table public\.deal_management_notes enable row level security/i
+  );
+  assert.match(
+    phase2MigrationSql,
+    /alter table public\.bhph_bureau_rules enable row level security/i
+  );
+
+  for (const policyName of [
+    "documents_all_authenticated",
+    "vehicle_options_all_authenticated",
+    "vehicle_selection_all_authenticated",
+  ]) {
+    assert.match(
+      phase2MigrationSql,
+      new RegExp(`drop policy if exists "${policyName}"`, "i"),
+      `${phase2MigrationPath} should drop ${policyName}`
+    );
+  }
+
+  assert.doesNotMatch(phase2MigrationSql, /\busing\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase2MigrationSql, /\bwith\s+check\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase2MigrationSql, /\bto\s+anon\b/i);
+  assert.doesNotMatch(phase2MigrationSql, /\bdrop\s+table\b/i);
+  assert.doesNotMatch(phase2MigrationSql, /\bdrop\s+function\b/i);
+  assert.doesNotMatch(phase2MigrationSql, /\bset\s+not\s+null\b/i);
+});
+
+test("Phase 2 legacy deal-child policies require active parent deal membership", () => {
+  const policyTables = [
+    "deal_management_notes",
+    "documents",
+    "vehicle_options",
+    "vehicle_selection",
+  ];
+
+  for (const tableName of policyTables) {
+    assert.match(
+      phase2MigrationSql,
+      new RegExp(
+        `from public\\.deals d[\\s\\S]+?where d\\.id = ${tableName}\\.deal_id[\\s\\S]+?d\\.organization_id is not null[\\s\\S]+?public\\.is_active_organization_member\\(d\\.organization_id\\)`,
+        "i"
+      ),
+      `${phase2MigrationPath} should scope ${tableName} through parent deal organization`
+    );
+  }
+
+  assert.match(
+    phase2MigrationSql,
+    /from public\.vehicle_options vo[\s\S]+?where vo\.id = vehicle_selection\.vehicle_option_id[\s\S]+?and vo\.deal_id = vehicle_selection\.deal_id/i
+  );
+});
+
+test("Phase 2 bhph_bureau_rules is platform-dev only", () => {
+  for (const operation of ["select", "insert", "update", "delete"]) {
+    assert.match(
+      phase2MigrationSql,
+      new RegExp(
+        `create policy "bhph_bureau_rules_${operation}_platform_dev"[\\s\\S]+?for ${operation}[\\s\\S]+?to authenticated[\\s\\S]+?\\(select public\\.current_app_role\\(\\)\\) = 'dev'`,
+        "i"
+      ),
+      `${phase2MigrationPath} should restrict ${operation} to platform dev`
+    );
+  }
+});
+
+test("Phase 2 migration does not touch active global or user-scoped tables", () => {
+  const blockedTables = [
+    "public.app_settings",
+    "public.organizations",
+    "public.profiles",
+    "public.user_profiles",
+    "public.organization_settings",
+    "public.deal_documents",
+    "public.deal_structure_inputs",
+  ];
+
+  for (const tableName of blockedTables) {
+    assert.doesNotMatch(
+      phase2MigrationSql,
+      new RegExp(escapeRegExp(tableName)),
+      `${phase2MigrationPath} should not touch ${tableName}`
+    );
+  }
 });
 
 function escapeRegExp(value: string): string {
