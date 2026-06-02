@@ -1,26 +1,18 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabase/server";
 import {
   getHealthResponseInit,
   getHealthResponsePayload,
 } from "@/lib/health/response";
 
-async function checkApplicationHealth() {
-  try {
-    const supabase = await supabaseServer();
-    const { error } = await supabase
-      .from("organizations")
-      .select("id", { head: true })
-      .limit(1);
-
-    return !error;
-  } catch {
-    return false;
-  }
+function checkApplicationHealth() {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
 }
 
-export async function GET() {
-  const isHealthy = await checkApplicationHealth();
+export function GET() {
+  const isHealthy = checkApplicationHealth();
 
   return NextResponse.json(
     getHealthResponsePayload(isHealthy),
@@ -28,7 +20,7 @@ export async function GET() {
   );
 }
 
-export async function HEAD() {
-  const isHealthy = await checkApplicationHealth();
+export function HEAD() {
+  const isHealthy = checkApplicationHealth();
   return new Response(null, getHealthResponseInit(isHealthy));
 }
