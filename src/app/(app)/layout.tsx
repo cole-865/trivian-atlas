@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { stopImpersonationAction } from "@/lib/auth/impersonationActions";
 import { getAuthContext } from "@/lib/auth/userRole";
@@ -42,6 +43,11 @@ export default async function AppLayout({
 }) {
   const supabase = await createClient();
   const authContext = await getAuthContext(supabase);
+
+  if (!authContext.realUser) {
+    redirect("/login");
+  }
+
   const switchableOrganizations = await getSwitchableOrganizations(authContext);
   const unreadNotifications = await getCurrentUserUnreadNotificationCount(supabase);
   const showImpersonationBanner =
