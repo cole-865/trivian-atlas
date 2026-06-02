@@ -116,7 +116,7 @@ async function getAuthenticatedUser(supabase: SupabaseLike): Promise<User | null
   } = await supabase.auth.getUser();
 
   if (authError) {
-    throw new Error(`Failed to load current user: ${authError.message}`);
+    return null;
   }
 
   return user;

@@ -197,7 +197,7 @@ export async function listCurrentUserNotifications(
   } = await client.auth.getUser();
 
   if (authError) {
-    throw new Error(`Failed to load current user: ${authError.message}`);
+    return [];
   }
 
   if (!user?.id) {

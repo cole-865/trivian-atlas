@@ -103,7 +103,7 @@ async function getAuthenticatedUser(
   } = await supabase.auth.getUser();
 
   if (error) {
-    throw new Error(`Failed to load current user: ${error.message}`);
+    return null;
   }
 
   return user;
