@@ -37,6 +37,7 @@ function AppSidebarNav({
             width={1249}
             height={324}
             priority
+            unoptimized
             className="h-auto w-[180px] max-w-full"
           />
         </Link>

@@ -353,7 +353,6 @@ export default async function HomePage() {
           title="Vehicles in inventory"
           value={metrics.vehicles_inventory}
           subtitle="Current inventory count"
-          href="/inventory"
         />
       </div>
 
@@ -389,11 +388,6 @@ export default async function HomePage() {
         <SectionCard
           eyebrow="Pipeline"
           title="Credit reports processing"
-          right={
-            <Button asChild variant="secondary" size="sm">
-              <Link href="/credit-reports?filter=processing">View</Link>
-            </Button>
-          }
         >
           <div className="space-y-4">
             <div className="flex items-end justify-between gap-4">
