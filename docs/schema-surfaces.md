@@ -15,7 +15,7 @@ dealership workflows.
 | Deal documents | `deal_documents` | Current document metadata table used by deal document routes, funding, submit, bureau upload, and worker cleanup flows. |
 | Vehicle structuring | `deal_structure`, `deal_structure_inputs`, `deal_vehicle_selection` | Current deal-scoped vehicle selection and structure persistence. `deal_structure` and `deal_vehicle_selection` are keyed by `deal_id`, not a separate `id`. |
 | Deal workflow | `deals`, `deal_people`, `income_profiles`, `underwriting_inputs`, `underwriting_results` | Current workflow path. Queries should be scoped by `organization_id` directly or through org-aware deal helpers. |
-| Inventory and settings | `trivian_inventory`, `vehicle_term_policy`, `underwriting_tier_policy`, `trivian_config` | Current dealership-scoped inventory/config surfaces. `trivian_config` still has a documented app-level fallback for global rows while migration cleanup remains incomplete. |
+| Inventory and settings | `trivian_inventory`, `vehicle_term_policy`, `underwriting_tier_policy`, `trivian_config` | Current dealership-scoped inventory/config surfaces. `trivian_config` is expected to be organization-scoped; global fallback rows were removed from app code in Phase 3A. |
 | Bureau ingestion | `credit_report_jobs`, `credit_reports`, `bureau_summary`, `bureau_tradelines`, `bureau_public_records`, `bureau_messages` | Current credit-worker write path. Worker writes must preserve `organization_id`. |
 
 ## Deprecated Or Transitional Surfaces

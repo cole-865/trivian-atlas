@@ -18,6 +18,6 @@
 | Database/RLS validation | high | Confirm every org-scoped table in `docs/supabase/multi-tenant-next-targets.md` has matching production RLS and indexes, not just application-layer filters. |
 | Credit worker integration coverage | medium | Pure worker rules are now covered, but the async write path still lacks mocked integration tests around Supabase mutations and storage operations. |
 | Regression coverage | high | Add tests for invite boundaries, impersonation boundaries, and cross-org denial cases. |
-| Transitional global config fallback | medium | `src/lib/los/organizationScope.ts` still falls back to global `trivian_config` rows where `organization_id is null`; keep only if that migration is intentionally incomplete. |
+| Identity/settings direct API hardening | high | Phase 3B narrows direct anon/authenticated grants and policies on `app_settings`, `trivian_config`, `organizations`, `profiles`, and `user_profiles`; validate in production before applying. |
 | Legacy table policy hardening | high | `audit_log_all_authenticated`, `documents_all_authenticated`, `vehicle_options_all_authenticated`, `vehicle_selection_all_authenticated`, and `*_insert_anon_dev` policies need live policy inventory and row-usage validation before a production removal migration. |
 | Deprecated schema removal | medium | Use `docs/schema-surfaces.md` as the Phase 2 removal checklist after production row counts, dependency checks, and rollback steps are documented. |

@@ -91,6 +91,6 @@ Before finishing implementation work, run:
 ## Current Gaps
 
 - The repo now has lightweight boundary tests, but not full integration coverage for server actions and route handlers.
-- `trivian_config` still contains a transitional fallback for global rows with `organization_id is null`.
+- `trivian_config` is expected to be organization-scoped; the transitional global fallback was removed from app code in Phase 3A.
 - Legacy `documents`, `vehicle_options`, `vehicle_selection`, `bhph_evaluate_bureau`, and `trivian_*` SQL helper surfaces remain in migration history and generated types. They are marked deprecated in `docs/schema-surfaces.md`; direct public/anon/authenticated access to confirmed-unused legacy SQL helpers is hardened by the Phase 1 migration, but the objects are intentionally not dropped.
 - The credit worker should get its own dedicated audit and test pass if bureau processing is on the critical path.

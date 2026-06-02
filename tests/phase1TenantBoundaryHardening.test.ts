@@ -15,6 +15,9 @@ const phase2MigrationSql = readRepoFile(phase2MigrationPath);
 const phase3aMigrationPath =
   "supabase/migrations/20260601034246_phase3a_remove_global_settings_fallbacks.sql";
 const phase3aMigrationSql = readRepoFile(phase3aMigrationPath);
+const phase3bMigrationPath =
+  "supabase/migrations/20260602023832_phase3b_tighten_identity_settings_rls.sql";
+const phase3bMigrationSql = readRepoFile(phase3bMigrationPath);
 const baselineSql = readRepoFile(
   "supabase/migrations/20260409000000_baseline_existing_schema.sql"
 );
@@ -404,6 +407,92 @@ test("Phase 3A removes app/global fallback code paths", () => {
     organizationScopeSource,
     /global\/default rows|organization_id is null/i
   );
+});
+
+test("Phase 3B revokes anon and browser-write access on identity settings surfaces", () => {
+  const tables = [
+    "app_settings",
+    "trivian_config",
+    "organizations",
+    "profiles",
+    "user_profiles",
+  ];
+
+  for (const table of tables) {
+    assert.match(
+      phase3bMigrationSql,
+      new RegExp(`revoke all on table public\\.${table} from anon`, "i"),
+      `${phase3bMigrationPath} should revoke anon access on ${table}`
+    );
+    assert.match(
+      phase3bMigrationSql,
+      new RegExp(
+        `revoke insert, update, delete, truncate, references, trigger\\s+on table public\\.${table}\\s+from authenticated`,
+        "i"
+      ),
+      `${phase3bMigrationPath} should remove authenticated writes on ${table}`
+    );
+    assert.match(
+      phase3bMigrationSql,
+      new RegExp(`grant select on table public\\.${table} to authenticated`, "i"),
+      `${phase3bMigrationPath} should preserve authenticated reads on ${table}`
+    );
+  }
+});
+
+test("Phase 3B narrows legacy profile and user profile policies", () => {
+  for (const policyName of [
+    "Admins can read all profiles",
+    "Users can read own profile",
+    "admin and dev can insert user profiles",
+    "admin and dev can read all user profiles",
+    "admin and dev can update user profiles",
+    "users can read own user profile",
+  ]) {
+    assert.match(
+      phase3bMigrationSql,
+      new RegExp(`drop policy if exists "${escapeRegExp(policyName)}"`, "i"),
+      `${phase3bMigrationPath} should drop ${policyName}`
+    );
+  }
+
+  assert.match(
+    phase3bMigrationSql,
+    /create policy "profiles_select_own"[\s\S]+?for select[\s\S]+?to authenticated[\s\S]+?user_id = auth\.uid\(\)/i
+  );
+  assert.match(
+    phase3bMigrationSql,
+    /create policy "user_profiles_select_own"[\s\S]+?for select[\s\S]+?to authenticated[\s\S]+?id = auth\.uid\(\)/i
+  );
+  assert.match(
+    phase3bMigrationSql,
+    /create policy "user_profiles_select_platform_dev"[\s\S]+?for select[\s\S]+?to authenticated[\s\S]+?\(select public\.current_app_role\(\)\) = 'dev'/i
+  );
+  assert.doesNotMatch(phase3bMigrationSql, /current_app_role\(\) = any \(array\['admin'.*'dev'/i);
+  assert.doesNotMatch(phase3bMigrationSql, /\bto\s+anon\b/i);
+});
+
+test("Phase 3B removes direct trivian_config writes without data or table changes", () => {
+  for (const policyName of [
+    "trivian_config_insert_active_members",
+    "trivian_config_update_active_members",
+    "trivian_config_delete_active_members",
+  ]) {
+    assert.match(
+      phase3bMigrationSql,
+      new RegExp(`drop policy if exists "${policyName}"`, "i"),
+      `${phase3bMigrationPath} should drop ${policyName}`
+    );
+  }
+
+  assert.doesNotMatch(phase3bMigrationSql, /\busing\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase3bMigrationSql, /\bwith\s+check\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase3bMigrationSql, /\binsert\s+into\b/i);
+  assert.doesNotMatch(phase3bMigrationSql, /\bupdate\s+public\./i);
+  assert.doesNotMatch(phase3bMigrationSql, /\bdelete\s+from\b/i);
+  assert.doesNotMatch(phase3bMigrationSql, /\bdrop\s+table\b/i);
+  assert.doesNotMatch(phase3bMigrationSql, /\bdrop\s+function\b/i);
+  assert.doesNotMatch(phase3bMigrationSql, /\balter\s+table\b/i);
 });
 
 function escapeRegExp(value: string): string {
