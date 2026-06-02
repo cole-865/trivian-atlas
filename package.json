@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "node .next/standalone/server.js",
+    "start": "HOSTNAME=0.0.0.0 node .next/standalone/server.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.tests.json && node --test --test-concurrency=1 --experimental-test-isolation=none .test-dist/tests/*.test.js",
