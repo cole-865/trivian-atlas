@@ -1,6 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+const PROTECTED_PREFIXES = [
+  "/approvals",
+  "/deals",
+  "/dev-tools",
+  "/home",
+  "/messages",
+  "/portfolio-radar",
+  "/settings",
+];
+
+function isProtectedPath(pathname: string) {
+  return PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
 export async function proxy(req: NextRequest) {
   const res = NextResponse.next({
     request: { headers: req.headers },
@@ -24,7 +40,16 @@ export async function proxy(req: NextRequest) {
   );
 
   // Refresh the session cookie if needed before the request reaches the app.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user && isProtectedPath(req.nextUrl.pathname)) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = "/login";
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
 
   return res;
 }
