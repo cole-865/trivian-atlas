@@ -24,6 +24,9 @@ const phase3cAMigrationSql = readRepoFile(phase3cAMigrationPath);
 const phase3cBMigrationPath =
   "supabase/migrations/20260603011538_phase3c_b_stamp_seeded_deal_children_org.sql";
 const phase3cBMigrationSql = readRepoFile(phase3cBMigrationPath);
+const phase3dAMigrationPath =
+  "supabase/migrations/20260603021544_phase3d_a_harden_document_credit_metadata_grants.sql";
+const phase3dAMigrationSql = readRepoFile(phase3dAMigrationPath);
 const baselineSql = readRepoFile(
   "supabase/migrations/20260409000000_baseline_existing_schema.sql"
 );
@@ -683,6 +686,84 @@ test("deal child query helpers always apply organization scope", () => {
     underwritingScopeSource,
     /scopeDealChildQueryToOrganization\(query, organizationId, dealId\)[\s\S]+?\.eq\(\s*"stage",\s*stage\s*\)/i
   );
+});
+
+test("Phase 3D-A revokes anonymous access on active document and credit metadata tables", () => {
+  const activeMetadataTables = [
+    "deal_documents",
+    "credit_report_jobs",
+    "credit_reports",
+    "bureau_summary",
+    "bureau_tradelines",
+    "bureau_public_records",
+    "bureau_messages",
+  ];
+
+  for (const table of activeMetadataTables) {
+    assert.match(
+      phase3dAMigrationSql,
+      new RegExp(`revoke all on table public\\.${table} from anon`, "i"),
+      `${phase3dAMigrationPath} should revoke anon access on ${table}`
+    );
+  }
+});
+
+test("Phase 3D-A removes only authenticated non-DML grants on active metadata tables", () => {
+  const activeMetadataTables = [
+    "deal_documents",
+    "credit_report_jobs",
+    "credit_reports",
+    "bureau_summary",
+    "bureau_tradelines",
+    "bureau_public_records",
+    "bureau_messages",
+  ];
+
+  for (const table of activeMetadataTables) {
+    assert.match(
+      phase3dAMigrationSql,
+      new RegExp(
+        `revoke truncate, references, trigger\\s+on table public\\.${table}\\s+from authenticated`,
+        "i"
+      ),
+      `${phase3dAMigrationPath} should remove authenticated non-DML grants on ${table}`
+    );
+
+    assert.doesNotMatch(
+      phase3dAMigrationSql,
+      new RegExp(
+        `revoke\\s+(select|insert|update|delete)[\\s\\S]+?public\\.${table}[\\s\\S]+?from authenticated`,
+        "i"
+      ),
+      `${phase3dAMigrationPath} should preserve authenticated DML grants on ${table}`
+    );
+  }
+});
+
+test("Phase 3D-A does not touch storage, legacy tables, policies, data, or schema", () => {
+  for (const legacyTable of [
+    "documents",
+    "vehicle_options",
+    "vehicle_selection",
+    "deal_management_notes",
+    "bhph_bureau_rules",
+  ]) {
+    assert.doesNotMatch(
+      phase3dAMigrationSql,
+      new RegExp(`public\\.${legacyTable}\\b`, "i"),
+      `${phase3dAMigrationPath} should not touch legacy table ${legacyTable}`
+    );
+  }
+
+  assert.doesNotMatch(phase3dAMigrationSql, /\bstorage\./i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\bdrop\s+policy\b/i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\bcreate\s+policy\b/i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\balter\s+table\b/i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\bdrop\s+table\b/i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\bdrop\s+function\b/i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\binsert\s+into\b/i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\bupdate\s+public\./i);
+  assert.doesNotMatch(phase3dAMigrationSql, /\bdelete\s+from\b/i);
 });
 
 function escapeRegExp(value: string): string {
