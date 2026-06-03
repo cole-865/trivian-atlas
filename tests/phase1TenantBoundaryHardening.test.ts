@@ -18,6 +18,12 @@ const phase3aMigrationSql = readRepoFile(phase3aMigrationPath);
 const phase3bMigrationPath =
   "supabase/migrations/20260602023832_phase3b_tighten_identity_settings_rls.sql";
 const phase3bMigrationSql = readRepoFile(phase3bMigrationPath);
+const phase3cAMigrationPath =
+  "supabase/migrations/20260602033237_phase3c_a_remove_broad_anon_access.sql";
+const phase3cAMigrationSql = readRepoFile(phase3cAMigrationPath);
+const phase3cBMigrationPath =
+  "supabase/migrations/20260603011538_phase3c_b_stamp_seeded_deal_children_org.sql";
+const phase3cBMigrationSql = readRepoFile(phase3cBMigrationPath);
 const baselineSql = readRepoFile(
   "supabase/migrations/20260409000000_baseline_existing_schema.sql"
 );
@@ -493,6 +499,170 @@ test("Phase 3B removes direct trivian_config writes without data or table change
   assert.doesNotMatch(phase3bMigrationSql, /\bdrop\s+table\b/i);
   assert.doesNotMatch(phase3bMigrationSql, /\bdrop\s+function\b/i);
   assert.doesNotMatch(phase3bMigrationSql, /\balter\s+table\b/i);
+});
+
+test("Phase 3C-A removes broad true and anon-dev policies only", () => {
+  for (const [tableName, policyName] of [
+    ["audit_log", "audit_log_all_authenticated"],
+    ["deals", "deals_insert_anon_dev"],
+    ["deal_people", "deal_people_insert_anon_dev"],
+    ["income_profiles", "income_profiles_insert_anon_dev"],
+  ]) {
+    assert.match(
+      phase3cAMigrationSql,
+      new RegExp(
+        `drop policy if exists "${policyName}" on public\\.${tableName}`,
+        "i"
+      ),
+      `${phase3cAMigrationPath} should drop ${policyName}`
+    );
+  }
+
+  for (const policyName of [
+    "Admins can update all documents",
+    "Admins can view all documents",
+    "Users can insert own documents",
+    "Users can view own documents",
+  ]) {
+    assert.match(
+      phase3cAMigrationSql,
+      new RegExp(
+        `drop policy if exists "${escapeRegExp(policyName)}" on public\\.documents`,
+        "i"
+      ),
+      `${phase3cAMigrationPath} should drop legacy documents policy ${policyName}`
+    );
+  }
+
+  assert.doesNotMatch(phase3cAMigrationSql, /\busing\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase3cAMigrationSql, /\bwith\s+check\s*\(\s*true\s*\)/i);
+  assert.doesNotMatch(phase3cAMigrationSql, /\binsert\s+into\b/i);
+  assert.doesNotMatch(phase3cAMigrationSql, /\bupdate\s+public\./i);
+  assert.doesNotMatch(phase3cAMigrationSql, /\bdelete\s+from\b/i);
+  assert.doesNotMatch(phase3cAMigrationSql, /\bdrop\s+table\b/i);
+  assert.doesNotMatch(phase3cAMigrationSql, /\bdrop\s+function\b/i);
+  assert.doesNotMatch(phase3cAMigrationSql, /\balter\s+table\b/i);
+});
+
+test("Phase 3C-A revokes anonymous access on approved active and legacy surfaces", () => {
+  const tables = [
+    "audit_log",
+    "deals",
+    "deal_people",
+    "income_profiles",
+    "documents",
+    "vehicle_options",
+    "vehicle_selection",
+    "deal_management_notes",
+    "bhph_bureau_rules",
+  ];
+
+  for (const table of tables) {
+    assert.match(
+      phase3cAMigrationSql,
+      new RegExp(`revoke all on table public\\.${table} from anon`, "i"),
+      `${phase3cAMigrationPath} should revoke anon access on ${table}`
+    );
+  }
+
+  for (const table of [
+    "audit_log",
+    "documents",
+    "vehicle_options",
+    "vehicle_selection",
+    "deal_management_notes",
+  ]) {
+    assert.match(
+      phase3cAMigrationSql,
+      new RegExp(
+        `revoke insert, update, delete, truncate, references, trigger\\s+on table public\\.${table}\\s+from authenticated`,
+        "i"
+      ),
+      `${phase3cAMigrationPath} should remove authenticated writes on legacy table ${table}`
+    );
+    assert.match(
+      phase3cAMigrationSql,
+      new RegExp(`grant select on table public\\.${table} to authenticated`, "i"),
+      `${phase3cAMigrationPath} should preserve authenticated reads on ${table}`
+    );
+  }
+});
+
+test("Phase 3C-A preserves authenticated deal workflow writes", () => {
+  for (const table of ["deals", "deal_people", "income_profiles"]) {
+    assert.doesNotMatch(
+      phase3cAMigrationSql,
+      new RegExp(
+        `revoke insert, update, delete, truncate, references, trigger\\s+on table public\\.${table}\\s+from authenticated`,
+        "i"
+      ),
+      `${phase3cAMigrationPath} should leave authenticated grants on active ${table} workflow table`
+    );
+  }
+
+  const apiRouteSource = readRepoFile("src/app/api/deals/route.ts");
+  const newDealPageSource = readRepoFile("src/app/(app)/deals/new/page.tsx");
+
+  for (const source of [apiRouteSource, newDealPageSource]) {
+    assert.match(source, /p_organization_id:\s*organizationId/);
+    assert.doesNotMatch(
+      source,
+      /rpc\("create_deal_with_seed_data",\s*\{\s*p_customer_name:\s*customer_name\s*\}\s*\)/i
+    );
+  }
+});
+
+test("Phase 3C-A removes direct anon and no-org deal creation RPC access", () => {
+  assert.match(
+    phase3cAMigrationSql,
+    /revoke execute on function public\.create_deal_with_seed_data\(text\)\s+from public, anon, authenticated/i
+  );
+  assert.match(
+    phase3cAMigrationSql,
+    /revoke execute on function public\.create_deal_with_seed_data\(text, uuid\)\s+from public, anon/i
+  );
+  assert.match(
+    phase3cAMigrationSql,
+    /grant execute on function public\.create_deal_with_seed_data\(text, uuid\)\s+to authenticated/i
+  );
+  assert.doesNotMatch(phase3cAMigrationSql, /\bgrant\s+execute\b[\s\S]+?\bto\s+anon\b/i);
+});
+
+test("Phase 3C-B stamps seeded deal children with the parent organization", () => {
+  assert.match(
+    phase3cBMigrationSql,
+    /create or replace function public\.create_deal_with_seed_data\(\s*p_customer_name text,\s*p_organization_id uuid\s*\)/i
+  );
+  assert.match(phase3cBMigrationSql, /\bsecurity definer\b/i);
+  assert.match(
+    phase3cBMigrationSql,
+    /if not public\.is_active_organization_member\(p_organization_id\) then/i
+  );
+  assert.match(
+    phase3cBMigrationSql,
+    /update public\.deal_people[\s\S]+?set organization_id = p_organization_id[\s\S]+?where deal_id = v_created\.deal_id[\s\S]+?and organization_id is null/i
+  );
+  assert.match(
+    phase3cBMigrationSql,
+    /update public\.income_profiles income[\s\S]+?set organization_id = p_organization_id[\s\S]+?from public\.deal_people person[\s\S]+?person\.id = income\.deal_person_id[\s\S]+?person\.deal_id = v_created\.deal_id[\s\S]+?income\.organization_id is null/i
+  );
+});
+
+test("Phase 3C-B backfills only child rows with an org-scoped parent", () => {
+  assert.match(
+    phase3cBMigrationSql,
+    /update public\.deal_people person[\s\S]+?set organization_id = deal\.organization_id[\s\S]+?from public\.deals deal[\s\S]+?deal\.id = person\.deal_id[\s\S]+?deal\.organization_id is not null[\s\S]+?person\.organization_id is null/i
+  );
+  assert.match(
+    phase3cBMigrationSql,
+    /update public\.income_profiles income[\s\S]+?set organization_id = person\.organization_id[\s\S]+?from public\.deal_people person[\s\S]+?person\.id = income\.deal_person_id[\s\S]+?person\.organization_id is not null[\s\S]+?income\.organization_id is null/i
+  );
+  assert.doesNotMatch(phase3cBMigrationSql, /\bdrop\s+policy\b/i);
+  assert.doesNotMatch(phase3cBMigrationSql, /\bcreate\s+policy\b/i);
+  assert.doesNotMatch(phase3cBMigrationSql, /\bgrant\b/i);
+  assert.doesNotMatch(phase3cBMigrationSql, /\bdrop\s+table\b/i);
+  assert.doesNotMatch(phase3cBMigrationSql, /\bdrop\s+function\b/i);
+  assert.doesNotMatch(phase3cBMigrationSql, /\bset\s+not\s+null\b/i);
 });
 
 function escapeRegExp(value: string): string {
