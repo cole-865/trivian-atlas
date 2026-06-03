@@ -665,6 +665,26 @@ test("Phase 3C-B backfills only child rows with an org-scoped parent", () => {
   assert.doesNotMatch(phase3cBMigrationSql, /\bset\s+not\s+null\b/i);
 });
 
+test("deal child query helpers always apply organization scope", () => {
+  const childScopeSource = readRepoFile("src/lib/deals/childOrganizationScope.ts");
+  const underwritingScopeSource = readRepoFile(
+    "src/lib/deals/underwritingOrganizationScope.ts"
+  );
+
+  assert.match(
+    childScopeSource,
+    /return \(query as EqCapable\)\.eq\("organization_id", organizationId\) as T;/
+  );
+  assert.match(
+    underwritingScopeSource,
+    /scopeQueryToOrganization\(query, organizationId\)[\s\S]+?\.eq\(\s*"deal_id",\s*dealId\s*\)/i
+  );
+  assert.match(
+    underwritingScopeSource,
+    /scopeDealChildQueryToOrganization\(query, organizationId, dealId\)[\s\S]+?\.eq\(\s*"stage",\s*stage\s*\)/i
+  );
+});
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

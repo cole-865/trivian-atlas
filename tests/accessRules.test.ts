@@ -182,6 +182,28 @@ test("invite acceptance requires the invited email and preserves status-based bl
   );
 });
 
+test("invite acceptance treats persisted expired status as expired", () => {
+  assert.equal(
+    getInviteAcceptanceBlockReason({
+      status: "expired",
+      isExpired: false,
+      inviteEmail: "invitee@example.com",
+      authenticatedEmail: "invitee@example.com",
+    }),
+    "This invitation has expired."
+  );
+
+  assert.equal(
+    getInviteAcceptanceBlockReason({
+      status: "expired",
+      isExpired: false,
+      inviteEmail: "invitee@example.com",
+      authenticatedEmail: "other@example.com",
+    }),
+    "This invitation has expired."
+  );
+});
+
 test("impersonation is limited to platform dev acting within the current organization", () => {
   assert.equal(
     getImpersonationDecision({
@@ -282,6 +304,32 @@ test("impersonation rejects missing context before any cross-org action", () => 
   );
 });
 
+test("impersonation does not use app role alone to bypass org membership", () => {
+  assert.equal(
+    getImpersonationDecision({
+      realRole: "dev",
+      realUserId: "real-user",
+      currentOrganizationId: "org-1",
+      targetUserId: "target-dev-user",
+      targetUserActive: true,
+      targetMembershipOrganizationId: null,
+    }),
+    "reject"
+  );
+
+  assert.equal(
+    getImpersonationDecision({
+      realRole: "dev",
+      realUserId: "real-user",
+      currentOrganizationId: "org-1",
+      targetUserId: "target-dev-user",
+      targetUserActive: true,
+      targetMembershipOrganizationId: "org-2",
+    }),
+    "reject"
+  );
+});
+
 test("platform dev role helper stays narrow", () => {
   assert.equal(isPlatformDevRole("dev"), true);
   assert.equal(isPlatformDevRole("admin"), false);
@@ -327,6 +375,24 @@ test("organization switching tolerates whitespace but still rejects invisible or
     getOrganizationSwitchDecision({
       requestedOrganizationId: " org-3 ",
       switchableOrganizationIds: ["org-1", "org-2"],
+    }),
+    "reject"
+  );
+});
+
+test("organization switching never accepts blank or lookalike organization ids", () => {
+  assert.equal(
+    getOrganizationSwitchDecision({
+      requestedOrganizationId: "   ",
+      switchableOrganizationIds: ["org-1"],
+    }),
+    "clear"
+  );
+
+  assert.equal(
+    getOrganizationSwitchDecision({
+      requestedOrganizationId: "org-1 ",
+      switchableOrganizationIds: ["org-1 "],
     }),
     "reject"
   );

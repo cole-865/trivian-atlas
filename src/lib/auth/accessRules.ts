@@ -60,7 +60,7 @@ export function getInviteAcceptanceBlockReason(args: {
     return "This invitation has already been accepted.";
   }
 
-  if (args.isExpired) {
+  if (args.status === "expired" || args.isExpired) {
     return "This invitation has expired.";
   }
 
