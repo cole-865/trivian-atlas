@@ -1,9 +1,10 @@
 # Atlas Schema Surfaces
 
 This document marks schema surfaces that are intentionally transitional after the
-Phase 1 architecture hardening pass. It is not a removal plan by itself. Do not
-drop or merge these tables/functions until a Phase 2 migration has confirmed
-production usage, row counts, and rollback requirements.
+tenant-boundary hardening passes. It is not a removal plan by itself. Do not
+drop or merge these tables/functions until a separate retirement migration has
+confirmed production usage, row counts, dependent objects, and rollback
+requirements.
 
 ## Current Application-Owned Surfaces
 
@@ -23,13 +24,13 @@ dealership workflows.
 These surfaces exist in migrations/generated types but are not the current app
 ownership boundary.
 
-| Surface | Status | Why it remains | Phase 1 action |
+| Surface | Status | Why it remains | Current action |
 | --- | --- | --- | --- |
-| `documents` | Legacy table | Superseded by `deal_documents`; kept for migration history and production verification. | Not dropped or policy-hardened in Phase 1 because no same-table org-scoped replacement policy is tracked. TODO: live-validate row usage/RLS before policy removal. |
-| `vehicle_options` | Legacy table | Superseded by `deal_structure` and generated vehicle structure options in TypeScript. | Not dropped or policy-hardened in Phase 1 because no same-table org-scoped replacement policy is tracked. TODO: live-validate row usage/RLS before policy removal. |
-| `vehicle_selection` | Legacy table | Superseded by `deal_vehicle_selection`. | Not dropped or policy-hardened in Phase 1 because no same-table org-scoped replacement policy is tracked. TODO: live-validate row usage/RLS before policy removal. |
+| `documents` | Legacy table | Superseded by `deal_documents`; kept for migration history and production verification. | Phase 2 added parent-deal member policies; Phase 3C-A removed legacy broad document policies and anonymous grants. Do not drop until a separate retirement pass validates row usage and rollback. |
+| `vehicle_options` | Legacy table | Superseded by `deal_structure` and generated vehicle structure options in TypeScript. | Phase 2 added parent-deal member policies; Phase 3C-A removed anonymous grants and direct authenticated writes. Do not drop until a separate retirement pass validates row usage and rollback. |
+| `vehicle_selection` | Legacy table | Superseded by `deal_vehicle_selection`. | Phase 2 added parent-deal member policies; Phase 3C-A removed anonymous grants and direct authenticated writes. Do not drop until a separate retirement pass validates row usage and rollback. |
 | `atlas_dashboard_metrics()` | Legacy SQL dashboard RPC | No non-generated app usage found during the Phase 1 audit. | Revoked direct `public`/`anon`/`authenticated` execution. |
-| `bhph_evaluate_bureau(uuid)` and `bhph_bureau_rules` | Legacy database underwriting surface | Current bureau scoring and decision assistance lives in TypeScript and worker/application flows; keep until production data and old workflows are verified. | Revoked direct `public`/`anon`/`authenticated` execution on the function only. |
+| `bhph_evaluate_bureau(uuid)` and `bhph_bureau_rules` | Legacy database underwriting surface | Current bureau scoring and decision assistance lives in TypeScript and worker/application flows; keep until production data and old workflows are verified. | Revoked direct `public`/`anon`/`authenticated` execution on the function; Phase 2 made table policies platform-dev only; Phase 3C-A removed anonymous table grants. |
 | `trivian_*` SQL quote/payment helpers | Legacy database vehicle-quote surface | Current vehicle structuring/payment-fit behavior lives in TypeScript. The SQL helpers remain for compatibility until removal safety is verified. | Revoked direct `public`/`anon`/`authenticated` execution on confirmed-unused functions. |
 
 ## Guardrails
@@ -42,7 +43,10 @@ ownership boundary.
   are marked deprecated here.
 - Do not drop legacy tables/functions in Phase 1. First verify production row
   counts, dependent views/RPCs, backups, and rollback requirements.
-- Do not drop legacy permissive table policies unless a same-table scoped
-  replacement policy is tracked or live RLS validation confirms removal safety.
+- Do not re-add legacy permissive table policies or anonymous grants after the
+  Phase 3C hardening passes.
+- Do not drop legacy tables/functions just because direct app usage is absent;
+  first validate dependent views/RPCs, production row counts, rollback, and any
+  reporting/export integrations.
 - If generated Supabase types still include deprecated surfaces, prefer a
   documentation comment or test guard over deleting generated entries by hand.
