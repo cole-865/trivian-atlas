@@ -27,6 +27,11 @@ const phase3cBMigrationSql = readRepoFile(phase3cBMigrationPath);
 const phase3dAMigrationPath =
   "supabase/migrations/20260603021544_phase3d_a_harden_document_credit_metadata_grants.sql";
 const phase3dAMigrationSql = readRepoFile(phase3dAMigrationPath);
+const dealSeedAmbiguityFixMigrationPath =
+  "supabase/migrations/20260609210311_fix_create_deal_seed_child_org_ambiguity.sql";
+const dealSeedAmbiguityFixMigrationSql = readRepoFile(
+  dealSeedAmbiguityFixMigrationPath
+);
 const baselineSql = readRepoFile(
   "supabase/migrations/20260409000000_baseline_existing_schema.sql"
 );
@@ -666,6 +671,35 @@ test("Phase 3C-B backfills only child rows with an org-scoped parent", () => {
   assert.doesNotMatch(phase3cBMigrationSql, /\bdrop\s+table\b/i);
   assert.doesNotMatch(phase3cBMigrationSql, /\bdrop\s+function\b/i);
   assert.doesNotMatch(phase3cBMigrationSql, /\bset\s+not\s+null\b/i);
+});
+
+test("deal seed RPC ambiguity fix qualifies child deal_id references", () => {
+  assert.match(
+    dealSeedAmbiguityFixMigrationSql,
+    /create or replace function public\.create_deal_with_seed_data\(\s*p_customer_name text,\s*p_organization_id uuid\s*\)/i
+  );
+  assert.match(
+    dealSeedAmbiguityFixMigrationSql,
+    /update public\.deal_people person[\s\S]+?set organization_id = p_organization_id[\s\S]+?where person\.deal_id = v_created\.deal_id[\s\S]+?and person\.organization_id is null/i
+  );
+  assert.doesNotMatch(
+    dealSeedAmbiguityFixMigrationSql,
+    /where\s+deal_id\s*=\s*v_created\.deal_id/i
+  );
+  assert.match(
+    dealSeedAmbiguityFixMigrationSql,
+    /update public\.deals deal[\s\S]+?where deal\.id = v_created\.deal_id/i
+  );
+  assert.match(
+    dealSeedAmbiguityFixMigrationSql,
+    /person\.deal_id = v_created\.deal_id/i
+  );
+  assert.doesNotMatch(dealSeedAmbiguityFixMigrationSql, /\bdrop\s+policy\b/i);
+  assert.doesNotMatch(dealSeedAmbiguityFixMigrationSql, /\bcreate\s+policy\b/i);
+  assert.doesNotMatch(dealSeedAmbiguityFixMigrationSql, /\bgrant\b/i);
+  assert.doesNotMatch(dealSeedAmbiguityFixMigrationSql, /\brevoke\b/i);
+  assert.doesNotMatch(dealSeedAmbiguityFixMigrationSql, /\balter\s+table\b/i);
+  assert.doesNotMatch(dealSeedAmbiguityFixMigrationSql, /\bdrop\s+table\b/i);
 });
 
 test("deal child query helpers always apply organization scope", () => {
