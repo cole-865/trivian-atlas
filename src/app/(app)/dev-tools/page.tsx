@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { hasAdminAccess } from "@/lib/supabase/admin";
@@ -174,6 +175,7 @@ export default async function DevToolsPage({
       {notice ? <NoticeBanner tone="notice">{notice}</NoticeBanner> : null}
       {errorMessage ? <NoticeBanner tone="error">{errorMessage}</NoticeBanner> : null}
 
+      <Link href="/dev-tools/modules" className="text-sm text-primary underline">Manage account modules</Link>
       <SectionCard
         eyebrow="Platform"
         title="Dev Tools"

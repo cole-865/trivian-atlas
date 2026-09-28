@@ -2479,6 +2479,12 @@ export type Database = {
           },
         ]
       }
+      organization_modules: {
+        Row: { organization_id: string; module_key: string; enabled: boolean; updated_at: string; updated_by: string | null }
+        Insert: { organization_id: string; module_key: string; enabled?: boolean; updated_at?: string; updated_by?: string | null }
+        Update: { organization_id?: string; module_key?: string; enabled?: boolean; updated_at?: string; updated_by?: string | null }
+        Relationships: [{ foreignKeyName: "organization_modules_organization_id_fkey"; columns: ["organization_id"]; isOneToOne: false; referencedRelation: "organizations"; referencedColumns: ["id"] }]
+      }
       organization_role_permissions: {
         Row: {
           allowed: boolean
@@ -3365,6 +3371,14 @@ export type Database = {
       }
     }
     Functions: {
+      atlas_ask865_dashboard: {
+        Args: { p_organization_id: string; p_from: string; p_to: string; p_salesperson?: string; p_lender?: string; p_inventory_status?: string }
+        Returns: Json
+      }
+      atlas_ask865_review: {
+        Args: { p_organization_id: string; p_report_key: string; p_issue_code: string; p_owner: string; p_notes: string; p_status: string; p_actor: string }
+        Returns: boolean
+      }
       atlas_dashboard_metrics: { Args: never; Returns: Json }
       atlas_has_deal_override_authority: {
         Args: { target_organization_id: string }

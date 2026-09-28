@@ -12,6 +12,8 @@ export const DEALERSHIP_PERMISSION_KEYS = [
   "view_audit_logs",
   "manage_integrations",
   "export_reports",
+  "view_ask865",
+  "review_ask865_sources",
 ] as const;
 
 export type DealershipPermissionKey = (typeof DEALERSHIP_PERMISSION_KEYS)[number];
@@ -30,6 +32,7 @@ export const DEFAULT_ROLE_PERMISSION_PRESETS: DealershipPermissionPreset = {
     "fund_deals",
     "approve_overrides",
     "manage_users",
+    "view_ask865",
   ],
   admin: DEALERSHIP_PERMISSION_KEYS,
 };

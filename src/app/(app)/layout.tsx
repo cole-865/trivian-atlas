@@ -1,3 +1,4 @@
+import { canViewAsk865 } from "@/lib/ask865/access";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
@@ -82,6 +83,7 @@ export default async function AppLayout({
     (platformDev ||
       authContext.effectiveOrganizationRole === "admin" ||
       authContext.effectiveOrganizationRole === "management");
+  const showAsk865 = await canViewAsk865(authContext);
   const navItems: NavItem[] = [
     { href: "/home", label: "Home" },
     { href: "/approvals", label: "Approvals" },
@@ -90,6 +92,7 @@ export default async function AppLayout({
     ...(canViewPortfolioRadar
       ? [{ href: "/portfolio-radar", label: "Portfolio Radar" }]
       : []),
+    ...(showAsk865 ? [{ href: "/ask865", label: "Ask 865" }] : []),
     ...(canViewSettings ? [{ href: "/settings", label: "Settings" }] : []),
     ...(authContext.realRole === "dev" ? [{ href: "/dev-tools", label: "GOD MODE" }] : []),
   ];

@@ -21,6 +21,8 @@ function permissions(
     view_audit_logs: false,
     manage_integrations: false,
     export_reports: false,
+    view_ask865: false,
+    review_ask865_sources: false,
     ...overrides,
   };
 }
