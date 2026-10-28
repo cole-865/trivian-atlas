@@ -6,6 +6,8 @@ import { loadCallInbox, loadCallSettings } from "@/lib/ask865/calls/store";
 import { callError, privateHeaders } from "@/lib/ask865/calls/http";
 import { recordingInboxStatus } from "@/lib/ask865/calls/jobs";
 
+import { employeeNames } from "@/lib/ask865/calls/employeeMapping";
+
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +19,8 @@ export async function GET(request: NextRequest) {
     const settings = await loadCallSettings(access.organizationId);
     const inbox = await loadCallInbox(access.organizationId, page, view);
     const recordings = await recordingInboxStatus(access.organizationId, inbox.calls.map(call => call.provider_call_id));
-    return Response.json({ ...inbox, recordings, playbackEnabled: process.env.ASK865_CALLS_PLAYBACK_ENABLED === "true",
+    const names = access.organizationId === process.env.ASK865_CALLS_ORGANIZATION_ID ? employeeNames(process.env.ASK865_CALLS_EMPLOYEE_MAPPING) : {};
+    return Response.json({ ...inbox, employeeNames: names, recordings, playbackEnabled: process.env.ASK865_CALLS_PLAYBACK_ENABLED === "true",
       ingestionEnabled: settings.enabled && process.env.ASK865_CALLS_ENABLED === "true", page }, { headers: privateHeaders });
   } catch (error) { return callError(error); }
 }

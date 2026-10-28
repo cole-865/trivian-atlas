@@ -3,7 +3,7 @@ import type { RecordingDiscovery } from "./ringcentral";
 import { MediaError } from "./media";
 
 const schema = z.array(z.object({ extensionId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), employeeId: z.string().regex(/^[A-Za-z0-9_.:-]{1,160}$/),
-  validFrom: z.iso.datetime({ offset: true }), validThrough: z.iso.datetime({ offset: true }),
+  employeeName: z.string().min(1).max(120).optional(), validFrom: z.iso.datetime({ offset: true }), validThrough: z.iso.datetime({ offset: true }),
 }).strict()).max(1000);
 export function employeeMapper(configuration: string | undefined) {
   let mappings: z.infer<typeof schema>;
@@ -17,4 +17,9 @@ export function employeeMapper(configuration: string | undefined) {
     const matched = mappings.filter(m => m.extensionId === call.extensionIds[0] && Date.parse(m.validFrom) <= start && Date.parse(m.validThrough) >= end);
     return matched.length === 1 ? matched[0].employeeId : null;
   };
+}
+
+export function employeeNames(configuration: string | undefined) {
+  const entries = schema.parse(JSON.parse(configuration ?? "[]"));
+  return Object.fromEntries(entries.filter(m => m.employeeName).map(m => [m.employeeId, m.employeeName!]));
 }

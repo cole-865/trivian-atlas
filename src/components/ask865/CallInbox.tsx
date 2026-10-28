@@ -6,7 +6,7 @@ import type { AuditEntry } from "@/lib/ask865/calls/store";
 import { Button } from "@/components/ui/button";
 import { NoticeBanner, PageHeader, SectionCard } from "@/components/atlas/page";
 
-type InboxData = { calls: CallRecord[]; total: number; trends: ReturnType<typeof coachingTrends>; trendsLimited: boolean; ingestionEnabled: boolean;
+type InboxData = { employeeNames: Record<string, string>; calls: CallRecord[]; total: number; trends: ReturnType<typeof coachingTrends>; trendsLimited: boolean; ingestionEnabled: boolean;
   playbackEnabled: boolean; recordings: { queued: number; running: number; failed: number; availableProviderCallIds: string[] } };
 const label = (value: string) => value.replaceAll("_", " ");
 const field = "w-full rounded-md border border-border bg-background px-3 py-2 text-sm";
@@ -96,7 +96,7 @@ export function CallInbox({ organizationId, organizationName }: { organizationId
       {data && <div className="grid gap-3">
         {!data.calls.length && <p>{view === "inbox" ? "No calls currently need review." : "No retained calls have been imported."}</p>}
         {data.calls.map(call => <details key={`${call.id}:${call.revision}`} className="rounded-lg border p-4">
-          <summary className="cursor-pointer space-y-2"><div className="flex flex-wrap justify-between gap-2"><strong>{call.employee_id || "Unmapped employee"} · {label(call.category)}</strong><strong>{call.score === null ? "Unscored" : `${call.score}/100`}</strong></div><div className="text-sm text-muted-foreground">{new Date(call.started_at).toLocaleString()} · {call.direction} · {label(call.status)}</div><div className="text-sm">{call.evaluation.reasons.map(label).join(" · ") || "No automatic escalation"}{call.revision > 1 ? " · Manager reviewed" : ""}</div></summary>
+          <summary className="cursor-pointer space-y-2"><div className="flex flex-wrap justify-between gap-2"><strong>{(call.employee_id && data.employeeNames?.[call.employee_id]) || call.employee_id || "Unmapped employee"} · {label(call.category)}</strong><strong>{call.score === null ? "Unscored" : `${call.score}/100`}</strong></div><div className="text-sm text-muted-foreground">{new Date(call.started_at).toLocaleString()} · {call.direction} · {label(call.status)}</div><div className="text-sm">{call.evaluation.reasons.map(label).join(" · ") || "No automatic escalation"}{call.revision > 1 ? " · Manager reviewed" : ""}</div></summary>
           <div className="pt-4"><Review call={call} organizationId={organizationId} saved={() => refresh(true)} recordingAvailable={data.playbackEnabled && data.recordings.availableProviderCallIds.includes(call.provider_call_id)} /></div>
         </details>)}
         <div className="flex items-center gap-3"><Button variant="outline" disabled={!page || loading} onClick={() => { setLoading(true); setData(null); setPage(p => p - 1); }}>Previous</Button><span className="text-sm">Page {page + 1} · {data.total} calls</span><Button variant="outline" disabled={(page + 1) * 50 >= data.total || loading} onClick={() => { setLoading(true); setData(null); setPage(p => p + 1); }}>Next</Button></div>
@@ -104,7 +104,7 @@ export function CallInbox({ organizationId, organizationName }: { organizationId
     </SectionCard>
     <SectionCard title="Coaching · past 7 days" description={data?.trendsLimited ? "Limited to the latest 1,000 calls. These are partial trends." : "Scored Sales and Service calls only. Manager corrections are reflected in these totals."}>
       {data && !data.trends.length && <p>No eligible scored calls in this period.</p>}
-      <div className="grid gap-3 sm:grid-cols-2">{data?.trends.map(trend => <div key={trend.employee} className="rounded-lg border p-4"><h3 className="font-semibold">{trend.employee}</h3><p>{trend.average}/100 average · {trend.count} graded calls</p><p className="text-sm">{trend.below70} below 70 · {trend.opportunities} below 85 · {trend.critical} flagged</p>{trend.below70 > 1 && <p className="text-sm font-medium text-destructive">Repeated low scores — review coaching needs.</p>}</div>)}</div>
+      <div className="grid gap-3 sm:grid-cols-2">{data?.trends.map(trend => <div key={trend.employee} className="rounded-lg border p-4"><h3 className="font-semibold">{data.employeeNames?.[trend.employee] || trend.employee}</h3><p>{trend.average}/100 average · {trend.count} graded calls</p><p className="text-sm">{trend.below70} below 70 · {trend.opportunities} below 85 · {trend.critical} flagged</p>{trend.below70 > 1 && <p className="text-sm font-medium text-destructive">Repeated low scores — review coaching needs.</p>}</div>)}</div>
     </SectionCard>
   </div>;
 }

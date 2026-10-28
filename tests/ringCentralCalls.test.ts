@@ -119,3 +119,13 @@ test("missing pagination evidence never silently claims a complete window", asyn
   const transport = fake([token, { id: "12345" }, { records: [call], paging: { page: 1 } }]);
   await assert.rejects(new RingCentralClient(config, transport.send, () => now).discover(from, to), isCode("invalid_response"));
 });
+
+test("extension directory handles numberless system entries and strips unrelated contact data",async()=>{
+ const transport=fake([token,{id:"12345"},{records:[{id:1,name:"Company",type:"CompanyExtension",status:"Enabled"},{id:2,extensionNumber:"101",name:"Example Staff",type:"User",status:"Enabled",contact:{email:"staff@example.test",mobilePhone:"private-number"}}],paging:{page:1,totalPages:1}}]);
+ const rows=await new RingCentralClient(config,transport.send,()=>now).listExtensions();
+ assert.equal(rows[0].extensionNumber,"");assert.equal(rows[1].email,"staff@example.test");assert.equal(JSON.stringify(rows).includes("private-number"),false);
+});
+test("directory rejects incomplete or mismatched pagination",async()=>{
+ const transport=fake([token,{id:"12345"},{records:[],paging:{page:2,totalPages:2}}]);
+ await assert.rejects(new RingCentralClient(config,transport.send,()=>now).listExtensions(),isCode("invalid_response"));
+});

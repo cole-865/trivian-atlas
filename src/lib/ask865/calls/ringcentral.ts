@@ -140,6 +140,20 @@ export class RingCentralClient {
     }
     return { calls: [...calls.values()], pagesRead, complete };
   }
+  async listExtensions() {
+    const rows: { id: string; extensionNumber: string; name: string; type: string; status: string; email: string | null }[] = [];
+    const schema = z.object({ records: z.array(z.object({ id: identifier, extensionNumber: z.string().default(""), name: z.string(), type: z.string(), status: z.string(),
+      contact: z.object({ email: z.string().optional() }).optional() })), paging: z.object({ page: z.number().int(), totalPages: z.number().int().nonnegative() }) });
+    for (let page = 1; page <= 10; page++) {
+      await this.verifyAccount();
+      const result = schema.safeParse(await this.get(`/restapi/v1.0/account/${this.config.accountId}/extension?perPage=100&page=${page}`));
+      if (!result.success) throw new RingCentralError("invalid_response");
+      if (result.data.paging.page !== page || result.data.paging.totalPages > 10) throw new RingCentralError("invalid_response");
+      rows.push(...result.data.records.map(r => ({ id: r.id, extensionNumber: r.extensionNumber, name: r.name, type: r.type, status: r.status, email: r.contact?.email ?? null })));
+      if (page >= result.data.paging.totalPages) return rows;
+    }
+    throw new RingCentralError("invalid_response");
+  }
   async checkRecordingMetadata(recordingId: string) {
     if (!identifier.safeParse(recordingId).success) throw new RingCentralError("invalid_response");
     await this.verifyAccount();

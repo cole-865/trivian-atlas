@@ -6,7 +6,7 @@ import { Ask865AccessError } from "../access";
 import { coachingTrends, isExcluded, preflight, requiresManagementReview, type CallInput, type CallRecord, type Evaluation } from "./domain";
 
 export type CallSettings = { organization_id: string; enabled: boolean; confidence_threshold: number;
-  grade_retention_days: number; excluded_retention_days: number; policy_version: string | null; provider_account_id: string | null };
+  grade_retention_days: number; grade_retention_years?: number | null; scheduler_enabled?: boolean; excluded_retention_days: number; policy_version: string | null; provider_account_id: string | null };
 type StoredCall = CallRecord & { recording_id: string | null; consent_reference: string | null; scoring_allowed: boolean; policy_version: string; analyzer_model: string | null };
 export type AuditEntry = { id: string; organization_id: string; call_id: string; actor_id: string; reason: string; before_state: Json; after_state: Json; created_at: string };
 type Table<Row> = { Row: Row; Insert: Partial<Row>; Update: Partial<Row>; Relationships: [] };
@@ -42,6 +42,11 @@ export async function findImportedCall(organizationId: string, providerCallId: s
 export async function saveEvaluation(organizationId: string, input: CallInput, evaluation: Evaluation, settings: CallSettings) {
   const days = isExcluded(evaluation.category) ? settings.excluded_retention_days : settings.grade_retention_days;
   const expiresAt = new Date(Date.parse(input.startedAt) + days * 86400000);
+  if (!isExcluded(evaluation.category) && settings.grade_retention_years) {
+    expiresAt.setTime(Date.parse(input.startedAt)); const month = expiresAt.getUTCMonth();
+    expiresAt.setUTCFullYear(expiresAt.getUTCFullYear() + settings.grade_retention_years);
+    if (expiresAt.getUTCMonth() !== month) expiresAt.setUTCDate(0);
+  }
   if (expiresAt.getTime() <= Date.now()) throw new Ask865AccessError(410, "Call is outside the retention window.");
   const { data, error } = await callDb().from("ask865_call_reviews").upsert({
     organization_id: organizationId, provider_call_id: input.providerCallId,

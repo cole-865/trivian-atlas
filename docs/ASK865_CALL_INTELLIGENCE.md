@@ -3,7 +3,46 @@
 Updated October 28, 2026. Repository: `/Users/colesmacbook/trivian-atlas`;
 base commit `4e5ecdab6c1f98be67bad49570bd2d6b477646fe`.
 
-## Current status
+## October 28 pilot activation update
+
+Production migrations for five-calendar-year records and disabled scheduling are applied.
+The owner confirmed eight enabled RingCentral users; stable provider IDs are mapped to
+staff identities for calls starting at or after 2026-10-28T15:54:55.253Z, with a conservative
+90-day re-verification date. No Atlas login or access grant was created. Earlier calls,
+shared/ambiguous extensions and transfers remain unmapped.
+
+A real inbound 60-second call and outbound 113-second call passed download/transcription
+and created two production review rows. Both failed the privacy gate; neither was graded
+or archived. A separate diagnostic of the inbound sample returned all 24 segments, but
+safeToAnalyze=false and privacyConfidence=0.90. The required 0.95 threshold was preserved.
+No raw audio/transcript was saved locally. Settings.enabled was restored to false after
+the bounded pilot; scheduler_enabled remains false. n8n is unchanged.
+
+New `/api/ask865/calls/tick` and `scripts/run-call-tick.mjs` provide a guarded worker:
+server token plus environment/database switches, org/account/module checks, a 15-minute
+discovery lease, durable cursor, at most six hours of catch-up per scan, one-hour overlap,
+and a separate latest-24-hour reconciliation scan. Partial scans never advance the cursor;
+retries deduplicate. Each tick processes at most one job. No recurring task is installed or
+enabled. Suggested later Coolify command: `node /app/scripts/run-call-tick.mjs`, every five
+minutes, only after controlled acceptance. Call duration, rates and backlog must determine
+whether this throughput is sufficient. Late additional recording legs and arrivals beyond
+the 24-hour reconciliation window still need operational reconciliation before cutover.
+
+Eligible/unclear call records now expire after five calendar years; exclusions retain
+30 days. The database enforces this on insert and on audited corrections, including
+February 29 handling. Existing review rows predate neither pilot nor this migration;
+no historical deletion or expired-record restoration was performed.
+
+Validated: 223 unit tests, 49 isolated database checks, lint and typecheck. The original
+production compiler is required; a temporary Webpack build encountered the existing
+node:crypto client-import issue outside call intelligence. Use the normal build command.
+
+Remaining launch gates: privacy-successful pilot, actual manager/admin/sales permission
+acceptance, manager-labelled grading calibration, safe excluded-audio lifecycle, scheduler
+installation, throughput/alert checks, and n8n gap/duplicate reconciliation. Do not switch
+on quality calibration or recurring processing merely because credentials and tables work.
+
+## Earlier implementation checkpoint
 
 The initial review application and direct recording-processing path are implemented
 and disabled by default. Both new migrations were applied to production on October 28;

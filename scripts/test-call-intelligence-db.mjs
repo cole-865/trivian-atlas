@@ -100,5 +100,31 @@ try {
   assert.equal((await db.query("select * from public.atlas_ask865_claim_recording($1,'123')",[org])).rows.length,0); checks++;
   assert.equal((await db.query("select state,last_error from public.ask865_recording_jobs")).rows[0].state,"failed"); checks++;
   await rejects("insert into public.ask865_recording_jobs(organization_id,provider_account_id,provider_call_id,job_data) values($1,'123','bad',$2)",[org,JSON.stringify({transcript:"must not persist"})],"23514");
+  await db.exec("reset role");
+  await db.exec(await readFile(new URL("../supabase/migrations/20261028155143_ask865_call_pilot_scheduler.sql", import.meta.url),"utf8"));
+  await db.query("update public.ask865_call_settings set grade_retention_years=5,scheduler_enabled=true where organization_id=$1",[org]);
+  await db.exec("set role service_role");
+  const discoveryArgs=[org,"123",new Date(Date.now()-86400000).toISOString()];
+  const lease=(await db.query("select * from public.atlas_ask865_claim_discovery($1,$2,$3)",discoveryArgs)).rows[0];assert.ok(lease.lease_token);checks++;
+  assert.equal((await db.query("select * from public.atlas_ask865_claim_discovery($1,$2,$3)",discoveryArgs)).rows.length,0);checks++;
+  await rejects("select * from public.atlas_ask865_claim_discovery($1,'wrong',now())",[org],"42501");
+  const finish="select public.atlas_ask865_finish_discovery($1,$2,$3,$4,$5) ok";
+  assert.equal((await db.query(finish,[otherOrg,"123",lease.lease_token,lease.cursor_at,null])).rows[0].ok,false);checks++;
+  assert.equal((await db.query(finish,[org,"123",lease.lease_token,new Date().toISOString(),"discovery_incomplete"])).rows[0].ok,true);checks++;
+  assert.equal(String((await db.query("select cursor_at from public.ask865_discovery_state")).rows[0].cursor_at),String(lease.cursor_at));checks++;
+  const lease2=(await db.query("select * from public.atlas_ask865_claim_discovery($1,$2,$3)",discoveryArgs)).rows[0];
+  assert.equal((await db.query(finish,[org,"123",lease.lease_token,new Date().toISOString(),null])).rows[0].ok,false);checks++;
+  assert.equal((await db.query(finish,[org,"123",lease2.lease_token,new Date().toISOString(),null])).rows[0].ok,true);checks++;
+  await db.query(`insert into public.ask865_call_reviews(organization_id,provider_call_id,direction,started_at,category,ai_category,evaluation,scoring_allowed,policy_version,status,expires_at)
+  values($1,'leap-year','inbound','2028-02-29T12:00:00Z','sales','sales','{}',true,'test-policy','needs_review',now())`,[org]);
+  const leap=(await db.query("select id,expires_at from public.ask865_call_reviews where provider_call_id='leap-year'")).rows[0];
+  assert.equal(new Date(leap.expires_at).toISOString(),"2033-02-28T12:00:00.000Z");checks++;
+  await db.query(correct,[org,leap.id,actor,1,"sales",80,"resolved","Verified retention test"]);
+  assert.equal(new Date((await db.query("select expires_at from public.ask865_call_reviews where id=$1",[leap.id])).rows[0].expires_at).toISOString(),"2033-02-28T12:00:00.000Z");checks++;
+  await db.query(correct,[org,leap.id,actor,2,"vendor",null,"resolved","Confirmed excluded retention"]);
+  assert.equal(new Date((await db.query("select expires_at from public.ask865_call_reviews where id=$1",[leap.id])).rows[0].expires_at).toISOString(),"2028-03-30T12:00:00.000Z");checks++;
+  await db.exec("reset role;set role authenticated");
+  await rejects("select * from public.ask865_discovery_state",[],"42501");
+  await rejects("select * from public.atlas_ask865_claim_discovery($1,$2,$3)",discoveryArgs,"42501");
   console.log(`Call database: ${checks} checks passed; isolated synthetic data only.`);
 } finally { await db.close(); }
