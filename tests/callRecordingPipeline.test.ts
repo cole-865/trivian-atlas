@@ -97,6 +97,7 @@ function ports() {
   const p: PipelinePorts = {
     assertLease: async () => { events.push("lease"); }, loadAnalysis: async () => null,
     download: async () => { events.push("download"); return buffer; }, transcribe: async () => raw,
+    screenPurpose: async () => ({ category: "sales", confidence: 0.99, clearPurpose: true, customerBusinessPresent: true, criticalConcern: false }),
     redact: async () => ({ transcript: raw.segments.map((s, i) => ({ ...s, speaker: i ? "customer" : "employee" })), privacyConfidence: 0.99, qualityConfidence: 0.9, speakerRoleConfidence: 0.9 }),
     analyze: async () => assessment,
     saveAnalysis: async (_input, evaluation) => { saved = evaluation; events.push("save_analysis"); return { evaluation, archiveEligible: evaluation.category === "sales" && !evaluation.reasons.includes("low_confidence") }; },
@@ -166,4 +167,39 @@ test("employee mapping uses stable provider ID and effective dates; transfers an
   assert.equal(mapper({...discovery,extensionIds:["stable-id","another"]}),null);
   assert.equal(mapper({...discovery,startedAt:"2025-01-01T00:00:00Z"}),null);
   assert.equal(employeeMapper(JSON.stringify([config,config]))(discovery),null);
+});
+
+test("clear vendor calls are excluded before privacy/quality review, even before calibration", async () => {
+  const {p,events,saved,buffer}=ports();
+  p.screenPurpose=async()=>({category:"vendor",confidence:0.99,clearPurpose:true,customerBusinessPresent:false,criticalConcern:false});
+  p.redact=async()=>{throw new Error("Excluded vendors must not enter privacy review");};
+  p.analyze=async()=>{throw new Error("Excluded vendors must not be graded");};
+  const result=await processRecordingJob(job,{...policy,qualityCalibrationApproved:false},p,now);
+  assert.deepEqual(result,{state:"excluded",archived:false});
+  assert.equal(saved()?.category,"vendor");assert.equal(saved()?.score,null);assert.deepEqual(saved()?.reasons,[]);
+  assert.equal(saved()?.screening?.version,"purpose-1");assert.equal(saved()?.assessment,null);
+  assert.ok(!events.includes("upload"));assert.ok(buffer.bytes.every(b=>b===0));
+});
+test("uncertain vendor, mixed customer business and critical concerns cannot bypass privacy review", async () => {
+  for(const change of [{confidence:0.94},{clearPurpose:false},{customerBusinessPresent:true},{criticalConcern:true}]) {
+    const {p,saved}=ports();p.screenPurpose=async()=>({category:"vendor",confidence:0.99,clearPurpose:true,customerBusinessPresent:false,criticalConcern:false,...change});
+    p.redact=async()=>{throw new MediaError("privacy_review_required");};
+    const result=await processRecordingJob(job,policy,p,now);
+    assert.equal(result.state,"manual_review");assert.equal(saved()?.score,null);assert.deepEqual(saved()?.reasons,["privacy_review_required"]);
+  }
+});
+test("purpose provider failure neither excludes nor persists a false successful review", async()=>{
+ const {p,events,buffer}=ports();p.screenPurpose=async()=>{throw new MediaError("purpose_screening_failed");};
+ await assert.rejects(processRecordingJob(job,policy,p,now),isCode("purpose_screening_failed"));
+ assert.ok(!events.includes("complete"));assert.ok(!events.includes("upload"));assert.ok(buffer.bytes.every(b=>b===0));
+});
+
+test("a purpose-screen critical concern survives a later assessment with no flags",async()=>{
+ const {p,saved}=ports();p.screenPurpose=async()=>({category:"sales",confidence:0.99,clearPurpose:true,customerBusinessPresent:true,criticalConcern:true});
+ await processRecordingJob(job,policy,p,now);assert.ok(saved()?.reasons.includes("critical_flag"));
+});
+test("strong customer-purpose evidence remains visible when privacy blocks grading",async()=>{
+ const {p,saved}=ports();p.screenPurpose=async()=>({category:"service",confidence:0.99,clearPurpose:true,customerBusinessPresent:true,criticalConcern:false});
+ p.redact=async()=>{throw new MediaError("privacy_review_required");};
+ await processRecordingJob(job,policy,p,now);assert.equal(saved()?.category,"service");assert.equal(saved()?.score,null);assert.equal(saved()?.screening?.category,"service");
 });

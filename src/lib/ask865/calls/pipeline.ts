@@ -1,8 +1,9 @@
-import { analyzeCall, callInputSchema, rubricVersion, type CallInput, type Evaluation } from "./domain";
+import { analyzeCall, callInputSchema, isEligible, rubricVersion, type CallInput, type Evaluation } from "./domain";
 import { MediaError, type PrivateAudio } from "./media";
 import type { PrivacyResult } from "./privacy";
 import type { RawTranscript } from "./transcription";
 import type { ArchiveReceipt } from "./drive";
+import { earlyExclusion, purposeVersion, type CallPurpose } from "./purpose";
 
 export type RecordingJob = { id: string; providerCallId: string; recordingIds: string[]; direction: "inbound" | "outbound"; startedAt: string; durationSeconds: number; employeeId: string | null; archiveFileId: string | null };
 export type PipelinePolicy = { consentReference: string; approvedFrom: string; approvedThrough: string; confidenceThreshold: number; qualityCalibrationApproved: boolean };
@@ -12,6 +13,7 @@ export type PipelinePorts = {
   loadAnalysis(): Promise<SavedAnalysis | null>;
   download(recordingId: string): Promise<PrivateAudio>;
   transcribe(audio: PrivateAudio, duration: number): Promise<RawTranscript>;
+  screenPurpose(raw: RawTranscript, duration: number): Promise<CallPurpose>;
   redact(raw: RawTranscript, duration: number): Promise<PrivacyResult>;
   analyze: Parameters<typeof analyzeCall>[1];
   saveAnalysis(input: CallInput, evaluation: Evaluation): Promise<SavedAnalysis>;
@@ -43,17 +45,32 @@ export async function processRecordingJob(job: RecordingJob, policy: PipelinePol
     await ports.complete(null, null); return { state: "manual_review", archived: false };
   }
   let audio: PrivateAudio | undefined;
+  let purpose: CallPurpose | undefined;
   try {
     let saved = await ports.loadAnalysis();
     if (!saved) {
       audio = await ports.download(job.recordingIds[0]);
       const raw = await ports.transcribe(audio, job.durationSeconds);
+      purpose = await ports.screenPurpose(raw, job.durationSeconds);
+      const excluded = earlyExclusion(purpose, policy.confidenceThreshold);
+      if (excluded) {
+        // Keep only routing metadata, never raw transcript/audio or a grade.
+        // This decision precedes privacy/quality review and does not approve either.
+        await ports.assertLease();
+        saved = await ports.saveAnalysis(base, { category: excluded, score: null, state: "excluded", reasons: [], assessment: null, rubricVersion,
+          screening: { version: purposeVersion, category: excluded, confidence: purpose.confidence } });
+        await ports.complete(null, null);
+        return { state: saved.evaluation.state, archived: false };
+      }
       const clean = await ports.redact(raw, job.durationSeconds);
       // Provider success supplies no calibrated confidence. Automatic grades stay
       // held until a labelled pilot validates the textual-quality estimator.
       const input = callInputSchema.parse({ ...base, redacted: true, transcript: clean.transcript,
         transcriptConfidence: policy.qualityCalibrationApproved ? Math.min(clean.qualityConfidence, clean.speakerRoleConfidence) : 0 });
       const evaluation = await analyzeCall(input, ports.analyze, policy.confidenceThreshold);
+      evaluation.screening = { version: purposeVersion, category: purpose.category, confidence: purpose.confidence };
+      if (purpose.criticalConcern && !evaluation.reasons.includes("critical_flag")) evaluation.reasons.push("critical_flag");
+      if (!policy.qualityCalibrationApproved && isEligible(evaluation.category)) evaluation.reasons.push("quality_calibration_required");
       await ports.assertLease(); saved = await ports.saveAnalysis(input, evaluation);
     }
     if (!saved.archiveEligible) { await ports.complete(null, null); return { state: saved.evaluation.state, archived: false }; }
@@ -70,7 +87,9 @@ export async function processRecordingJob(job: RecordingJob, policy: PipelinePol
       await ports.assertLease();
       // Human-review holds are not retried as provider outages. No raw evidence is
       // persisted or sent for grading when privacy/transcript validation fails.
-      await ports.saveAnalysis(base, { category: "unknown", score: null, state: "not_evaluable", reasons: [error.code], assessment: null, rubricVersion });
+      const category = purpose?.clearPurpose && purpose.confidence >= Math.max(0.95, policy.confidenceThreshold) && isEligible(purpose.category) ? purpose.category : "unknown";
+      await ports.saveAnalysis(base, { category, score: null, state: "not_evaluable", reasons: [error.code], assessment: null, rubricVersion,
+        ...(purpose ? { screening: { version: purposeVersion, category: purpose.category, confidence: purpose.confidence } } : {}) });
       await ports.complete(null, null); return { state: "manual_review", archived: false };
     }
     throw error;

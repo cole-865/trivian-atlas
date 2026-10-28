@@ -68,6 +68,7 @@ export type Evaluation = {
   category: Category; score: number | null; reasons: string[];
   state: "graded" | "excluded" | "manual_review" | "not_evaluable";
   assessment: Assessment | null; rubricVersion: string;
+  screening?: { version: string; category: Category; confidence: number };
 };
 export function requiresManagementReview(evaluation: Evaluation) {
   return evaluation.reasons.some(reason => reason !== "unanswered" && reason !== "no_recording");

@@ -12,6 +12,7 @@ import { processRecordingJob, type PipelinePolicy } from "@/lib/ask865/calls/pip
 import { claimRecording, enqueueRecordings, recordingJobStore } from "@/lib/ask865/calls/jobs";
 import { MediaError } from "@/lib/ask865/calls/media";
 import { employeeMapper } from "@/lib/ask865/calls/employeeMapping";
+import { screenCallPurpose } from "@/lib/ask865/calls/purpose";
 
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
     const policy: PipelinePolicy = { consentReference: required("ASK865_CALLS_CONSENT_REFERENCE"), approvedFrom: required("ASK865_CALLS_CONSENT_FROM"), approvedThrough: required("ASK865_CALLS_CONSENT_THROUGH"),
       confidenceThreshold: settings.confidence_threshold, qualityCalibrationApproved: process.env.ASK865_CALLS_QUALITY_CALIBRATED === "true" };
     const apiKey = required("ASK865_CALLS_OPENAI_KEY"), model = required("ASK865_CALLS_MODEL"), transcriptionModel = required("ASK865_CALLS_TRANSCRIPTION_MODEL");
+    const purposeModel = process.env.ASK865_CALLS_PURPOSE_MODEL?.trim() || model;
     const drive = new PrivateDriveArchive({ clientId: required("ASK865_DRIVE_CLIENT_ID"), clientSecret: required("ASK865_DRIVE_CLIENT_SECRET"), refreshToken: required("ASK865_DRIVE_REFRESH_TOKEN"),
       ownerPermissionId: required("ASK865_DRIVE_OWNER_PERMISSION_ID"), folderId: required("ASK865_DRIVE_ARCHIVE_FOLDER_ID") });
     await drive.verifyDestination(); // Missing authorization never consumes a job attempt or downloads audio.
@@ -55,6 +57,7 @@ export async function POST(request: Request) {
       const result = await processRecordingJob(claimed.job, policy, { ...ports,
         download: id => ringcentral.downloadRecording(id),
         transcribe: (audio, duration) => transcribeAudio(audio, duration, { apiKey, model: transcriptionModel }),
+        screenPurpose: (raw, duration) => screenCallPurpose(raw, duration, { apiKey, model: purposeModel }),
         redact: (raw, duration) => redactTranscript(raw, duration, { apiKey, model }),
         analyze: analyzeWithOpenAI,
         allocateArchiveId: () => drive.allocateFileId(),

@@ -7,6 +7,9 @@ export function playbackSource(call: PlaybackCall, job: PlaybackJob | null, now 
   if (!job || !call.consent_reference?.trim() || !(Date.parse(call.expires_at) > now) ||
       call.recording_id !== job.recordingId || isExcluded(call.category)) return null;
   if (isEligible(call.category) && job.receipt && job.expiresAt && Date.parse(job.expiresAt) > now) return "archive";
+  // Customer calls held for pilot calibration still need human listening before
+  // quality approval. This neither creates an archive nor authorizes a grade.
+  if (isEligible(call.category) && !job.receipt && call.evaluation.state === "manual_review") return "provider";
   // Human privacy review is separate from AI approval. Never persist this audio,
   // clear the hold, or infer permission from a client-provided recording ID.
   if (call.evaluation.state === "not_evaluable" && call.evaluation.reasons.includes("privacy_review_required")) return "provider";

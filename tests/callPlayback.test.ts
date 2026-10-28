@@ -50,3 +50,11 @@ test("invalid playback ranges release no audio and clear source buffers", async 
   assert.equal(response.status, 416); assert.equal((await response.arrayBuffer()).byteLength, 0);
   assert.ok(bytes.every(value => value === 0));
 });
+
+test("retained customer calls can be heard for calibration without an archive or score", () => {
+  for (const category of ["sales","service"] as const) {
+    const review = {...call, category, evaluation:{...call.evaluation,state:"manual_review" as const,reasons:["quality_calibration_required"]}};
+    assert.equal(playbackSource(review,job,now),"provider");
+    assert.equal(playbackSource({...review,consent_reference:null},job,now),null);
+  }
+});
