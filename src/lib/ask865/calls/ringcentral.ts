@@ -3,11 +3,13 @@
 import { z } from "zod";
 import { inspectAudio, limitedBytes, maxAudioBytes, MediaError } from "./media.ts";
 
+import { orderedRecordingParts, type RecordingPart } from "./conversation";
+
 const origin = "https://platform.ringcentral.com";
 const identifier = z.union([z.string().regex(/^[A-Za-z0-9_-]{1,128}$/), z.number().int().nonnegative().safe()]).transform(String);
 const recording = z.object({ id: identifier });
 const extension = z.object({ id: identifier });
-const leg = z.object({ recording: recording.nullish(), extension: extension.nullish() });
+const leg = z.object({ recording: recording.nullish(), extension: extension.nullish(), startTime: z.iso.datetime({ offset: true }).optional(), duration: z.number().finite().nonnegative().optional(), result: z.string().optional() });
 const entry = z.object({
   id: identifier, direction: z.enum(["Inbound", "Outbound"]),
   startTime: z.iso.datetime({ offset: true }), duration: z.number().finite().nonnegative(),
@@ -19,7 +21,7 @@ const pageSchema = z.object({
   navigation: z.object({ nextPage: z.object({ uri: z.string().min(1) }).optional() }).optional(),
 }).refine(page => page.paging.totalPages !== undefined || page.navigation !== undefined);
 export type RingCentralConfig = { clientId: string; clientSecret: string; jwt: string; accountId: string };
-export type RecordingDiscovery = { callId: string; recordingIds: string[]; extensionIds: string[]; direction: "inbound" | "outbound"; startedAt: string; durationSeconds: number };
+export type RecordingDiscovery = { callId: string; recordingIds: string[]; recordingParts?: RecordingPart[]; extensionIds: string[]; direction: "inbound" | "outbound"; startedAt: string; durationSeconds: number };
 export type RingCentralFailure = "configuration_missing" | "authentication_failed" | "access_denied" | "account_mismatch" | "rate_limited" | "provider_unavailable" | "invalid_response" | "invalid_window";
 export class RingCentralError extends Error {
   readonly code: RingCentralFailure;
@@ -131,7 +133,16 @@ export class RingCentralClient {
         const recordingIds = [...new Set([row.recording?.id, ...(row.legs ?? []).map(leg => leg.recording?.id)].filter((id): id is string => !!id))];
         const previous = calls.get(row.id);
         const extensionIds = [row.extension?.id, ...(row.legs ?? []).map(leg => leg.extension?.id)].filter((id): id is string => !!id);
-        calls.set(row.id, { callId: row.id, recordingIds: [...new Set([...(previous?.recordingIds ?? []), ...recordingIds])], extensionIds: [...new Set([...(previous?.extensionIds ?? []), ...extensionIds])], direction: row.direction === "Inbound" ? "inbound" : "outbound", startedAt: row.startTime, durationSeconds: row.duration });
+        let recordingParts: RecordingPart[] | undefined;
+        if (recordingIds.length > 1) {
+          const connected = (row.legs ?? []).filter(l => l.result === "Call connected" && l.recording && l.startTime && l.duration);
+          const candidates = connected.map(l => ({ recordingId: l.recording!.id, offsetSeconds: (Date.parse(l.startTime!) - started) / 1000, durationSeconds: l.duration! }));
+          const unique = candidates.filter((p, i) => candidates.findIndex(q => q.recordingId === p.recordingId && q.offsetSeconds === p.offsetSeconds && q.durationSeconds === p.durationSeconds) === i);
+          try { recordingParts = orderedRecordingParts(recordingIds, unique, row.duration); } catch { /* Missing/overlapping provider evidence stays on manual hold. */ }
+        }
+        // Conflicting repeated call-log rows cannot silently replace a timeline.
+        if (previous && JSON.stringify(previous.recordingParts) !== JSON.stringify(recordingParts)) recordingParts = undefined;
+        calls.set(row.id, { callId: row.id, ...(recordingParts ? { recordingParts } : {}), recordingIds: [...new Set([...(previous?.recordingIds ?? []), ...recordingIds])], extensionIds: [...new Set([...(previous?.extensionIds ?? []), ...extensionIds])], direction: row.direction === "Inbound" ? "inbound" : "outbound", startedAt: row.startTime, durationSeconds: row.duration });
       }
       const morePages = result.data.paging.totalPages !== undefined
         ? page < result.data.paging.totalPages : !!result.data.navigation?.nextPage;

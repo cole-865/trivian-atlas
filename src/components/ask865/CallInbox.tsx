@@ -12,6 +12,7 @@ const label = (value: string) => value.replaceAll("_", " ");
 const field = "w-full rounded-md border border-border bg-background px-3 py-2 text-sm";
 
 function Review({ call, organizationId, saved, recordingAvailable, providerPlayback }: { call: CallRecord; organizationId: string; saved: () => void; recordingAvailable: boolean; providerPlayback: boolean }) {
+  const [partIndex, setPartIndex] = useState(0);
   const [playerOpen, setPlayerOpen] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
   const [category, setCategory] = useState(call.category);
@@ -45,6 +46,8 @@ function Review({ call, organizationId, saved, recordingAvailable, providerPlayb
   }
   return <div className="grid gap-4 border-t pt-4">
     <p className="text-sm">Original AI result: {label(call.ai_category)} · {call.ai_score === null ? "Unscored" : `${call.ai_score}/100`} · Rubric {call.evaluation.rubricVersion}</p>
+    {call.evaluation.conversation && <p className="text-sm">Whole conversation · {call.evaluation.conversation.parts.length} recordings · This assessment is not an individual employee score. Evidence times are measured from the start of the call.</p>}
+    {isEligible(call.category) && call.evaluation.provisionalScore !== undefined && <p className="text-sm font-medium">Suggested pilot grade: {call.evaluation.provisionalScore}/100 — requires manager confirmation. Whole-conversation grades are not assigned to individual employee coaching totals.</p>}
     {call.evaluation.assessment && <>
       <p>{call.evaluation.assessment.summary}</p>
       <p className="text-sm text-muted-foreground">Classification confidence {Math.round(call.evaluation.assessment.classificationConfidence * 100)}% · Grading confidence {Math.round(call.evaluation.assessment.gradingConfidence * 100)}%</p>
@@ -54,8 +57,11 @@ function Review({ call, organizationId, saved, recordingAvailable, providerPlayb
     {recordingAvailable ? <div className="grid gap-2">
       <p className="text-sm text-muted-foreground">Management and admin playback · Access is logged.
         {providerPlayback && " This original recording may contain sensitive information. AI grading remains paused. Playback depends on availability in RingCentral."}</p>
+      {call.evaluation.conversation && <label className="grid gap-1 text-sm">Recording part<select className={field} value={partIndex} onChange={e => { setPartIndex(Number(e.target.value)); setPlaybackError(""); }}>
+        {call.evaluation.conversation.parts.map((p, i) => <option key={i} value={i}>Part {i + 1} · begins {p.offsetSeconds.toFixed(1)}s into the call · {p.durationSeconds}s recorded</option>)}
+      </select></label>}
       {!playerOpen ? <Button type="button" variant="outline" onClick={() => { setPlaybackError(""); setPlayerOpen(true); }}>Play recording</Button>
-        : <audio controls autoPlay preload="none" src={`/api/ask865/calls/${call.id}/recording?organization=${encodeURIComponent(organizationId)}`}
+        : <audio key={partIndex} controls autoPlay preload="none" src={`/api/ask865/calls/${call.id}/recording?organization=${encodeURIComponent(organizationId)}&part=${partIndex}`}
           aria-label="Private call recording" onError={() => { setPlaybackError("The recording could not be loaded. It may no longer be available in the recording source, or your access may have changed. Refresh and try again."); setPlayerOpen(false); }} />}
       {playbackError && <p role="alert" className="text-sm text-destructive">{playbackError}</p>}
     </div> : <p className="text-sm text-muted-foreground">Recording playback is unavailable for this review or your account.</p>}
@@ -103,7 +109,7 @@ export function CallInbox({ organizationId, organizationName }: { organizationId
       {data && <div className="grid gap-3">
         {!data.calls.length && <p>{view === "inbox" ? "No calls currently need review." : "No retained calls have been imported."}</p>}
         {data.calls.map(call => <details key={`${call.id}:${call.revision}`} className="rounded-lg border p-4">
-          <summary className="cursor-pointer space-y-2"><div className="flex flex-wrap justify-between gap-2"><strong>{(call.employee_id && data.employeeNames?.[call.employee_id]) || call.employee_id || "Unmapped employee"} · {label(call.category)}</strong><strong>{call.score === null ? "Unscored" : `${call.score}/100`}</strong></div><div className="text-sm text-muted-foreground">{new Date(call.started_at).toLocaleString()} · {call.direction} · {label(call.status)}</div><div className="text-sm">{call.evaluation.reasons.map(label).join(" · ") || "No automatic escalation"}{call.revision > 1 ? " · Manager reviewed" : ""}</div></summary>
+          <summary className="cursor-pointer space-y-2"><div className="flex flex-wrap justify-between gap-2"><strong>{(call.employee_id && data.employeeNames?.[call.employee_id]) || call.employee_id || (call.evaluation.conversation ? "Whole conversation" : "Unmapped employee")} · {label(call.category)}</strong><strong>{call.score === null ? "Unscored" : `${call.score}/100`}</strong></div><div className="text-sm text-muted-foreground">{new Date(call.started_at).toLocaleString()} · {call.direction} · {label(call.status)}</div><div className="text-sm">{call.evaluation.reasons.map(label).join(" · ") || "No automatic escalation"}{call.revision > 1 ? " · Manager reviewed" : ""}</div></summary>
           <div className="pt-4"><Review call={call} organizationId={organizationId} saved={() => refresh(true)} recordingAvailable={data.playbackEnabled && data.recordings.availableProviderCallIds.includes(call.provider_call_id)} providerPlayback={data.recordings.providerPlaybackCallIds?.includes(call.provider_call_id) ?? false} /></div>
         </details>)}
         <div className="flex items-center gap-3"><Button variant="outline" disabled={!page || loading} onClick={() => { setLoading(true); setData(null); setPage(p => p - 1); }}>Previous</Button><span className="text-sm">Page {page + 1} · {data.total} calls</span><Button variant="outline" disabled={(page + 1) * 50 >= data.total || loading} onClick={() => { setLoading(true); setData(null); setPage(p => p + 1); }}>Next</Button></div>

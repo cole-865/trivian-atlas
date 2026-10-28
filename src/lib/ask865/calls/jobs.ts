@@ -10,7 +10,9 @@ import type { RecordingDiscovery } from "./ringcentral";
 import type { RecordingJob, SavedAnalysis } from "./pipeline";
 import { playbackSource, type PlaybackJob } from "./playback";
 
-type JobRow = { id: string; organization_id: string; provider_account_id: string; provider_call_id: string; job_data: Json;
+import { orderedRecordingParts, recordingPartsSchema, partArchivesSchema, type PartArchive } from "./conversation";
+
+type JobRow = { id: string; organization_id: string; provider_account_id: string; provider_call_id: string; job_data: Json; recording_parts: Json | null; part_archives: Json;
   state: "queued" | "running" | "completed" | "failed"; attempts: number; lease_token: string | null; lease_until: string | null;
   available_at: string; archive_file_id: string | null; archive_md5: string | null; archive_bytes: number | null;
   recording_expires_at: string | null; last_error: string | null; created_at: string };
@@ -23,9 +25,21 @@ function db() { return createAdminClient() as unknown as SupabaseClient<JobDatab
 const jobData = z.object({ recordingIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/)).min(1).max(500),
   direction: z.enum(["inbound", "outbound"]), startedAt: z.iso.datetime({ offset: true }), durationSeconds: z.number().int().min(0).max(14400), employeeId: z.string().nullable() }).strict();
 
-function playbackJob(row: JobRow): PlaybackJob | null {
+function playbackJob(row: JobRow, partIndex = 0): PlaybackJob | null {
   const metadata = jobData.safeParse(row.job_data);
-  if (!metadata.success || metadata.data.recordingIds.length !== 1 || row.state !== "completed") return null;
+  if (!metadata.success || row.state !== "completed" || !Number.isInteger(partIndex) || partIndex < 0) return null;
+  if (metadata.data.recordingIds.length > 1) {
+    try {
+      const parts = orderedRecordingParts(metadata.data.recordingIds, row.recording_parts, metadata.data.durationSeconds);
+      const part = parts[partIndex]; if (!part) return null;
+      const archives = partArchivesSchema.parse(row.part_archives);
+      const archive = archives.find(a => a.recordingId === part.recordingId);
+      if (archive?.receipt && archive.receipt.fileId !== archive.fileId) return null;
+      return { jobId: row.id, recordingId: part.recordingId, reviewRecordingId: parts[0].recordingId,
+        receipt: archive?.receipt ?? null, expiresAt: archive?.expiresAt ?? null };
+    } catch { return null; }
+  }
+  if (partIndex !== 0) return null;
   return { jobId: row.id, recordingId: metadata.data.recordingIds[0], expiresAt: row.recording_expires_at,
     receipt: row.archive_file_id && row.archive_md5 && row.archive_bytes
       ? { fileId: row.archive_file_id, md5: row.archive_md5, bytes: row.archive_bytes } : null };
@@ -52,11 +66,11 @@ export async function recordingInboxStatus(org: string, providerCallIds: string[
   }
   return { queued: counts[0], running: counts[1], failed: counts[2], availableProviderCallIds, providerPlaybackCallIds };
 }
-export async function recordingForPlayback(org: string, providerCallId: string, account: string) {
+export async function recordingForPlayback(org: string, providerCallId: string, account: string, partIndex = 0) {
   const result = await db().from("ask865_recording_jobs").select("*").eq("organization_id", org).eq("provider_account_id", account).eq("provider_call_id", providerCallId)
     .eq("state", "completed").maybeSingle();
   if (result.error) throw new MediaError("recording_unavailable");
-  return result.data ? playbackJob(result.data) : null;
+  return result.data ? playbackJob(result.data, partIndex) : null;
 }
 export async function logRecordingAccess(org: string, jobId: string, actorId: string) {
   const result = await db().from("ask865_recording_access").insert({ organization_id: org, job_id: jobId, actor_id: actorId });
@@ -65,6 +79,7 @@ export async function logRecordingAccess(org: string, jobId: string, actorId: st
 
 export async function enqueueRecordings(org: string, account: string, calls: RecordingDiscovery[], employeeForCall: (call: RecordingDiscovery) => string | null = () => null) {
   const rows = calls.filter(c => c.recordingIds.length).map(c => ({ organization_id: org, provider_account_id: account, provider_call_id: c.callId,
+    recording_parts: c.recordingParts ?? null,
     job_data: jobData.parse({ recordingIds: c.recordingIds, direction: c.direction, startedAt: c.startedAt, durationSeconds: c.durationSeconds, employeeId: employeeForCall(c) }) }));
   if (!rows.length) return 0;
   const result = await db().from("ask865_recording_jobs").upsert(rows, { onConflict: "organization_id,provider_account_id,provider_call_id", ignoreDuplicates: true }).select("id");
@@ -75,10 +90,11 @@ export async function claimRecording(org: string, account: string) {
   const { data, error } = await db().rpc("atlas_ask865_claim_recording", { p_organization_id: org, p_provider_account_id: account });
   if (error) throw new MediaError("queue_unavailable");
   const row = data?.[0]; if (!row) return null;
-  const job: RecordingJob = { ...jobData.parse(row.job_data), id: row.id, providerCallId: row.provider_call_id, archiveFileId: row.archive_file_id };
+  const job: RecordingJob = { ...jobData.parse(row.job_data), id: row.id, providerCallId: row.provider_call_id, archiveFileId: row.archive_file_id, ...(row.recording_parts ? { recordingParts: recordingPartsSchema.parse(row.recording_parts) } : {}), partArchives: partArchivesSchema.parse(row.part_archives) };
   return { row, job };
 }
 export function recordingJobStore(row: JobRow, settings: CallSettings) {
+  let partArchives = partArchivesSchema.parse(row.part_archives);
   async function change(values: Partial<JobRow>) {
     const result = await db().from("ask865_recording_jobs").update(values).eq("organization_id", row.organization_id).eq("provider_account_id", row.provider_account_id).eq("id", row.id)
       .eq("state", "running").eq("lease_token", row.lease_token!).gt("lease_until", new Date().toISOString()).select("id").maybeSingle();
@@ -89,7 +105,7 @@ export function recordingJobStore(row: JobRow, settings: CallSettings) {
     if (result.error) throw new MediaError("review_lookup_failed");
     if (!result.data) return null;
     const evaluation = result.data.evaluation;
-    return { evaluation, archiveEligible: Date.parse(result.data.expires_at) > Date.now() && isEligible(result.data.category) && result.data.category === evaluation.category && !evaluation.reasons.includes("low_confidence") && (evaluation.assessment?.classificationConfidence ?? 0) >= settings.confidence_threshold };
+    return { evaluation, archiveEligible: Date.parse(result.data.expires_at) > Date.now() && isEligible(result.data.category) && result.data.category === evaluation.category && !evaluation.reasons.includes("low_confidence") && !evaluation.reasons.includes("quality_calibration_required") && (evaluation.assessment?.classificationConfidence ?? 0) >= settings.confidence_threshold };
   }
   return {
     async assertLease() {
@@ -102,6 +118,16 @@ export function recordingJobStore(row: JobRow, settings: CallSettings) {
     async saveAnalysis(input: Parameters<typeof saveEvaluation>[1], evaluation: Evaluation) {
       await saveEvaluation(row.organization_id, input, evaluation, settings);
       const saved = await loadAnalysis(); if (!saved) throw new MediaError("review_save_failed"); return saved;
+    },
+    async savePartArchive(checkpoint: PartArchive) {
+      const metadata = jobData.parse(row.job_data);
+      const parts = orderedRecordingParts(metadata.recordingIds, row.recording_parts, metadata.durationSeconds);
+      if (!parts.some(p => p.recordingId === checkpoint.recordingId)) throw new MediaError("archive_manifest_required");
+      const previous = partArchives.find(p => p.recordingId === checkpoint.recordingId);
+      if (previous && previous.fileId !== checkpoint.fileId) throw new MediaError("drive_archive_mismatch");
+      if (checkpoint.receipt && checkpoint.receipt.fileId !== checkpoint.fileId) throw new MediaError("drive_archive_mismatch");
+      const next = partArchivesSchema.parse([...partArchives.filter(p => p.recordingId !== checkpoint.recordingId), checkpoint]);
+      await change({ part_archives: next }); partArchives = next;
     },
     async saveArchiveId(fileId: string) {
       // The lease gives one owner. A preallocated ID is committed before any upload.

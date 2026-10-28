@@ -58,3 +58,12 @@ test("retained customer calls can be heard for calibration without an archive or
     assert.equal(playbackSource({...review,consent_reference:null},job,now),null);
   }
 });
+
+test("each transferred recording is authorized through its same-call anchor, never a caller-supplied provider ID",()=>{
+ const review={...call,category:"sales" as const,evaluation:{...call.evaluation,state:"manual_review" as const,reasons:["conversation_review"]}};
+ const part={...job,recordingId:"recording-2",reviewRecordingId:"recording-1"};
+ assert.equal(playbackSource(review,part,now),"provider");
+ assert.equal(playbackSource({...review,recording_id:"other-call"},part,now),null);
+ assert.equal(playbackSource({...review,category:"vendor"},part,now),null);
+ assert.equal(playbackSource({...review,consent_reference:null},part,now),null);
+});

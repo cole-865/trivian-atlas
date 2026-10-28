@@ -30,12 +30,14 @@ export const callInputSchema = z.object({
   consentReference: z.string().min(1).max(160).nullable(),
   redacted: z.boolean(),
   transcriptConfidence: z.number().min(0).max(1),
+  conversation: z.object({ parts: z.array(z.object({ offsetSeconds: z.number().nonnegative(), durationSeconds: z.number().positive() }).strict()).min(2).max(4) }).strict().optional(),
   transcript: z.array(z.object({
     start: z.number().min(0), end: z.number().min(0),
     speaker: z.enum(["employee", "customer", "unknown"]),
     text: z.string().min(1).max(4000),
   }).strict()).max(500),
 }).strict().superRefine((call, ctx) => {
+  if (call.conversation && (call.employeeId !== null || call.conversation.parts.some((p, i, a) => p.offsetSeconds + p.durationSeconds > call.durationSeconds + 1 || (i > 0 && p.offsetSeconds < a[i-1].offsetSeconds + a[i-1].durationSeconds)))) ctx.addIssue({ code: "custom", message: "Invalid conversation timeline or attribution" });
   if (call.transcript.some((s, i) => s.end < s.start || s.end > call.durationSeconds || (i > 0 && s.start < call.transcript[i - 1].start))) {
     ctx.addIssue({ code: "custom", message: "Invalid transcript timestamps" });
   }
@@ -68,6 +70,8 @@ export type Evaluation = {
   category: Category; score: number | null; reasons: string[];
   state: "graded" | "excluded" | "manual_review" | "not_evaluable";
   assessment: Assessment | null; rubricVersion: string;
+  provisionalScore?: number;
+  conversation?: { parts: { offsetSeconds: number; durationSeconds: number }[] };
   screening?: { version: string; category: Category; confidence: number };
 };
 export function requiresManagementReview(evaluation: Evaluation) {
@@ -96,7 +100,8 @@ export function evaluate(call: CallInput, raw: unknown, threshold: number): Eval
   const assessment = assessmentSchema.parse(raw);
   if (new Set(assessment.criteria.map(c => c.criterion)).size !== assessment.criteria.length ||
     assessment.criteria.some(c => c.atSeconds !== null && c.atSeconds > call.durationSeconds) ||
-    assessment.criticalFlags.some(c => c.atSeconds > call.durationSeconds)) throw new Error("Invalid assessment evidence");
+    assessment.criticalFlags.some(c => c.atSeconds > call.durationSeconds) ||
+    (call.conversation && [...assessment.criteria, ...assessment.criticalFlags].some(c => c.atSeconds !== null && !call.conversation!.parts.some(p => c.atSeconds! >= p.offsetSeconds && c.atSeconds! <= p.offsetSeconds + p.durationSeconds)))) throw new Error("Invalid assessment evidence");
   const reasons: string[] = [];
   if (assessment.criticalFlags.length) reasons.push("critical_flag");
   if (assessment.classificationConfidence < threshold || call.transcriptConfidence < threshold) reasons.push("low_confidence");
@@ -107,7 +112,8 @@ export function evaluate(call: CallInput, raw: unknown, threshold: number): Eval
   if (!isEligible(assessment.category)) reasons.push("classification_review");
   if (assessment.gradingConfidence < threshold && !reasons.includes("low_confidence")) reasons.push("low_confidence");
   if (!assessment.sufficientEvidence) reasons.push("insufficient_evidence");
-  if (!call.employeeId) reasons.push("employee_unmapped");
+  if (call.conversation) reasons.push("conversation_review");
+  else if (!call.employeeId) reasons.push("employee_unmapped");
   let score: number | null = null;
   if (isEligible(assessment.category)) {
     if (assessment.criteria.length !== criteria.length) throw new Error("Incomplete rubric");
@@ -120,7 +126,7 @@ export function evaluate(call: CallInput, raw: unknown, threshold: number): Eval
       earned += weight * item.rating / 4;
     }
     if (!possible && !reasons.includes("insufficient_evidence")) reasons.push("insufficient_evidence");
-    if (!reasons.some(r => r !== "critical_flag") && possible) score = Math.round(100 * earned / possible);
+    if (!reasons.some(r => r !== "critical_flag" && r !== "conversation_review") && possible) score = Math.round(100 * earned / possible);
   }
   if (score !== null && score < 70) reasons.push("below_70");
   return { category: assessment.category, score, reasons, state: score === null ? "manual_review" : "graded", assessment, rubricVersion };
@@ -152,7 +158,7 @@ export function coachingTrends(rows: CallRecord[], now = Date.now()) {
   const groups = new Map<string, { employee: string; count: number; total: number; below70: number; opportunities: number; critical: number }>();
   for (const row of rows) {
     const time = Date.parse(row.started_at);
-    if (!row.employee_id || !isEligible(row.category) || row.score === null || time > now || time < now - 7 * 86400000 || Date.parse(row.expires_at) <= now) continue;
+    if (row.evaluation.conversation || !row.employee_id || !isEligible(row.category) || row.score === null || time > now || time < now - 7 * 86400000 || Date.parse(row.expires_at) <= now) continue;
     const key = row.employee_id;
     const group = groups.get(key) ?? { employee: key, count: 0, total: 0, below70: 0, opportunities: 0, critical: 0 };
     group.count++; group.total += row.score;

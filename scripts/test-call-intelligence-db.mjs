@@ -126,5 +126,18 @@ try {
   await db.exec("reset role;set role authenticated");
   await rejects("select * from public.ask865_discovery_state",[],"42501");
   await rejects("select * from public.atlas_ask865_claim_discovery($1,$2,$3)",discoveryArgs,"42501");
+  await db.exec("reset role");
+  await db.exec(await readFile(new URL("../supabase/migrations/20261028214843_ask865_transferred_recordings.sql", import.meta.url),"utf8"));
+  await db.exec("set role service_role");
+  const transferData=JSON.stringify({recordingIds:["part-a","part-b"],direction:"inbound",startedAt:new Date().toISOString(),durationSeconds:60,employeeId:null});
+  const manifest=JSON.stringify([{recordingId:"part-a",offsetSeconds:0,durationSeconds:20},{recordingId:"part-b",offsetSeconds:25,durationSeconds:30}]);
+  await db.query("insert into public.ask865_recording_jobs(organization_id,provider_account_id,provider_call_id,job_data,recording_parts) values($1,'123','transfer',$2,$3)",[org,transferData,manifest]);
+  await rejects("update public.ask865_recording_jobs set recording_parts='[]' where provider_call_id='transfer'",[],"42501");
+  await db.query("update public.ask865_recording_jobs set part_archives=$2 where organization_id=$1 and provider_call_id='transfer'",[org,JSON.stringify([{recordingId:"part-a",fileId:"reserved",receipt:null,expiresAt:null}])]);
+  assert.equal((await db.query("select part_archives from public.ask865_recording_jobs where provider_call_id='transfer'")).rows[0].part_archives[0].fileId,"reserved");checks++;
+  await rejects("update public.ask865_recording_jobs set part_archives='{}' where provider_call_id='transfer'",[],"23514");
+  await db.exec("reset role;set role authenticated");
+  await rejects("select recording_parts,part_archives from public.ask865_recording_jobs",[],"42501");
+  await rejects("update public.ask865_recording_jobs set part_archives='[]'",[],"42501");
   console.log(`Call database: ${checks} checks passed; isolated synthetic data only.`);
 } finally { await db.close(); }

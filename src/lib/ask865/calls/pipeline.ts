@@ -1,11 +1,13 @@
 import { analyzeCall, callInputSchema, isEligible, rubricVersion, type CallInput, type Evaluation } from "./domain";
 import { MediaError, type PrivateAudio } from "./media";
 import type { PrivacyResult } from "./privacy";
-import type { RawTranscript } from "./transcription";
+import { validateTranscript, type RawTranscript } from "./transcription";
 import type { ArchiveReceipt } from "./drive";
 import { earlyExclusion, purposeVersion, type CallPurpose } from "./purpose";
 
-export type RecordingJob = { id: string; providerCallId: string; recordingIds: string[]; direction: "inbound" | "outbound"; startedAt: string; durationSeconds: number; employeeId: string | null; archiveFileId: string | null };
+import { orderedRecordingParts, joinRecordingTranscripts, type RecordingPart, type PartArchive } from "./conversation";
+
+export type RecordingJob = { id: string; providerCallId: string; recordingIds: string[]; recordingParts?: RecordingPart[]; partArchives?: PartArchive[]; direction: "inbound" | "outbound"; startedAt: string; durationSeconds: number; employeeId: string | null; archiveFileId: string | null };
 export type PipelinePolicy = { consentReference: string; approvedFrom: string; approvedThrough: string; confidenceThreshold: number; qualityCalibrationApproved: boolean };
 export type SavedAnalysis = { evaluation: Evaluation; archiveEligible: boolean };
 export type PipelinePorts = {
@@ -19,6 +21,7 @@ export type PipelinePorts = {
   saveAnalysis(input: CallInput, evaluation: Evaluation): Promise<SavedAnalysis>;
   allocateArchiveId(): Promise<string>;
   saveArchiveId(fileId: string): Promise<void>;
+  savePartArchive?(checkpoint: PartArchive): Promise<void>;
   archive(fileId: string, recordingId: string, audio: PrivateAudio): Promise<ArchiveReceipt>;
   complete(receipt: ArchiveReceipt | null, expiresAt: string | null): Promise<void>;
 };
@@ -36,21 +39,39 @@ export async function processRecordingJob(job: RecordingJob, policy: PipelinePol
   // Consent covers the entire call and both provider/AI processing. It comes from
   // server configuration, never the caller's request or a model's inference.
   if (!policyCovers(job, policy, now)) throw new MediaError("consent_review_required");
-  const base = callInputSchema.parse({ providerCallId: job.providerCallId, recordingId: job.recordingIds.length === 1 ? job.recordingIds[0] : null,
-    employeeId: job.employeeId, startedAt: job.startedAt, direction: job.direction, durationSeconds: job.durationSeconds,
+  let parts: RecordingPart[] = [];
+  let manifestError: string | undefined;
+  if (job.recordingIds.length > 1) {
+    try { parts = orderedRecordingParts(job.recordingIds, job.recordingParts, job.durationSeconds); }
+    catch (e) { manifestError = e instanceof MediaError ? e.code : "recording_manifest_required"; }
+  } else if (job.recordingIds.length === 1) parts = [{ recordingId: job.recordingIds[0], offsetSeconds: 0, durationSeconds: job.durationSeconds }];
+  else manifestError = "no_recording";
+  const conversation = parts.length > 1 ? { parts: parts.map(({ offsetSeconds, durationSeconds }) => ({ offsetSeconds, durationSeconds })) } : undefined;
+  const base = callInputSchema.parse({ providerCallId: job.providerCallId, recordingId: parts[0]?.recordingId ?? null,
+    employeeId: conversation ? null : job.employeeId, ...(conversation ? { conversation } : {}), startedAt: job.startedAt, direction: job.direction, durationSeconds: job.durationSeconds,
     connected: true, consent: "approved", consentReference: policy.consentReference, redacted: false, transcriptConfidence: 0, transcript: [] });
   await ports.assertLease();
-  if (job.recordingIds.length !== 1) {
-    await ports.saveAnalysis(base, { category: "unknown", score: null, state: "manual_review", reasons: ["multiple_recordings_require_review"], assessment: null, rubricVersion });
+  if (manifestError) {
+    await ports.saveAnalysis(base, { category: "unknown", score: null, state: "manual_review", reasons: [manifestError], assessment: null, rubricVersion });
     await ports.complete(null, null); return { state: "manual_review", archived: false };
   }
-  let audio: PrivateAudio | undefined;
+  const audio = new Map<string, PrivateAudio>();
+  let totalBytes = 0;
+  async function download(part: RecordingPart) {
+    const existing = audio.get(part.recordingId); if (existing) return existing;
+    await ports.assertLease();
+    const result = await ports.download(part.recordingId);
+    audio.set(part.recordingId, result); totalBytes += result.bytes.byteLength;
+    if (totalBytes > 48_000_000) throw new MediaError("audio_size_limit");
+    return result;
+  }
   let purpose: CallPurpose | undefined;
   try {
     let saved = await ports.loadAnalysis();
     if (!saved) {
-      audio = await ports.download(job.recordingIds[0]);
-      const raw = await ports.transcribe(audio, job.durationSeconds);
+      const transcripts: RawTranscript[] = [];
+      for (const part of parts) transcripts.push(validateTranscript(await ports.transcribe(await download(part), part.durationSeconds), part.durationSeconds));
+      const raw = conversation ? joinRecordingTranscripts(parts, transcripts, job.durationSeconds) : transcripts[0];
       purpose = await ports.screenPurpose(raw, job.durationSeconds);
       const excluded = earlyExclusion(purpose, policy.confidenceThreshold);
       if (excluded) {
@@ -66,20 +87,41 @@ export async function processRecordingJob(job: RecordingJob, policy: PipelinePol
       // Provider success supplies no calibrated confidence. Automatic grades stay
       // held until a labelled pilot validates the textual-quality estimator.
       const input = callInputSchema.parse({ ...base, redacted: true, transcript: clean.transcript,
-        transcriptConfidence: policy.qualityCalibrationApproved ? Math.min(clean.qualityConfidence, clean.speakerRoleConfidence) : 0 });
+        transcriptConfidence: Math.min(clean.qualityConfidence, clean.speakerRoleConfidence) });
       const evaluation = await analyzeCall(input, ports.analyze, policy.confidenceThreshold);
       evaluation.screening = { version: purposeVersion, category: purpose.category, confidence: purpose.confidence };
       if (purpose.criticalConcern && !evaluation.reasons.includes("critical_flag")) evaluation.reasons.push("critical_flag");
-      if (!policy.qualityCalibrationApproved && isEligible(evaluation.category)) evaluation.reasons.push("quality_calibration_required");
+      if (conversation) evaluation.conversation = conversation;
+      if (!policy.qualityCalibrationApproved && isEligible(evaluation.category)) {
+        // A suggested pilot score is never an approved score or an employee metric.
+        if (evaluation.score !== null) evaluation.provisionalScore = evaluation.score;
+        evaluation.score = null; evaluation.state = "manual_review";
+        if (!evaluation.reasons.includes("low_confidence")) evaluation.reasons.push("low_confidence");
+        evaluation.reasons.push("quality_calibration_required");
+      }
       await ports.assertLease(); saved = await ports.saveAnalysis(input, evaluation);
     }
     if (!saved.archiveEligible) { await ports.complete(null, null); return { state: saved.evaluation.state, archived: false }; }
     await ports.assertLease();
+    if (conversation) {
+      if (!ports.savePartArchive) throw new MediaError("archive_manifest_required");
+      for (const part of parts) {
+        await ports.assertLease();
+        const existing = job.partArchives?.find(p => p.recordingId === part.recordingId);
+        const fileId = existing?.fileId ?? await ports.allocateArchiveId();
+        if (!existing) await ports.savePartArchive({ recordingId: part.recordingId, fileId, receipt: null, expiresAt: null });
+        // upload verifies the existing file on a retry before accepting its receipt.
+        const receipt = await ports.archive(fileId, part.recordingId, await download(part));
+        await ports.savePartArchive({ recordingId: part.recordingId, fileId, receipt, expiresAt: fiveYearExpiry(job.startedAt) });
+      }
+      await ports.complete(null, null);
+      return { state: saved.evaluation.state, archived: true };
+    }
     const fileId = job.archiveFileId ?? await ports.allocateArchiveId();
     if (!job.archiveFileId) await ports.saveArchiveId(fileId);
-    audio ??= await ports.download(job.recordingIds[0]);
+    const singleAudio = await download(parts[0]);
     await ports.assertLease();
-    const receipt = await ports.archive(fileId, job.recordingIds[0], audio);
+    const receipt = await ports.archive(fileId, job.recordingIds[0], singleAudio);
     await ports.complete(receipt, fiveYearExpiry(job.startedAt));
     return { state: saved.evaluation.state, archived: true };
   } catch (error) {
@@ -88,13 +130,13 @@ export async function processRecordingJob(job: RecordingJob, policy: PipelinePol
       // Human-review holds are not retried as provider outages. No raw evidence is
       // persisted or sent for grading when privacy/transcript validation fails.
       const category = purpose?.clearPurpose && purpose.confidence >= Math.max(0.95, policy.confidenceThreshold) && isEligible(purpose.category) ? purpose.category : "unknown";
-      await ports.saveAnalysis(base, { category, score: null, state: "not_evaluable", reasons: [error.code], assessment: null, rubricVersion,
+      await ports.saveAnalysis(base, { category, score: null, state: "not_evaluable", reasons: [error.code], assessment: null, rubricVersion, ...(conversation ? { conversation } : {}),
         ...(purpose ? { screening: { version: purposeVersion, category: purpose.category, confidence: purpose.confidence } } : {}) });
       await ports.complete(null, null); return { state: "manual_review", archived: false };
     }
     throw error;
   } finally {
     // Best-effort buffer cleanup; JS strings/Blob copies cannot be securely erased.
-    audio?.bytes.fill(0);
+    for (const item of audio.values()) item.bytes.fill(0);
   }
 }

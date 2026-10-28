@@ -129,3 +129,11 @@ test("directory rejects incomplete or mismatched pagination",async()=>{
  const transport=fake([token,{id:"12345"},{records:[],paging:{page:2,totalPages:2}}]);
  await assert.rejects(new RingCentralClient(config,transport.send,()=>now).listExtensions(),isCode("invalid_response"));
 });
+
+test("transfer manifest uses connected recording legs, deduplicates queue copies, and preserves inbound direction",async()=>{
+ const legs=[{result:"Accepted",startTime:"2026-10-28T10:00:00Z",duration:35,recording:{id:"101"}},
+ {result:"Call connected",startTime:"2026-10-28T10:00:05Z",duration:30,direction:"Outbound",recording:{id:"101"}},
+ {result:"Call connected",startTime:"2026-10-28T10:00:40Z",duration:45,recording:{id:"102"}}];
+ const t=fake([token,{id:"12345"},page([{...call,legs}])]);const c=(await new RingCentralClient(config,t.send,()=>now).discover(from,to)).calls[0];
+ assert.deepEqual(c.recordingParts,[{recordingId:"101",offsetSeconds:5,durationSeconds:30},{recordingId:"102",offsetSeconds:40,durationSeconds:45}]);assert.equal(c.direction,"inbound");
+});

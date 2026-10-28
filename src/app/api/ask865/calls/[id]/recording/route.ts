@@ -26,7 +26,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!result.data) throw new Ask865AccessError(404, "Recording unavailable.");
     const settings = await loadCallSettings(access.organizationId);
     if (!settings.provider_account_id || !settings.policy_version || process.env.ASK865_CALLS_PLAYBACK_ENABLED !== "true" || access.organizationId !== process.env.ASK865_CALLS_ORGANIZATION_ID) throw new Ask865AccessError(503, "Recording playback is disabled.");
-    const recording = await recordingForPlayback(access.organizationId, result.data.provider_call_id, settings.provider_account_id);
+    const part = request.nextUrl.searchParams.get("part") ?? "0";
+    if (!/^[0-3]$/.test(part)) throw new Ask865AccessError(400, "Invalid recording part.");
+    const recording = await recordingForPlayback(access.organizationId, result.data.provider_call_id, settings.provider_account_id, Number(part));
     const source = playbackSource(result.data, recording);
     if (!recording || !source) throw new Ask865AccessError(404, "Recording is unavailable for this review.");
     const account = settings.provider_account_id;
