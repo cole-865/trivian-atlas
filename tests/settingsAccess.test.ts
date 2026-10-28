@@ -23,6 +23,7 @@ function permissions(
     export_reports: false,
     view_ask865: false,
     review_ask865_sources: false,
+    review_ask865_calls: false,
     ...overrides,
   };
 }

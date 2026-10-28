@@ -31,6 +31,7 @@ test("default role presets match requested seed values", () => {
     "approve_overrides",
     "manage_users",
     "view_ask865",
+    "review_ask865_calls",
   ]);
   assert.deepEqual(DEFAULT_ROLE_PERMISSION_PRESETS.admin, DEALERSHIP_PERMISSION_KEYS);
 });
