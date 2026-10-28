@@ -297,3 +297,13 @@ provider outage recovery, backlog alerts and no gaps at n8n cutover. Never treat
 - [Supabase database functions](https://supabase.com/docs/guides/database/functions)
   and [current release notes](https://supabase.com/changelog) were reviewed for the
   tracked migration and service-only function design.
+
+### Restricted playback for privacy holds (2026-10-28)
+
+The existing recording GET route now permits a retained, consent-confirmed call held specifically for `privacy_review_required` to be played by management/admin reviewers (and the existing active platform developer), even when no Drive archive exists. It uses the server-held completed job's single recording ID, checks it against the review, and proxies the original from the configured, verified RingCentral account. No provider URL or token reaches the browser. Excluded classifications, impersonation, other organizations, expired reviews, and missing consent remain blocked. Existing view/review permissions and the organization module must also permit access.
+
+`ASK865_CALLS_PLAYBACK_ENABLED=true` enables playback only for `ASK865_CALLS_ORGANIZATION_ID`. It does not enable ingestion, scheduling, transcription, grading, archiving, or remove a privacy hold. Native audio is mounted only after the reviewer clicks Play recording. Each request (including seek/retry requests) inserts an append-only actor/organization/job/timestamp access record before fetching audio; a failed audit prevents retrieval. The response is private/no-store and same-origin, and temporary source buffers are cleared. These entries record access requests, not proof that a person listened to the whole call. Audio remains subject to RingCentral availability; this path creates no long-term copy. Managers hear original, potentially sensitive audio. Authorized playback cannot prevent a listener from saving or recording what they hear.
+
+No new database schema or migration. Existing `ask865_recording_access` RLS and insert-only service privileges remain in force. UI errors explain an unavailable/expired source. AI and manager scores remain blocked by the existing `scoring_allowed=false` protection on privacy holds.
+
+Verification: play both pilot calls from the live inbox; confirm audio metadata and time advance, confirm access rows for the signed-in reviewer, confirm both calls remain unscored and unarchived, and verify processing/scheduler flags remain off. Unit coverage includes role/tenant identity, source-selection restrictions, audit failure, range handling, buffer cleanup, and unchanged grading state.

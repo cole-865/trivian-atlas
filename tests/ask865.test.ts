@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AuthContext } from "../src/lib/auth/userRole";
-import { hasAsk865OrganizationIdentity,isAsk865PlatformDev,matchesAsk865Organization } from "../src/lib/ask865/accessRules.js";
+import { hasAsk865OrganizationIdentity,isAsk865PlatformDev,matchesAsk865Organization,hasCallPlaybackRole } from "../src/lib/ask865/accessRules.js";
 import { parseDashboardFilters } from "../src/lib/ask865/filters.js";
 import { parseSourceReview,isSameOriginReview } from "../src/lib/ask865/review.js";
 import { resolveDealershipPermissionsFromRows } from "../src/lib/auth/dealershipPermissionRules.js";
@@ -56,4 +56,18 @@ test("source review origin follows the external request host, not a standalone b
  assert.equal(isSameOriginReview("https://evil.example","atlas.trivianfinance.com"),false);
  assert.equal(isSameOriginReview("https://atlas.trivianfinance.com.evil.example","atlas.trivianfinance.com"),false);
  assert.equal(isSameOriginReview(null,"atlas.trivianfinance.com"),false);
+});
+
+test("raw call playback requires management/admin identity or active platform dev, never impersonation", () => {
+ for (const role of ["sales", "management", "admin"] as const) {
+  const c=context(); c.effectiveOrganizationRole=role; c.effectiveOrganizationMembership={...c.effectiveOrganizationMembership!,role};
+  assert.equal(hasCallPlaybackRole(c),role!=="sales");
+  c.isImpersonating=true; assert.equal(hasCallPlaybackRole(c),false);
+ }
+ const c=context(); c.realRole="dev"; c.effectiveOrganizationRole="sales"; c.effectiveOrganizationMembership={...c.effectiveOrganizationMembership!,role:"sales"};
+ assert.equal(hasCallPlaybackRole(c),false); // A metadata-only platform role grants nothing.
+ c.realProfile={...c.realProfile!,role:"dev"}; assert.equal(hasCallPlaybackRole(c),true);
+ c.realProfile={...c.realProfile!,isActive:false}; assert.equal(hasCallPlaybackRole(c),false);
+ const other=context(); other.effectiveOrganizationMembership={...other.effectiveOrganizationMembership!,organizationId:"org-b"};
+ assert.equal(hasCallPlaybackRole(other),false);
 });

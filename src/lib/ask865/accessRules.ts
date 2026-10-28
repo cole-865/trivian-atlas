@@ -27,3 +27,10 @@ export function hasAsk865OrganizationIdentity(context: AuthContext) {
 export function matchesAsk865Organization(current: string, expected: string | null) {
   return expected === current;
 }
+
+// Additional restriction for raw recordings; callers must still check the
+// existing view_ask865 and review_ask865_calls permissions and module access.
+export function hasCallPlaybackRole(context: AuthContext) {
+  return hasAsk865OrganizationIdentity(context) && !context.isImpersonating &&
+    (isAsk865PlatformDev(context) || context.effectiveOrganizationRole === "management" || context.effectiveOrganizationRole === "admin");
+}

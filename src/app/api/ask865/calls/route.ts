@@ -18,9 +18,9 @@ export async function GET(request: NextRequest) {
     const view = request.nextUrl.searchParams.get("view") === "all" ? "all" : "inbox";
     const settings = await loadCallSettings(access.organizationId);
     const inbox = await loadCallInbox(access.organizationId, page, view);
-    const recordings = await recordingInboxStatus(access.organizationId, inbox.calls.map(call => call.provider_call_id));
+    const recordings = await recordingInboxStatus(access.organizationId, inbox.calls.map(call => call.provider_call_id), settings.provider_account_id);
     const names = access.organizationId === process.env.ASK865_CALLS_ORGANIZATION_ID ? employeeNames(process.env.ASK865_CALLS_EMPLOYEE_MAPPING) : {};
-    return Response.json({ ...inbox, employeeNames: names, recordings, playbackEnabled: process.env.ASK865_CALLS_PLAYBACK_ENABLED === "true",
+    return Response.json({ ...inbox, employeeNames: names, recordings, playbackEnabled: access.canPlayRecording && access.organizationId === process.env.ASK865_CALLS_ORGANIZATION_ID && !!settings.policy_version && process.env.ASK865_CALLS_PLAYBACK_ENABLED === "true",
       ingestionEnabled: settings.enabled && process.env.ASK865_CALLS_ENABLED === "true", page }, { headers: privateHeaders });
   } catch (error) { return callError(error); }
 }

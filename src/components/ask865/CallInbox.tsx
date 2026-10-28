@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { NoticeBanner, PageHeader, SectionCard } from "@/components/atlas/page";
 
 type InboxData = { employeeNames: Record<string, string>; calls: CallRecord[]; total: number; trends: ReturnType<typeof coachingTrends>; trendsLimited: boolean; ingestionEnabled: boolean;
-  playbackEnabled: boolean; recordings: { queued: number; running: number; failed: number; availableProviderCallIds: string[] } };
+  playbackEnabled: boolean; recordings: { queued: number; running: number; failed: number; availableProviderCallIds: string[]; providerPlaybackCallIds: string[] } };
 const label = (value: string) => value.replaceAll("_", " ");
 const field = "w-full rounded-md border border-border bg-background px-3 py-2 text-sm";
 
-function Review({ call, organizationId, saved, recordingAvailable }: { call: CallRecord; organizationId: string; saved: () => void; recordingAvailable: boolean }) {
+function Review({ call, organizationId, saved, recordingAvailable, providerPlayback }: { call: CallRecord; organizationId: string; saved: () => void; recordingAvailable: boolean; providerPlayback: boolean }) {
+  const [playerOpen, setPlayerOpen] = useState(false);
+  const [playbackError, setPlaybackError] = useState("");
   const [category, setCategory] = useState(call.category);
   const [score, setScore] = useState(call.score === null ? "" : String(call.score));
   const [status, setStatus] = useState(call.status === "not_required" ? "in_review" : call.status);
@@ -49,9 +51,14 @@ function Review({ call, organizationId, saved, recordingAvailable }: { call: Cal
       <ul className="grid gap-2 text-sm">{call.evaluation.assessment.criticalFlags.map((flag, i) => <li key={i} className="font-medium text-destructive">Potential {label(flag.code)} at {flag.atSeconds}s: {flag.reason}</li>)}</ul>
       <ul className="grid gap-2 text-sm">{call.evaluation.assessment.criteria.map(item => <li key={item.criterion}><strong className="capitalize">{label(item.criterion)}</strong>: {item.rating === null ? "Not applicable" : `${item.rating}/4`}{item.atSeconds === null ? "" : ` at ${item.atSeconds}s`} — {item.reason}</li>)}</ul>
     </>}
-    {recordingAvailable && isEligible(call.category)
-      ? <audio controls preload="none" src={`/api/ask865/calls/${call.id}/recording?organization=${encodeURIComponent(organizationId)}`} aria-label="Private call recording" />
-      : <p className="text-sm text-muted-foreground">An archived recording is not available for playback here. Verify timestamps in the approved recording source.</p>}
+    {recordingAvailable ? <div className="grid gap-2">
+      <p className="text-sm text-muted-foreground">Management and admin playback · Access is logged.
+        {providerPlayback && " This original recording may contain sensitive information. AI grading remains paused. Playback depends on availability in RingCentral."}</p>
+      {!playerOpen ? <Button type="button" variant="outline" onClick={() => { setPlaybackError(""); setPlayerOpen(true); }}>Play recording</Button>
+        : <audio controls autoPlay preload="none" src={`/api/ask865/calls/${call.id}/recording?organization=${encodeURIComponent(organizationId)}`}
+          aria-label="Private call recording" onError={() => { setPlaybackError("The recording could not be loaded. It may no longer be available in the recording source, or your access may have changed. Refresh and try again."); setPlayerOpen(false); }} />}
+      {playbackError && <p role="alert" className="text-sm text-destructive">{playbackError}</p>}
+    </div> : <p className="text-sm text-muted-foreground">Recording playback is unavailable for this review or your account.</p>}
     <form onSubmit={submit} className="grid gap-3 sm:grid-cols-3">
       <label className="grid gap-1 text-sm">Classification<select className={field} value={category} disabled={busy} onChange={e => { setCategory(e.target.value as CallRecord["category"]); setScore(""); }}>
         {categories.map(c => <option key={c} value={c}>{label(c)}</option>)}
@@ -97,7 +104,7 @@ export function CallInbox({ organizationId, organizationName }: { organizationId
         {!data.calls.length && <p>{view === "inbox" ? "No calls currently need review." : "No retained calls have been imported."}</p>}
         {data.calls.map(call => <details key={`${call.id}:${call.revision}`} className="rounded-lg border p-4">
           <summary className="cursor-pointer space-y-2"><div className="flex flex-wrap justify-between gap-2"><strong>{(call.employee_id && data.employeeNames?.[call.employee_id]) || call.employee_id || "Unmapped employee"} · {label(call.category)}</strong><strong>{call.score === null ? "Unscored" : `${call.score}/100`}</strong></div><div className="text-sm text-muted-foreground">{new Date(call.started_at).toLocaleString()} · {call.direction} · {label(call.status)}</div><div className="text-sm">{call.evaluation.reasons.map(label).join(" · ") || "No automatic escalation"}{call.revision > 1 ? " · Manager reviewed" : ""}</div></summary>
-          <div className="pt-4"><Review call={call} organizationId={organizationId} saved={() => refresh(true)} recordingAvailable={data.playbackEnabled && data.recordings.availableProviderCallIds.includes(call.provider_call_id)} /></div>
+          <div className="pt-4"><Review call={call} organizationId={organizationId} saved={() => refresh(true)} recordingAvailable={data.playbackEnabled && data.recordings.availableProviderCallIds.includes(call.provider_call_id)} providerPlayback={data.recordings.providerPlaybackCallIds?.includes(call.provider_call_id) ?? false} /></div>
         </details>)}
         <div className="flex items-center gap-3"><Button variant="outline" disabled={!page || loading} onClick={() => { setLoading(true); setData(null); setPage(p => p - 1); }}>Previous</Button><span className="text-sm">Page {page + 1} · {data.total} calls</span><Button variant="outline" disabled={(page + 1) * 50 >= data.total || loading} onClick={() => { setLoading(true); setData(null); setPage(p => p + 1); }}>Next</Button></div>
       </div>}

@@ -8,6 +8,7 @@ import { callDb, saveEvaluation, type CallSettings } from "./store";
 import { MediaError } from "./media";
 import type { RecordingDiscovery } from "./ringcentral";
 import type { RecordingJob, SavedAnalysis } from "./pipeline";
+import { playbackSource, type PlaybackJob } from "./playback";
 
 type JobRow = { id: string; organization_id: string; provider_account_id: string; provider_call_id: string; job_data: Json;
   state: "queued" | "running" | "completed" | "failed"; attempts: number; lease_token: string | null; lease_until: string | null;
@@ -22,23 +23,40 @@ function db() { return createAdminClient() as unknown as SupabaseClient<JobDatab
 const jobData = z.object({ recordingIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/)).min(1).max(500),
   direction: z.enum(["inbound", "outbound"]), startedAt: z.iso.datetime({ offset: true }), durationSeconds: z.number().int().min(0).max(14400), employeeId: z.string().nullable() }).strict();
 
-export async function recordingInboxStatus(org: string, providerCallIds: string[]) {
+function playbackJob(row: JobRow): PlaybackJob | null {
+  const metadata = jobData.safeParse(row.job_data);
+  if (!metadata.success || metadata.data.recordingIds.length !== 1 || row.state !== "completed") return null;
+  return { jobId: row.id, recordingId: metadata.data.recordingIds[0], expiresAt: row.recording_expires_at,
+    receipt: row.archive_file_id && row.archive_md5 && row.archive_bytes
+      ? { fileId: row.archive_file_id, md5: row.archive_md5, bytes: row.archive_bytes } : null };
+}
+export async function recordingInboxStatus(org: string, providerCallIds: string[], account: string | null) {
   const counts = await Promise.all((["queued", "running", "failed"] as const).map(async state => {
     const result = await db().from("ask865_recording_jobs").select("id", { count: "exact", head: true }).eq("organization_id", org).eq("state", state);
     if (result.error) throw new MediaError("queue_unavailable"); return result.count ?? 0;
   }));
-  const result = providerCallIds.length ? await db().from("ask865_recording_jobs").select("provider_call_id").eq("organization_id", org).eq("state", "completed").not("archive_md5", "is", null)
-    .gt("recording_expires_at", new Date().toISOString()).in("provider_call_id", providerCallIds) : { data: [], error: null };
-  if (result.error) throw new MediaError("queue_unavailable");
-  return { queued: counts[0], running: counts[1], failed: counts[2], availableProviderCallIds: result.data.map(r => r.provider_call_id) };
+  const availableProviderCallIds: string[] = [], providerPlaybackCallIds: string[] = [];
+  if (providerCallIds.length && account) {
+    const [jobs, calls] = await Promise.all([
+      db().from("ask865_recording_jobs").select("*").eq("organization_id", org).eq("provider_account_id", account).eq("state", "completed").in("provider_call_id", providerCallIds),
+      callDb().from("ask865_call_reviews").select("provider_call_id,category,consent_reference,recording_id,expires_at,evaluation").eq("organization_id", org)
+        .gt("expires_at", new Date().toISOString()).in("provider_call_id", providerCallIds),
+    ]);
+    if (jobs.error || calls.error) throw new MediaError("queue_unavailable");
+    for (const call of calls.data) {
+      const row = jobs.data.find(job => job.provider_call_id === call.provider_call_id);
+      const source = playbackSource(call, row ? playbackJob(row) : null);
+      if (source) availableProviderCallIds.push(call.provider_call_id);
+      if (source === "provider") providerPlaybackCallIds.push(call.provider_call_id);
+    }
+  }
+  return { queued: counts[0], running: counts[1], failed: counts[2], availableProviderCallIds, providerPlaybackCallIds };
 }
 export async function recordingForPlayback(org: string, providerCallId: string, account: string) {
   const result = await db().from("ask865_recording_jobs").select("*").eq("organization_id", org).eq("provider_account_id", account).eq("provider_call_id", providerCallId)
-    .eq("state", "completed").gt("recording_expires_at", new Date().toISOString()).maybeSingle();
+    .eq("state", "completed").maybeSingle();
   if (result.error) throw new MediaError("recording_unavailable");
-  const row = result.data; if (!row?.archive_file_id || !row.archive_md5 || !row.archive_bytes) return null;
-  const metadata = jobData.parse(row.job_data); if (metadata.recordingIds.length !== 1) return null;
-  return { jobId: row.id, recordingId: metadata.recordingIds[0], receipt: { fileId: row.archive_file_id, md5: row.archive_md5, bytes: row.archive_bytes } };
+  return result.data ? playbackJob(result.data) : null;
 }
 export async function logRecordingAccess(org: string, jobId: string, actorId: string) {
   const result = await db().from("ask865_recording_access").insert({ organization_id: org, job_id: jobId, actor_id: actorId });

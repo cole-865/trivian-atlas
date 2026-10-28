@@ -4,39 +4,42 @@ import { Ask865AccessError } from "@/lib/ask865/access";
 import { matchesAsk865Organization } from "@/lib/ask865/accessRules";
 import { getCallAccess } from "@/lib/ask865/calls/access";
 import { callDb, loadCallSettings } from "@/lib/ask865/calls/store";
-import { isEligible } from "@/lib/ask865/calls/domain";
-import { callError, privateHeaders } from "@/lib/ask865/calls/http";
+import { callError } from "@/lib/ask865/calls/http";
 import { recordingForPlayback, logRecordingAccess } from "@/lib/ask865/calls/jobs";
 import { PrivateDriveArchive, driveEnvironment } from "@/lib/ask865/calls/drive";
-import { audioByteRange, MediaError } from "@/lib/ask865/calls/media";
+import { MediaError } from "@/lib/ask865/calls/media";
+import { RingCentralClient, ringCentralConfig, RingCentralError } from "@/lib/ask865/calls/ringcentral";
+import { playbackSource, playbackResponse } from "@/lib/ask865/calls/playback";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const access = await getCallAccess();
+    if (!access.canPlayRecording) throw new Ask865AccessError(403, "Only management and admins can play recordings.");
     if (!matchesAsk865Organization(access.organizationId, request.nextUrl.searchParams.get("organization"))) throw new Ask865AccessError(409, "Your dealership changed. Reload the page.");
+    if (request.headers.get("sec-fetch-site") === "cross-site") throw new Ask865AccessError(403, "Open recordings from Atlas.");
     const id = (await context.params).id;
     if (!z.uuid().safeParse(id).success) throw new Ask865AccessError(400, "Invalid call.");
-    const result = await callDb().from("ask865_call_reviews").select("provider_call_id,category,consent_reference").eq("organization_id", access.organizationId).eq("id", id).gt("expires_at", new Date().toISOString()).maybeSingle();
+    const result = await callDb().from("ask865_call_reviews").select("provider_call_id,category,consent_reference,recording_id,expires_at,evaluation").eq("organization_id", access.organizationId).eq("id", id).gt("expires_at", new Date().toISOString()).maybeSingle();
     if (result.error) throw new Error("Recording lookup failed");
-    if (!result.data || !isEligible(result.data.category) || !result.data.consent_reference) throw new Ask865AccessError(404, "Recording unavailable.");
+    if (!result.data) throw new Ask865AccessError(404, "Recording unavailable.");
     const settings = await loadCallSettings(access.organizationId);
-    if (!settings.provider_account_id || !settings.policy_version || process.env.ASK865_CALLS_PLAYBACK_ENABLED !== "true") throw new Ask865AccessError(503, "Recording playback is disabled.");
+    if (!settings.provider_account_id || !settings.policy_version || process.env.ASK865_CALLS_PLAYBACK_ENABLED !== "true" || access.organizationId !== process.env.ASK865_CALLS_ORGANIZATION_ID) throw new Ask865AccessError(503, "Recording playback is disabled.");
     const recording = await recordingForPlayback(access.organizationId, result.data.provider_call_id, settings.provider_account_id);
-    if (!recording) throw new Ask865AccessError(404, "Recording is not archived or has expired.");
-    let range;
-    try { range = audioByteRange(request.headers.get("range"), recording.receipt.bytes); }
-    catch { return new Response(null, { status: 416, headers: { ...privateHeaders, "Content-Range": `bytes */${recording.receipt.bytes}` } }); }
-    await logRecordingAccess(access.organizationId, recording.jobId, access.actorId);
-    const audio = await new PrivateDriveArchive(driveEnvironment(process.env)).download(recording.receipt,
-      { organizationId: access.organizationId, accountId: settings.provider_account_id, recordingId: recording.recordingId });
-    try {
-      const bytes = new Uint8Array(audio.bytes.slice(range.start, range.end + 1));
-      return new Response(bytes, { status: range.partial ? 206 : 200, headers: { ...privateHeaders,
-        "Content-Type": audio.mimeType, "Content-Length": String(bytes.byteLength), "Accept-Ranges": "bytes", "Content-Disposition": `inline; filename="recording.${audio.extension}"`,
-        ...(range.partial ? { "Content-Range": `bytes ${range.start}-${range.end}/${audio.bytes.byteLength}` } : {}),
-      } });
-    } finally { audio.bytes.fill(0); }
-  } catch (error) { return callError(error instanceof MediaError ? new Ask865AccessError(503, "Recording playback is temporarily unavailable.") : error); }
+    const source = playbackSource(result.data, recording);
+    if (!recording || !source) throw new Ask865AccessError(404, "Recording is unavailable for this review.");
+    const account = settings.provider_account_id;
+    return await playbackResponse(request.headers.get("range"), {
+      audit: () => logRecordingAccess(access.organizationId, recording.jobId, access.actorId),
+      download: async () => {
+        if (source === "archive") return new PrivateDriveArchive(driveEnvironment(process.env)).download(recording.receipt!,
+          { organizationId: access.organizationId, accountId: account, recordingId: recording.recordingId });
+        const config = ringCentralConfig(process.env);
+        if (config.accountId !== account) throw new MediaError("account_mismatch");
+        return new RingCentralClient(config).downloadRecording(recording.recordingId);
+      },
+    });
+  } catch (error) { return callError(error instanceof MediaError || error instanceof RingCentralError
+    ? new Ask865AccessError(503, "Recording unavailable. It may have expired at the recording source. Please try again later.") : error); }
 }
